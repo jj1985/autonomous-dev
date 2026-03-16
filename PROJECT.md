@@ -7,9 +7,15 @@
 
 ## GOALS
 
-**Mission**: Traditional software engineering meets AI.
+**Mission**: Make Claude Code CLI follow the full software development lifecycle — requirements, architecture, coding, testing, review, security, documentation, deployment — with the discipline of a senior engineering team.
 
-Claude is brilliant but drifts. It starts with a plan, then improvises. Documentation falls out of sync. Tests get "added later." Direction shifts mid-feature.
+**Why this exists**: Claude is trained as a generalist to get things done. It executes brilliantly but lacks judgment about *what* to do, *when*, and *why*. It will skip tests, bypass process, and drift from intent — not out of malice, but because its training optimizes for immediate completion, not sustainable engineering.
+
+CLAUDE.md instructions drift under context pressure. Prompts get ignored. The context window is finite and the world is bigger than the window. You cannot teach judgment through rules — rules say "always do X" while judgment says "it depends."
+
+autonomous-dev compensates by enforcing process through hooks (deterministic, can't be argued with) and injecting the right context at the right time (PROJECT.md, GitHub issues, research). The system doesn't replace human judgment — it ensures Claude follows the SDLC steps where human judgment has already determined what "good" looks like.
+
+**The core tension**: Enforcement works but is expensive in tokens. Every session re-teaches fundamentals through context that should be native. This is a known cost, not a design flaw — it's the price of working with a generalist model that doesn't yet carry domain judgment in its weights.
 
 autonomous-dev provides **macro alignment with micro flexibility**:
 
