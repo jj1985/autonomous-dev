@@ -6,6 +6,8 @@
 
 ### Fixed
 
+- **Agent registry synchronized: 15 active, 14 archived — no ghost or orphan entries** (Issue #411) — Resolved AGENT_CONFIGS drift where 5 ghost registrations (AGENT_CONFIGS entries with no matching agent file) and 6 orphan agents (files with no registry entry) caused Claude to bypass quality pipelines by invoking individual agents instead of full command pipelines. Removed ghosts (alignment-validator, pr-description-generator, project-progress-tracker, data-quality-validator, distributed-training-coordinator — all archived) and registered orphans (continuous-improvement-analyst, issue-creator, quality-validator, sync-validator, test-coverage-auditor, researcher-local). Agent count corrected to 15 active (14 archived). `/health-check` now validates registry consistency on every run.
+
 - **settings_generator.py: removed redundant glob patterns** (Issue #365) — Duplicate glob entries in generated settings files caused hook dispatcher to fire more than once per tool call for some tool patterns. Deduplicated pattern lists so each hook lifecycle event registers exactly once, reducing unnecessary dispatch overhead.
 
 - **worktree_manager.py: CWD safety check before worktree operations** (Issue #410) — Added guard that validates the current working directory is not inside a worktree being discarded or merged before executing the operation. Previously, running `/worktree --discard` from within the target worktree directory left the shell in a deleted path, causing subsequent commands to fail with cryptic "no such file or directory" errors.

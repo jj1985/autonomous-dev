@@ -65,8 +65,11 @@ AGENT_SKILL_MAP: Dict[str, List[str]] = {
     "reviewer": ["code-review", "python-standards"],
     "security-auditor": ["security-patterns", "error-handling-patterns"],
     "doc-master": ["documentation-guide", "git-workflow"],
-    # Utility agents (1)
-    "issue-creator": ["github-workflow", "research-patterns"],
+    # Utility agents
+    "issue-creator": ["research-patterns"],
+    "continuous-improvement-analyst": [],
+    "quality-validator": ["code-review", "python-standards"],
+    "test-coverage-auditor": ["testing-guide"],
 }
 
 

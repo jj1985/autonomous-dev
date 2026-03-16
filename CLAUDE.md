@@ -84,9 +84,9 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 
 ### Agents
 
-14 specialist agents for autonomous development. See [docs/AGENTS.md](docs/AGENTS.md) for details.
+15 specialist agents for autonomous development. See [docs/AGENTS.md](docs/AGENTS.md) for details.
 
-Key agents: researcher, planner, test-master, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst. See agents/archived/ for 15 archived agents.
+Key agents: researcher, planner, test-master, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst. See agents/archived/ for 14 archived agents.
 
 ## Detailed Guides
 
@@ -106,6 +106,6 @@ Key agents: researcher, planner, test-master, implementer, reviewer, security-au
 
 ## Component Counts
 
-14 agents (15 archived), 16 skills, 16 active commands, 170 libraries, 21 active hooks (62 archived). See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
+15 agents (14 archived), 16 skills, 16 active commands, 170 libraries, 21 active hooks (62 archived). See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
 
 **Last Updated**: 2026-03-08

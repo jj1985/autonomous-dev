@@ -1,6 +1,6 @@
 # Agent Architecture
 
-**Last Updated**: 2026-01-27
+**Last Updated**: 2026-03-17
 **Location**: `plugins/autonomous-dev/agents/`
 
 This document describes the agent architecture, including core workflow agents, utility agents, model tier assignments, and their skill integrations.
@@ -9,9 +9,11 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-27 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+15 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, doc-master, experiment-critic, implementer, issue-creator, planner, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, researcher, researcher-local, reviewer, security-auditor, setup-wizard, sync-validator, test-coverage-auditor, test-master
+**Active Agents**: commit-message-generator, continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, pr-description-generator, quality-validator, researcher, researcher-local, reviewer, security-auditor, test-coverage-auditor, test-master (+ project-progress-tracker utility)
+
+**Archived Agents** (14, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, project-bootstrapper, project-status-analyzer, setup-wizard, sync-validator
 
 ---
 
@@ -57,9 +59,8 @@ Maximum depth for security and complex analysis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Agents**: 27
-**Total Tokens**: 27,274
-**Average**: 1,010 tokens/agent
+**Total Active Agents**: 15
+**Note**: Token audit reflects pre-consolidation count; recount pending after #411 registry cleanup
 
 ### Agents by Token Count
 
@@ -89,21 +90,33 @@ Maximum depth for security and complex analysis:
 
 ### Summary
 
-- **20/21 agents** (95%) are under the 3K token target ✅
-- **1 agent** (setup-wizard) exceeds target and needs optimization
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
+- Token audit table above reflects pre-consolidation state; many listed agents are now archived
 
 ---
 
-## Archived Agents (Issue #331)
+## Archived Agents (Issue #331, #411)
 
-1 agent has been archived and moved to `plugins/autonomous-dev/agents/archived/`:
+14 agents have been archived and moved to `plugins/autonomous-dev/agents/archived/`:
 
 - **orchestrator**: Meta-agent for workflow coordination (consolidated into unified /implement command)
+- **advisor**: Critical thinking and validation (consolidated, Issue #331)
+- **alignment-analyzer**: Detailed alignment analysis (consolidated, Issue #331)
+- **alignment-validator**: PROJECT.md alignment checking (ghost registration removed, Issue #411)
+- **brownfield-analyzer**: Brownfield project analysis (consolidated, Issue #331)
+- **data-curator**: A-grade data pipeline orchestration (consolidated, Issue #331)
+- **data-quality-validator**: LLM training data quality assessment (ghost registration removed, Issue #411)
+- **distributed-training-coordinator**: Distributed LLM training orchestration (ghost registration removed, Issue #411)
+- **experiment-critic**: Experiment evaluation (consolidated, Issue #331)
+- **postmortem-analyst**: Pipeline session log analysis (consolidated, Issue #331)
+- **project-bootstrapper**: Tech stack detection and setup (consolidated, Issue #331)
+- **project-status-analyzer**: Real-time project health analysis (consolidated, Issue #331)
+- **setup-wizard**: Intelligent interactive setup (consolidated, Issue #331)
+- **sync-validator**: Smart dev sync validation (consolidated, Issue #331)
 
 ---
 
-## Core Workflow Agents (8 active + 19 utility)
+## Core Workflow Agents
 
 These agents execute the main autonomous development workflow and provide specialized functionality.
 
@@ -236,7 +249,7 @@ These agents execute the main autonomous development workflow and provide specia
 
 ---
 
-## Utility Agents (19)
+## Utility Agents
 
 These agents provide specialized functionality for alignment, git operations, project management, training best practices, and pipeline diagnostics.
 
@@ -378,7 +391,7 @@ These agents provide specialized functionality for alignment, git operations, pr
 
 ## Agent-Skill Integration
 
-All 8 active agents reference relevant skills via `skills:` frontmatter (Issue #35, #143, #147). Claude Code 2.0 auto-loads skills when agents are spawned.
+Active agents reference relevant skills via `skills:` frontmatter (Issue #35, #143, #147). Claude Code 2.0 auto-loads skills when agents are spawned.
 
 **How It Works**:
 1. Each agent's prompt includes a "Relevant Skills" section

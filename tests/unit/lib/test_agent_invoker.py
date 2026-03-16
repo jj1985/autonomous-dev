@@ -29,7 +29,6 @@ class TestAgentConfigs:
     def test_all_required_agents_exist(self):
         """All required pipeline agents should exist."""
         required_agents = [
-            'alignment-validator',
             'researcher',
             'planner',
             'test-master',
@@ -37,6 +36,14 @@ class TestAgentConfigs:
             'reviewer',
             'security-auditor',
             'doc-master',
+            'commit-message-generator',
+            'pr-description-generator',
+            'project-progress-tracker',
+            'issue-creator',
+            'continuous-improvement-analyst',
+            'researcher-local',
+            'quality-validator',
+            'test-coverage-auditor',
         ]
         for agent in required_agents:
             assert agent in AgentInvoker.AGENT_CONFIGS, f"Missing agent: {agent}"
@@ -52,7 +59,6 @@ class TestAgentConfigs:
     def test_progress_percentages_ordered(self):
         """Progress percentages should increase through pipeline."""
         pipeline_order = [
-            'alignment-validator',
             'researcher',
             'planner',
             'test-master',
@@ -333,13 +339,6 @@ class TestAllAgents:
         mock_manager.read_artifact.return_value = {"request": "Test"}
         return AgentInvoker(artifact_manager=mock_manager)
 
-    def test_invoke_alignment_validator(self, invoker):
-        """Invoke alignment-validator agent."""
-        with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
-             patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
-            result = invoker.invoke("alignment-validator", "wf-123", request="Validate")
-        assert result['subagent_type'] == "alignment-validator"
-
     def test_invoke_researcher(self, invoker):
         """Invoke researcher agent."""
         with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
@@ -409,6 +408,41 @@ class TestAllAgents:
              patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
             result = invoker.invoke("project-progress-tracker", "wf-123", request="Track")
         assert result['subagent_type'] == "project-progress-tracker"
+
+    def test_invoke_issue_creator(self, invoker):
+        """Invoke issue-creator agent."""
+        with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
+             patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
+            result = invoker.invoke("issue-creator", "wf-123", request="Create issue")
+        assert result['subagent_type'] == "issue-creator"
+
+    def test_invoke_continuous_improvement_analyst(self, invoker):
+        """Invoke continuous-improvement-analyst agent."""
+        with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
+             patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
+            result = invoker.invoke("continuous-improvement-analyst", "wf-123", request="Analyze")
+        assert result['subagent_type'] == "continuous-improvement-analyst"
+
+    def test_invoke_researcher_local(self, invoker):
+        """Invoke researcher-local agent."""
+        with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
+             patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
+            result = invoker.invoke("researcher-local", "wf-123", request="Search")
+        assert result['subagent_type'] == "researcher-local"
+
+    def test_invoke_quality_validator(self, invoker):
+        """Invoke quality-validator agent."""
+        with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
+             patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
+            result = invoker.invoke("quality-validator", "wf-123", request="Validate")
+        assert result['subagent_type'] == "quality-validator"
+
+    def test_invoke_test_coverage_auditor(self, invoker):
+        """Invoke test-coverage-auditor agent."""
+        with patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowLogger'), \
+             patch('plugins.autonomous_dev.lib.agent_invoker.WorkflowProgressTracker'):
+            result = invoker.invoke("test-coverage-auditor", "wf-123", request="Audit coverage")
+        assert result['subagent_type'] == "test-coverage-auditor"
 
 
 class TestEdgeCases:

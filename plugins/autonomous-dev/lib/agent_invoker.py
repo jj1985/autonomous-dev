@@ -30,12 +30,6 @@ class AgentInvoker:
 
     # Agent configuration mapping
     AGENT_CONFIGS = {
-        'alignment-validator': {
-            'progress_pct': 5,
-            'artifacts_required': [],  # No artifacts needed, just PROJECT.md
-            'description_template': 'Validate PROJECT.md alignment for: {request}',
-            'mission': 'Validate if request aligns with PROJECT.md GOALS, SCOPE, and CONSTRAINTS'
-        },
         'researcher': {
             'progress_pct': 20,
             'artifacts_required': ['manifest'],
@@ -96,17 +90,35 @@ class AgentInvoker:
             'description_template': 'Track PROJECT.md progress for: {request}',
             'mission': 'Track and update PROJECT.md goal completion progress'
         },
-        'data-quality-validator': {
+        'issue-creator': {
+            'progress_pct': 50,
+            'artifacts_required': ['manifest'],
+            'description_template': 'Create GitHub issue for: {request}',
+            'mission': 'Create structured GitHub issue with research and dedup'
+        },
+        'continuous-improvement-analyst': {
+            'progress_pct': 98,
+            'artifacts_required': ['manifest'],
+            'description_template': 'Analyze session for improvements: {request}',
+            'mission': 'Analyze session logs for pipeline bypasses and drift'
+        },
+        'researcher-local': {
             'progress_pct': 15,
             'artifacts_required': ['manifest'],
-            'description_template': 'Validate data quality for: {request}',
-            'mission': 'Assess training data quality using IFD, DPO, and RLVR metrics'
+            'description_template': 'Search local codebase for: {request}',
+            'mission': 'Search local codebase for patterns related to the request'
         },
-        'distributed-training-coordinator': {
-            'progress_pct': 25,
-            'artifacts_required': ['manifest', 'data_quality'],
-            'description_template': 'Coordinate distributed training for: {request}',
-            'mission': 'Design distributed training strategy with RDMA and MLX optimization'
+        'quality-validator': {
+            'progress_pct': 85,
+            'artifacts_required': ['manifest', 'implementation'],
+            'description_template': 'Validate code quality for: {request}',
+            'mission': 'Analyze code quality patterns and anti-patterns'
+        },
+        'test-coverage-auditor': {
+            'progress_pct': 85,
+            'artifacts_required': ['manifest', 'implementation', 'tests'],
+            'description_template': 'Audit test coverage for: {request}',
+            'mission': 'Analyze test coverage gaps and suggest improvements'
         }
     }
 

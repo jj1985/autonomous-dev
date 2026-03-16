@@ -28,12 +28,13 @@
         "plugins/autonomous-dev/agents/implementer.md",
         "plugins/autonomous-dev/agents/issue-creator.md",
         "plugins/autonomous-dev/agents/planner.md",
+        "plugins/autonomous-dev/agents/pr-description-generator.md",
+        "plugins/autonomous-dev/agents/project-progress-tracker.md",
         "plugins/autonomous-dev/agents/quality-validator.md",
         "plugins/autonomous-dev/agents/researcher-local.md",
         "plugins/autonomous-dev/agents/researcher.md",
         "plugins/autonomous-dev/agents/reviewer.md",
         "plugins/autonomous-dev/agents/security-auditor.md",
-        "plugins/autonomous-dev/agents/sync-validator.md",
         "plugins/autonomous-dev/agents/test-coverage-auditor.md",
         "plugins/autonomous-dev/agents/test-master.md"
       ]
