@@ -70,11 +70,9 @@ SAFE_COMMAND_PATTERNS = [
     "Glob",
     "Grep",
 
-    # Common file-specific patterns
-    "Read(**/*.py)",
-    "Write(**/*.py)",
-    "Read(**/*.md)",
-    "Write(**/*.md)",
+    # Issue #365: Bare tool names above already cover all file types.
+    # Do NOT add glob-suffixed patterns like Read(**/*.py) — they are
+    # redundant and trigger Claude Code bug #16170.
 
     # Git operations (safe, read-only or controlled writes)
     "Bash(git:*)",

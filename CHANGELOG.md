@@ -1,6 +1,14 @@
 ## [Unreleased]
 
+### Added
+
+- **`/implement --fix` mode: targeted bug-fix pipeline** (Issues #431, #362, #363) — New `implement-fix.md` command routes `--fix` flag to a streamlined pipeline optimised for bug fixes rather than feature development. Skips acceptance-test authoring and goes directly to targeted reproduction → fix → regression test cycle. `batch_agent_verifier.py` library (#362/#363) provides reusable agent verification logic shared by the fix pipeline and batch coordinator to confirm required agents ran per issue. Eliminates manual per-issue agent audits in batch mode.
+
 ### Fixed
+
+- **settings_generator.py: removed redundant glob patterns** (Issue #365) — Duplicate glob entries in generated settings files caused hook dispatcher to fire more than once per tool call for some tool patterns. Deduplicated pattern lists so each hook lifecycle event registers exactly once, reducing unnecessary dispatch overhead.
+
+- **worktree_manager.py: CWD safety check before worktree operations** (Issue #410) — Added guard that validates the current working directory is not inside a worktree being discarded or merged before executing the operation. Previously, running `/worktree --discard` from within the target worktree directory left the shell in a deleted path, causing subsequent commands to fail with cryptic "no such file or directory" errors.
 
 - **Settings templates: all now register all 4 hook lifecycle layers** — Five settings templates (default, granular-bash, permission-batching, global_settings_template, and one more) were missing `UserPromptSubmit` and/or `Stop` hooks. All templates now consistently register `UserPromptSubmit` (prompt routing), `PreToolUse` (permission validation), `PostToolUse` (activity logging), and `Stop` (quality gate). Previously some templates silently dropped prompt validation and session end logging.
 
@@ -11,8 +19,6 @@
 - **pipeline_intent_validator: ghost invocation detection** — Added `detect_ghost_invocations()` which flags agent calls completing in under 10 seconds with fewer than 50 result words. Also added `duration_ms` field to `PipelineEvent` (populated from JSONL log entries) so timing data flows through to all validation checks. Ghost invocations indicate an agent was invoked but did no real work — a silent failure mode where the pipeline appears complete but key steps were skipped.
 
 - **continuous-improvement-analyst: explicit ghost invocation criteria** — Batch mode check for fast agents now includes the exact ghost detection rule (duration <10s AND result_word_count <50 → [GHOST]) matching the library implementation. Full mode now explicitly lists ghost invocations in the bypass check list with a reference to `detect_ghost_invocations()`. Aligns the agent's written criteria with the library's actual detection thresholds.
-
-### Added
 
 - **Continuous-improvement-analyst agent rewrite: two-mode automation QA** (Issue #394)
   - Refactored from 295 lines to ~100 lines with clearer responsibility separation

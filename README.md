@@ -125,6 +125,7 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 | `/implement --batch` | Process multiple features from file |
 | `/implement --issues 1 2 3` | Process features from GitHub issues |
 | `/implement --resume` | Continue interrupted batch |
+| `/implement --fix` | Targeted bug-fix pipeline (reproduce → fix → regress) |
 | `/align` | Validate alignment (project goals, CLAUDE.md, retrofit) |
 | `/create-issue` | Research-backed GitHub issues with duplicate detection |
 | `/advise` | Critical analysis before major decisions |

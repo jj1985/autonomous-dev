@@ -51,6 +51,7 @@
         "plugins/autonomous-dev/commands/health-check.md",
         "plugins/autonomous-dev/commands/implement.md",
         "plugins/autonomous-dev/commands/implement-batch.md",
+        "plugins/autonomous-dev/commands/implement-fix.md",
         "plugins/autonomous-dev/commands/implement-resume.md",
         "plugins/autonomous-dev/commands/improve.md",
         "plugins/autonomous-dev/commands/mem-search.md",
@@ -242,6 +243,7 @@
         "plugins/autonomous-dev/lib/worktree_command.py",
         "plugins/autonomous-dev/lib/worktree_conflict_integration.py",
         "plugins/autonomous-dev/lib/worktree_manager.py",
+        "plugins/autonomous-dev/lib/batch_agent_verifier.py",
         "plugins/autonomous-dev/lib/batch_git_finalize.py",
         "plugins/autonomous-dev/lib/coverage_baseline.py",
         "plugins/autonomous-dev/lib/step5_quality_gate.py"

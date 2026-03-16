@@ -129,9 +129,9 @@ Smart code implementation with three modes:
 /implement Add user authentication with JWT tokens
 ```
 
-**Quick Mode**: Direct implementation, no pipeline overhead (2-5 minutes)
+**Fix Mode**: Minimal pipeline for test-fixing tasks (implementer + reviewer + doc-master)
 ```bash
-/implement --quick Fix typo in error message
+/implement --fix Fix failing test_authentication tests
 ```
 
 **Batch Mode**: Process multiple features from file or GitHub issues

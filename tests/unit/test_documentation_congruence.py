@@ -173,8 +173,8 @@ class TestCommandDocumentation:
             if "archived" in str(f):
                 continue
             name = f.stem
-            # implement-batch and implement-resume are sub-commands of /implement
-            if name in ("implement-batch", "implement-resume"):
+            # implement-batch, implement-resume, implement-fix are sub-commands of /implement
+            if name in ("implement-batch", "implement-resume", "implement-fix"):
                 continue
             cmds.add(name)
         return cmds

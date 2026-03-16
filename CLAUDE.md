@@ -59,7 +59,7 @@ Use Grep/Glob for: text patterns, file names, comments/strings.
 
 | Command | Purpose |
 |---------|---------|
-| `/implement` | Code changes (full pipeline, --batch, --issues, --resume) |
+| `/implement` | Code changes (full pipeline, --batch, --issues, --resume, --fix) |
 | `/create-issue` | GitHub issue with automated research (--quick) |
 | `/align` | Alignment check (--project, --docs, --retrofit) |
 | `/audit` | Quality audit (--quick, --security, --docs, --code, --claude, --tests) |
@@ -106,6 +106,6 @@ Key agents: researcher, planner, test-master, implementer, reviewer, security-au
 
 ## Component Counts
 
-14 agents (15 archived), 16 skills, 15 active commands, 169 libraries, 21 active hooks (62 archived). See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
+14 agents (15 archived), 16 skills, 16 active commands, 170 libraries, 21 active hooks (62 archived). See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
 
 **Last Updated**: 2026-03-08

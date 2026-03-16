@@ -542,21 +542,19 @@ def delete_worktree(feature_name: str, force: bool = False) -> Tuple[bool, str]:
         worktree_base = _get_worktree_base_dir()
         worktree_path = worktree_base / feature_name
 
-        # Issue #243: Check if current directory is inside the worktree
-        # If so, change to project root before deletion to prevent shell crash
+        # Issue #243 / #410: Check if current directory is inside the worktree.
+        # If so, change process CWD to project root before deletion to prevent
+        # shell crash when the directory is removed out from under us.
         try:
             original_cwd = Path.cwd()
-            worktree_str = str(worktree_path.resolve()) if worktree_path.exists() else str(worktree_path)
-            cwd_str = str(original_cwd.resolve())
+            worktree_resolved = str(worktree_path.resolve()) if worktree_path.exists() else str(worktree_path)
+            cwd_resolved = str(original_cwd.resolve())
 
-            # Check if cwd starts with worktree path (i.e., cwd is inside worktree)
-            # Issue #315: Use cwd= parameter instead of os.chdir()
-            if cwd_str.startswith(worktree_str):
-                # We're inside the worktree - need to run from project root
-                # Find project root (parent of .worktrees)
+            if cwd_resolved.startswith(worktree_resolved):
+                # We're inside the worktree - move process CWD to project root
                 project_root = worktree_base.parent
                 if project_root.exists():
-                    # Store project root for cwd= parameter
+                    os.chdir(project_root)
                     git_cwd = project_root
                 else:
                     git_cwd = None
