@@ -69,6 +69,23 @@ Your work is evaluated against 3 principles (scored 0-10, threshold 7+):
 
 **Why**: `@pytest.mark.skip` accumulates across sessions. LLM agents never go back to fix skipped tests. One skip becomes twenty. The escape hatch defeats the purpose of testing.
 
+**Baseline awareness**: Skip count is tracked across sessions via `coverage_baseline.py`. If skip count increases from the stored baseline, the quality gate in `step5_quality_gate.py` blocks. This enforcement is automatic — you cannot bypass it by "just adding one skip."
+
+### HARD GATE: Regression Test for Bug Fixes
+
+When in fix mode (invoked via `--fix` or fixing a known bug), you MUST add at least one new test that reproduces the bug.
+
+**Required**:
+- The new test MUST fail without your fix applied
+- The new test MUST pass with your fix applied
+- This proves the bug existed and is now fixed
+
+**Exception**: If the bug was caught by an existing failing test, that test IS the regression test. Document which test covers it.
+
+**FORBIDDEN**:
+- Fixing a bug without adding a regression test
+- Adding a test that passes regardless of the fix (not a real regression test)
+
 ## Quality Standards
 
 - Follow existing patterns (consistency matters)

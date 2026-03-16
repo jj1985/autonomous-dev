@@ -16,6 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import coverage_baseline
+
 
 COVERAGE_BASELINE_PATH = Path(".claude/local/coverage_baseline.json")
 COVERAGE_REGRESSION_THRESHOLD = 0.5  # percent
@@ -239,7 +241,7 @@ def check_coverage_regression(
     if baseline_path.exists():
         try:
             data = json.loads(baseline_path.read_text())
-            baseline_value = data.get("coverage")
+            baseline_value = data.get("total_coverage", data.get("coverage", 0))
         except (json.JSONDecodeError, KeyError):
             pass
 
@@ -290,16 +292,32 @@ def run_quality_gate() -> dict:
     test_result = run_tests()
     coverage_result = check_coverage_regression()
 
-    overall_passed = test_result.passed and coverage_result.passed
+    # Check skip regression against baseline
+    skip_passed, skip_message = coverage_baseline.check_skip_regression(
+        test_result.skipped
+    )
 
-    summary_parts = [test_result.message, coverage_result.message]
+    overall_passed = (
+        test_result.passed and coverage_result.passed and skip_passed
+    )
+
+    summary_parts = [test_result.message, coverage_result.message, skip_message]
     if test_result.blocker:
         summary_parts.append(f"BLOCKER: {test_result.blocker}")
+
+    # Update baseline on overall success
+    if overall_passed and coverage_result.current_coverage > 0:
+        coverage_baseline.save_baseline(
+            coverage_pct=coverage_result.current_coverage,
+            skip_count=test_result.skipped,
+            total_tests=test_result.test_count,
+        )
 
     return {
         "passed": overall_passed,
         "test_result": asdict(test_result),
         "coverage_result": asdict(coverage_result),
+        "skip_regression": {"passed": skip_passed, "message": skip_message},
         "summary": " | ".join(summary_parts),
     }
 

@@ -62,6 +62,36 @@ def check_coverage_regression(
         return (False, f"Coverage regression: {current_coverage:.1f}% < {baseline_coverage:.1f}% - {tolerance}% tolerance")
 
 
+def check_skip_regression(
+    current_skipped: int,
+    baseline_path: Optional[Path] = None,
+) -> Tuple[bool, str]:
+    """Check if skip count has increased from baseline.
+
+    Args:
+        current_skipped: Current number of skipped tests.
+        baseline_path: Path to baseline JSON. Uses default if None.
+
+    Returns:
+        Tuple of (passed, message). passed=False if skip count increased.
+    """
+    baseline = load_baseline(baseline_path)
+    if not baseline or "skip_count" not in baseline:
+        return (True, "No baseline — skip count established")
+
+    baseline_skip = baseline["skip_count"]
+    if current_skipped > baseline_skip:
+        return (
+            False,
+            f"Skip count increased: {current_skipped} > {baseline_skip}. "
+            f"0 new skips allowed.",
+        )
+    return (
+        True,
+        f"Skip count OK: {current_skipped} (baseline: {baseline_skip})",
+    )
+
+
 def check_skip_rate(skipped: int, total: int) -> Tuple[str, str]:
     """Check skip rate. Returns (level, message). Level is 'ok', 'warn', or 'block'."""
     if total == 0:

@@ -111,6 +111,12 @@
   - Added `skip_accumulation` bypass pattern to known_bypass_patterns.json
   - Prevents skip accumulation across sessions where LLM agents never revisit skipped tests
 
+- **Skip accumulation prevention: cross-session baseline enforcement** (Issue #364, #332) — Skip count is now tracked in `.claude/local/coverage_baseline.json` across sessions via `coverage_baseline.check_skip_regression()`. The STEP 5 HARD GATE in `implement.md` BLOCKS if skip count exceeds the stored baseline — even by one test. This closes the gap where the zero-skip rule was declared in text but had no persistent state preventing drift across restarts. Implementer agent enforces the same gate with explicit FORBIDDEN list including `pytest.skip()` inside test bodies and `xfail` markers.
+
+- **Coverage regression gate: persistent baseline with 0.5% tolerance** (Issue #332) — `coverage_baseline.py` (new library) stores coverage percentage, skip count, and total test count after each successful `/implement` run. STEP 5 now runs `pytest --cov` after all tests pass and compares against the baseline. Coverage drops greater than 0.5% BLOCK progression to STEP 6. Baseline auto-updates on success, so coverage improvements are captured immediately. Eliminates silent regression where new code lands without test coverage.
+
+- **Regression test requirement for bug fixes** (Issue #357) — Implementer agent now has a mandatory HARD GATE: when fixing a bug (invoked via `--fix` or when fixing a known bug), at least one new regression test must be added that reproduces the bug. The test must fail without the fix and pass with it. FORBIDDEN: fixing a bug without a regression test, adding a test that passes regardless of the fix. Exception: if the bug was already caught by an existing failing test, that test is the regression test — document which test covers it. Closes the gap where bug fixes landed clean but the same bug could silently reappear.
+
 - **Pipeline agent quality audit: HARD GATEs and model upgrades** (Issue #366)
   - researcher.md: upgraded model from haiku to sonnet for better judgment on ambiguous queries, added structured JSON output format, added HARD GATE requiring at least one WebSearch call (FORBIDDEN to skip web research)
   - reviewer.md: added HARD GATE requiring pytest run before APPROVE decision, FORBIDDEN to approve with failing or erroring tests, must cite file:line for every finding

@@ -18,6 +18,7 @@ from step5_quality_gate import (
     run_quality_gate,
     run_tests,
 )
+import coverage_baseline
 
 
 class TestParsePytestOutput:
@@ -256,3 +257,79 @@ class TestRunQualityGate:
         )
         result = run_quality_gate()
         assert result["passed"] is False
+
+
+class TestSkipRegressionInQualityGate:
+    """Tests for skip regression integration in run_quality_gate."""
+
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_skip_regression_blocks(self, mock_tests, mock_cov, mock_skip):
+        """Skip count increase causes overall gate failure."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=3, skip_rate=30.0, message="PASS: 7 passed, 3 skipped",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (False, "Skip count increased: 3 > 1. 0 new skips allowed.")
+
+        result = run_quality_gate()
+        assert result["passed"] is False
+        assert result["skip_regression"]["passed"] is False
+
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_skip_regression_passes(self, mock_tests, mock_cov, mock_skip):
+        """Same or decreased skip count passes."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=1, skip_rate=10.0, message="PASS: 9 passed, 1 skipped",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (True, "Skip count OK: 1 (baseline: 1)")
+
+        result = run_quality_gate()
+        assert result["passed"] is True
+        assert result["skip_regression"]["passed"] is True
+
+    @patch("step5_quality_gate.coverage_baseline.save_baseline")
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_baseline_updated_on_success(self, mock_tests, mock_cov, mock_skip, mock_save):
+        """Verify save_baseline is called when all checks pass."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=0, skip_rate=0.0, message="PASS: 10 passed",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (True, "Skip count OK: 0 (baseline: 0)")
+
+        run_quality_gate()
+        mock_save.assert_called_once_with(
+            coverage_pct=90.0,
+            skip_count=0,
+            total_tests=10,
+        )
+
+    def test_schema_reads_total_coverage_key(self, tmp_path):
+        """Verify check_coverage_regression reads 'total_coverage' key (not just 'coverage')."""
+        baseline = tmp_path / "baseline.json"
+        # Write baseline using coverage_baseline.save_baseline which uses "total_coverage" key
+        baseline.write_text(json.dumps({"total_coverage": 85.0}))
+        coverage_output = "TOTAL   100   10   84%\n"
+
+        result = check_coverage_regression(
+            baseline_path=baseline, coverage_output=coverage_output
+        )
+        # 85 - 84 = 1.0 > 0.5 threshold, should fail
+        assert result.passed is False
+        assert result.baseline_coverage == 85.0

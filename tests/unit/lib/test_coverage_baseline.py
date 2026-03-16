@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "plugins" / "autono
 from coverage_baseline import (
     check_coverage_regression,
     check_skip_rate,
+    check_skip_regression,
     get_default_baseline_path,
     load_baseline,
     save_baseline,
@@ -147,6 +148,54 @@ class TestCheckCoverageRegression:
         # current == baseline - tolerance => should pass
         passed, _ = check_coverage_regression(79.5, tolerance=0.5)
         assert passed is True
+
+
+class TestCheckSkipRegression:
+    """Tests for check_skip_regression()."""
+
+    def test_no_baseline_passes(self, tmp_path: Path) -> None:
+        """No baseline file means no comparison — passes and establishes baseline."""
+        passed, message = check_skip_regression(5, baseline_path=tmp_path / "nonexistent.json")
+        assert passed is True
+        assert "No baseline" in message
+
+    def test_skip_count_unchanged_passes(self, tmp_path: Path) -> None:
+        """Same skip count as baseline passes."""
+        baseline_file = tmp_path / "baseline.json"
+        save_baseline(85.0, 3, 100, baseline_file)
+
+        passed, message = check_skip_regression(3, baseline_path=baseline_file)
+        assert passed is True
+        assert "OK" in message
+
+    def test_skip_count_decreased_passes(self, tmp_path: Path) -> None:
+        """Fewer skips than baseline passes (improvement)."""
+        baseline_file = tmp_path / "baseline.json"
+        save_baseline(85.0, 5, 100, baseline_file)
+
+        passed, message = check_skip_regression(2, baseline_path=baseline_file)
+        assert passed is True
+        assert "OK" in message
+
+    def test_skip_count_increased_fails(self, tmp_path: Path) -> None:
+        """More skips than baseline fails."""
+        baseline_file = tmp_path / "baseline.json"
+        save_baseline(85.0, 3, 100, baseline_file)
+
+        passed, message = check_skip_regression(7, baseline_path=baseline_file)
+        assert passed is False
+        assert "increased" in message.lower()
+        assert "7" in message
+        assert "3" in message
+
+    def test_skip_count_increased_by_one_fails(self, tmp_path: Path) -> None:
+        """Even +1 skip increase blocks."""
+        baseline_file = tmp_path / "baseline.json"
+        save_baseline(85.0, 3, 100, baseline_file)
+
+        passed, message = check_skip_regression(4, baseline_path=baseline_file)
+        assert passed is False
+        assert "0 new skips allowed" in message
 
 
 class TestCheckSkipRate:

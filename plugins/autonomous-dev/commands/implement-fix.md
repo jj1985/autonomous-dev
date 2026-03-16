@@ -73,6 +73,19 @@ HARD GATE: ALL tests must pass (0 failures). Do not stop until pytest shows 0 fa
 If ANY test still fails: RE-INVOKE implementer with remaining failures.
 Maximum 3 re-invocations before escalating to user.
 
+### HARD GATE: Regression Test Requirement
+
+If fixing a bug, at least one NEW test must be added that would FAIL without the fix. This ensures the bug never returns.
+
+**Verification**: Compare test count from STEP F2 (before fix) vs after STEP F3 (after fix). If `after_count <= before_count`, BLOCK with message: "Bug fix requires at least one new regression test that reproduces the bug. Add a test that fails without your fix and passes with it."
+
+**Exception**: If the bug was caught BY an existing failing test (i.e., the test that originally failed IS the regression test), this gate passes automatically. Document which existing test covers the regression.
+
+**FORBIDDEN**:
+- Fixing a bug without a test that proves it was broken
+- Claiming "the fix is obvious and doesn't need a test"
+- Adding a test that passes both with and without the fix (that's not a regression test)
+
 ### STEP F4: Reviewer + Doc-master (parallel)
 
 Invoke TWO agents in PARALLEL:

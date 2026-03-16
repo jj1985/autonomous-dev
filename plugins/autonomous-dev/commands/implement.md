@@ -109,11 +109,17 @@ For EACH failure, you MUST choose one:
 1. **Fix it** — debug and fix code/test
 2. **Adjust it** — update test expectations to match correct behavior
 
-**HARD GATE: No New Skips** — Adding `@pytest.mark.skip` is FORBIDDEN. 0 new skips allowed. If a test fails, fix it or adjust expectations — never skip it.
+**HARD GATE: No New Skips** — Adding `@pytest.mark.skip` is FORBIDDEN. 0 new skips allowed. Skip count is tracked across sessions via `coverage_baseline.check_skip_regression()`. If the current skip count exceeds the baseline, the quality gate BLOCKS.
+
+**FORBIDDEN** (coverage/skip violations):
+- Adding `@pytest.mark.skip` to any test (0 new skips, enforced by baseline comparison)
+- Letting coverage drop more than 0.5% below baseline (enforced by `coverage_baseline.check_coverage_regression()`)
+- Declaring coverage loss "acceptable" or "minor"
+- Proceeding to STEP 6 when `step5_quality_gate.run_quality_gate()` returns `passed=False`
 
 Loop until **0 failures, 0 errors**. Do NOT proceed to STEP 6 with any failures.
 
-Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 | tail -5` — must be >= baseline - 0.5%.
+Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 | tail -5` — must be >= baseline - 0.5%. On success, baseline is automatically updated via `coverage_baseline.save_baseline()`.
 
 ### STEP 5.5: Hook Registration Check — HARD GATE
 
