@@ -61,6 +61,7 @@ Agent: implementer
 """
 
 import json
+import shlex
 import sys
 import os
 from pathlib import Path
@@ -196,6 +197,100 @@ PATTERN_GROUPS = {
 }
 
 SIGNIFICANT_LINE_THRESHOLD = 5
+
+# Git subcommands where -n means --no-verify (not a count flag)
+_GIT_VERIFY_SUBCOMMANDS = {"push", "commit", "merge"}
+
+# Git subcommands where -f means --force (not something else)
+_GIT_FORCE_PUSH_SUBCOMMANDS = {"push"}
+
+
+def _detect_git_bypass(command: str) -> Tuple[bool, str]:
+    """Detect git bypass patterns in a command string.
+
+    Checks for --no-verify, --force on push, git reset --hard,
+    git clean -f/-fd, and the -n shorthand on push/commit/merge.
+
+    Handles pipes by only parsing the segment before the first pipe.
+
+    Args:
+        command: The shell command string to analyze.
+
+    Returns:
+        Tuple of (is_bypass, reason). If is_bypass is True, the command
+        should be blocked.
+    """
+    # Only parse the first command in a pipeline
+    pipe_idx = command.find("|")
+    if pipe_idx >= 0:
+        command = command[:pipe_idx]
+
+    command = command.strip()
+    if not command:
+        return (False, "")
+
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+
+    if not tokens:
+        return (False, "")
+
+    # Find the git command and subcommand
+    git_idx = None
+    for i, token in enumerate(tokens):
+        if token == "git" or token.endswith("/git"):
+            git_idx = i
+            break
+
+    if git_idx is None:
+        return (False, "")
+
+    # Extract subcommand (first non-flag token after "git")
+    subcommand = ""
+    for token in tokens[git_idx + 1:]:
+        if not token.startswith("-"):
+            subcommand = token
+            break
+
+    remaining_tokens = tokens[git_idx + 1:]
+
+    # Check --no-verify on any git command
+    if "--no-verify" in remaining_tokens:
+        return (True, f"git {subcommand} --no-verify bypasses pre-commit/pre-push hooks")
+
+    # Check -n shorthand ONLY on push/commit/merge (not log/diff where it means count)
+    if subcommand in _GIT_VERIFY_SUBCOMMANDS:
+        for token in remaining_tokens:
+            # Match -n as standalone flag or combined flags like -fn
+            if token == "-n":
+                return (True, f"git {subcommand} -n bypasses verification hooks")
+            # Check combined short flags (e.g., -fn, -an) but not subcommand itself
+            if token.startswith("-") and not token.startswith("--") and "n" in token and token != subcommand:
+                return (True, f"git {subcommand} {token} contains -n (bypasses verification hooks)")
+
+    # Check --force / -f ONLY on push
+    if subcommand in _GIT_FORCE_PUSH_SUBCOMMANDS:
+        if "--force" in remaining_tokens or "--force-with-lease" in remaining_tokens:
+            return (True, f"git push --force can overwrite remote history")
+        for token in remaining_tokens:
+            if token == "-f":
+                return (True, "git push -f can overwrite remote history")
+
+    # Check git reset --hard
+    if subcommand == "reset" and "--hard" in remaining_tokens:
+        return (True, "git reset --hard discards all uncommitted changes")
+
+    # Check git clean -f or git clean -fd
+    if subcommand == "clean":
+        for token in remaining_tokens:
+            if token.startswith("-") and not token.startswith("--") and "f" in token:
+                return (True, "git clean -f permanently deletes untracked files")
+        if "--force" in remaining_tokens:
+            return (True, "git clean --force permanently deletes untracked files")
+
+    return (False, "")
 
 
 def validate_sandbox_layer(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
@@ -489,6 +584,11 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
         command = tool_input.get("command", "")
         if not command:
             return ("allow", "No command to check")
+        # Git bypass detection (Issue #406)
+        if "git" in command:
+            is_bypass, bypass_reason = _detect_git_bypass(command)
+            if is_bypass:
+                return ("deny", f"GIT BYPASS BLOCKED: {bypass_reason}")
         target_files = _extract_bash_file_writes(command)
         if not target_files:
             return ("allow", "No file writes detected in Bash command")

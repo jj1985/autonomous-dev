@@ -32,6 +32,7 @@ from pipeline_intent_validator import (
     Finding,
     PipelineEvent,
     detect_context_dropping,
+    detect_ghost_invocations,
     detect_hard_gate_ordering,
     detect_parallelization_violations,
     parse_session_logs,
@@ -465,6 +466,118 @@ class TestValidatePipelineIntent:
         log_file.write_text("\n".join(lines) + "\n")
         findings = validate_pipeline_intent(log_file, session_id="test-session")
         assert len(findings) >= 2, "#367: multiple violations should all be detected"
+
+
+class TestDetectGhostInvocations:
+    """Tests for detect_ghost_invocations function (Issue #442)."""
+
+    def test_ghost_detected_fast_and_low_output(self):
+        """Agent with duration <10s AND result_word_count <50 is a ghost."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-02-28T10:00:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="researcher",
+                pipeline_action="agent_invocation",
+                duration_ms=5000,
+                result_word_count=10,
+            ),
+        ]
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 1
+        assert findings[0].finding_type == "ghost_invocation"
+        assert findings[0].severity == "WARNING"
+        assert "GHOST" in findings[0].description
+
+    def test_no_ghost_when_duration_high(self):
+        """Agent with duration >10s should not be flagged even with low output."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-02-28T10:00:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="researcher",
+                pipeline_action="agent_invocation",
+                duration_ms=15000,
+                result_word_count=10,
+            ),
+        ]
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 0
+
+    def test_no_ghost_when_output_high(self):
+        """Agent with result_word_count >50 should not be flagged even if fast."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-02-28T10:00:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="implementer",
+                pipeline_action="agent_invocation",
+                duration_ms=5000,
+                result_word_count=200,
+            ),
+        ]
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 0
+
+    def test_ghost_skipped_when_duration_zero(self):
+        """Agent with duration_ms=0 (not recorded) should not be flagged."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-02-28T10:00:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="researcher",
+                pipeline_action="agent_invocation",
+                duration_ms=0,
+                result_word_count=10,
+            ),
+        ]
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 0
+
+    def test_custom_thresholds(self):
+        """Custom thresholds should be respected."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-02-28T10:00:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="planner",
+                pipeline_action="agent_invocation",
+                duration_ms=3000,
+                result_word_count=30,
+            ),
+        ]
+        # Default thresholds: 10000ms, 50 words -> this IS a ghost
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 1
+        # Tighter thresholds: 2000ms, 20 words -> NOT a ghost
+        findings = detect_ghost_invocations(events, max_duration_ms=2000, max_result_words=20)
+        assert len(findings) == 0
+
+    def test_ghost_integrated_in_validate_pipeline_intent(self, tmp_path):
+        """Ghost detection runs as part of validate_pipeline_intent."""
+        log_file = tmp_path / "ghost.jsonl"
+        entry = {
+            "timestamp": "2026-02-28T10:00:00+00:00",
+            "tool": "Agent",
+            "input_summary": {
+                "subagent_type": "researcher",
+                "pipeline_action": "agent_invocation",
+                "prompt_word_count": 500,
+            },
+            "output_summary": {"success": True, "result_word_count": 5},
+            "session_id": "test-session",
+            "agent": "main",
+            "duration_ms": 2000,
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+        findings = validate_pipeline_intent(log_file, session_id="test-session")
+        ghost_findings = [f for f in findings if f.finding_type == "ghost_invocation"]
+        assert len(ghost_findings) == 1
 
 
 class TestDataStructures:

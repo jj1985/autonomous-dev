@@ -101,6 +101,18 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/session_activity_logger.py",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "matcher": "*",

@@ -45,7 +45,7 @@ Includes Intent-Level Pipeline Validation via `pipeline_intent_validator` (step 
 Context is passed in your prompt — do NOT parse log files.
 
 1. **Check agents**: From the context provided, verify all required agents ran. List any missing.
-2. **Check speed**: Flag any agent that completed in <10s with zero file reads.
+2. **Check speed**: Flag any agent that completed in <10s with zero file reads. Ghost invocation: duration <10s AND result_word_count <50 → [GHOST]
 3. **Check errors**: Note any obvious errors or failures from the context.
 
 **Output format**:
@@ -86,6 +86,7 @@ The `subagent_type` field in JSONL log entries identifies which pipeline agent r
 From the parsed data, check:
 - Missing agents from the expected pipeline
 - HARD GATE violations (test failures before STEP 6, anti-stubbing)
+- Ghost invocations: duration <10s AND result_word_count <50 → [GHOST] (detected by `detect_ghost_invocations()`)
 - Agents with suspiciously short duration and zero file operations
 - Hook layers with zero entries (when registered): PreToolUse, PostToolUse, UserPromptSubmit, Stop
 

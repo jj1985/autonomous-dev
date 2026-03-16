@@ -69,6 +69,30 @@
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 plugins/autonomous-dev/hooks/unified_prompt_validator.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SANDBOX_ENABLED=false MCP_AUTO_APPROVE=true python3 plugins/autonomous-dev/hooks/unified_pre_tool.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",
@@ -77,6 +101,18 @@
             "type": "command",
             "command": "python3 plugins/autonomous-dev/hooks/session_activity_logger.py",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 plugins/autonomous-dev/hooks/session_activity_logger.py",
+            "timeout": 3
           }
         ]
       }

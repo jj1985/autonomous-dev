@@ -36,6 +36,7 @@ class PipelineEvent:
     pipeline_action: str
     prompt_word_count: int = 0
     result_word_count: int = 0
+    duration_ms: int = 0
     success: bool = True
 
 
@@ -144,6 +145,7 @@ def parse_session_logs(
                 pipeline_action=pipeline_action,
                 prompt_word_count=input_summary.get("prompt_word_count", 0),
                 result_word_count=output_summary.get("result_word_count", 0),
+                duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
             ))
         elif tool == "Bash" and pipeline_action == "test_run":
@@ -153,6 +155,7 @@ def parse_session_logs(
                 agent=entry.get("agent", "main"),
                 subagent_type="",
                 pipeline_action="test_run",
+                duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
             ))
 
@@ -422,6 +425,56 @@ def detect_parallelization_violations(events: List[PipelineEvent]) -> List[Findi
     return findings
 
 
+def detect_ghost_invocations(
+    events: List[PipelineEvent],
+    *,
+    max_duration_ms: int = 10000,
+    max_result_words: int = 50,
+) -> List[Finding]:
+    """Detect ghost invocations: agent calls that completed too fast with minimal output.
+
+    A ghost invocation is an agent call with duration < max_duration_ms AND
+    result_word_count < max_result_words, suggesting the agent did not actually
+    perform meaningful work.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+        max_duration_ms: Maximum duration in milliseconds to consider suspicious.
+        max_result_words: Maximum result word count to consider suspicious.
+
+    Returns:
+        List of findings for ghost invocations.
+    """
+    findings: List[Finding] = []
+
+    agent_events = [
+        e for e in events
+        if e.tool in AGENT_TOOL_NAMES and e.subagent_type
+    ]
+
+    for event in agent_events:
+        # Both conditions must be true: fast AND low output
+        if event.duration_ms > 0 and event.duration_ms < max_duration_ms and event.result_word_count < max_result_words:
+            findings.append(Finding(
+                finding_type="ghost_invocation",
+                severity="WARNING",
+                pattern_id="ghost_invocation",
+                description=(
+                    f"Agent {event.subagent_type} completed in {event.duration_ms}ms "
+                    f"with only {event.result_word_count} result words "
+                    f"(thresholds: <{max_duration_ms}ms, <{max_result_words} words) [GHOST]"
+                ),
+                evidence=[
+                    f"subagent_type: {event.subagent_type}",
+                    f"duration_ms: {event.duration_ms}",
+                    f"result_word_count: {event.result_word_count}",
+                    f"timestamp: {event.timestamp}",
+                ],
+            ))
+
+    return findings
+
+
 def validate_pipeline_intent(
     log_path: Path,
     *,
@@ -445,4 +498,5 @@ def validate_pipeline_intent(
     findings.extend(detect_hard_gate_ordering(events))
     findings.extend(detect_context_dropping(events))
     findings.extend(detect_parallelization_violations(events))
+    findings.extend(detect_ghost_invocations(events))
     return findings

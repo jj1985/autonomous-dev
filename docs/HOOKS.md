@@ -1,6 +1,6 @@
 # Automation Hooks Reference
 
-**Last Updated**: 2026-02-14
+**Last Updated**: 2026-03-17
 **Location**: `plugins/autonomous-dev/hooks/`
 
 See [CLAUDE.md](../CLAUDE.md) for current counts. See [HOOK-REGISTRY.md](HOOK-REGISTRY.md) for environment variables and activation status.
@@ -36,12 +36,13 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
 | **unified_prompt_validator.py** | Workflow bypass detection + quality nudges | ENFORCE_WORKFLOW, QUALITY_NUDGE_ENABLED |
+| **session_activity_logger.py** | Captures user prompt preview + length into session JSONL log. Pins session start date. Non-blocking. | ACTIVITY_LOGGING |
 
 ### PreToolUse
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval). 84% reduction in permission prompts. | SANDBOX_ENABLED, MCP_AUTO_APPROVE |
+| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval). 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). | SANDBOX_ENABLED, MCP_AUTO_APPROVE |
 
 **unified_pre_tool.py Native Tool Fast Path** (v4.1.0+):
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip all validation layers
@@ -80,7 +81,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Non-blocking. | — |
+| **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Handles PostToolUse (tool calls) and UserPromptSubmit (user prompts). Session date pinned on first activity to prevent midnight log splits. Non-blocking. | ACTIVITY_LOGGING |
 
 ### Stop
 

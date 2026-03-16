@@ -40,6 +40,9 @@ from pathlib import Path
 
 import time
 
+# In-process cache for session date (avoids repeated file reads within same invocation)
+_SESSION_DATE_CACHE: dict = {}
+
 
 def main():
     """Log tool call activity to structured JSONL."""
@@ -92,7 +95,32 @@ def main():
 
             log_dir = _find_log_dir()
             log_dir.mkdir(parents=True, exist_ok=True)
-            date_str = datetime.now().strftime("%Y-%m-%d")
+            session_id = os.environ.get("CLAUDE_SESSION_ID", hook_input.get("session_id", "unknown"))
+            date_str = _get_session_date(session_id)
+            log_file = log_dir / f"{date_str}.jsonl"
+            with open(log_file, "a") as f:
+                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+            sys.exit(0)
+
+        # UserPromptSubmit: capture user prompt activity
+        if hook_event == "UserPromptSubmit":
+            user_prompt = hook_input.get("user_prompt", "")
+            if not user_prompt:
+                sys.exit(0)
+
+            session_id = os.environ.get("CLAUDE_SESSION_ID", hook_input.get("session_id", "unknown"))
+            entry = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "hook": "UserPromptSubmit",
+                "prompt_preview": user_prompt[:500],
+                "prompt_length": len(user_prompt),
+                "session_id": session_id,
+                "agent": os.environ.get("CLAUDE_AGENT_NAME", "main"),
+            }
+
+            log_dir = _find_log_dir()
+            log_dir.mkdir(parents=True, exist_ok=True)
+            date_str = _get_session_date(session_id)
             log_file = log_dir / f"{date_str}.jsonl"
             with open(log_file, "a") as f:
                 f.write(json.dumps(entry, separators=(",", ":")) + "\n")
@@ -135,7 +163,8 @@ def main():
         log_dir = _find_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
+        date_str = _get_session_date(session_id)
         log_file = log_dir / f"{date_str}.jsonl"
 
         with open(log_file, "a") as f:
@@ -235,6 +264,52 @@ def _add_result_word_count(tool_name: str, tool_output: dict, summary: dict) -> 
             output_text = tool_output
         summary["result_word_count"] = len(output_text.split()) if output_text else 0
     return summary
+
+
+def _get_session_date(session_id: str) -> str:
+    """Get the pinned date for a session, preventing cross-midnight mislabeling.
+
+    Each session gets a date pinned on first activity. If the session spans
+    midnight, all entries still use the original date so they land in the
+    same log file.
+
+    Uses a small file for persistence across subprocess invocations, with
+    an in-process cache to avoid repeated file reads.
+
+    Args:
+        session_id: The Claude session identifier.
+
+    Returns:
+        Date string in YYYY-MM-DD format.
+    """
+    # Check in-process cache first
+    if session_id in _SESSION_DATE_CACHE:
+        return _SESSION_DATE_CACHE[session_id]
+
+    # Check for session date file
+    log_dir = _find_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    date_file = log_dir / f".session_date_{session_id}"
+
+    try:
+        if date_file.exists():
+            stored_date = date_file.read_text().strip()
+            # Validate freshness: if file is older than 24 hours, start fresh
+            file_age_seconds = time.time() - date_file.stat().st_mtime
+            if file_age_seconds < 86400 and stored_date:
+                _SESSION_DATE_CACHE[session_id] = stored_date
+                return stored_date
+    except Exception:
+        pass
+
+    # Fall back to current date and persist it
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    try:
+        date_file.write_text(date_str)
+    except Exception:
+        pass
+    _SESSION_DATE_CACHE[session_id] = date_str
+    return date_str
 
 
 def _find_log_dir() -> Path:

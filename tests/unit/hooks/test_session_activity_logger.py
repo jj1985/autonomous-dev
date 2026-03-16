@@ -339,6 +339,103 @@ class TestMainStopHook:
         assert "message" in entry
 
 
+class TestMainUserPromptSubmit:
+    """Test main function with UserPromptSubmit events."""
+
+    def test_user_prompt_logged(self, tmp_path):
+        """UserPromptSubmit logs prompt preview and length."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "user_prompt": "implement JWT authentication feature",
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "prompt123"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit) as exc_info:
+                        sal.main()
+                    assert exc_info.value.code == 0
+
+        log_files = list(log_dir.glob("*.jsonl"))
+        assert len(log_files) == 1
+        entry = json.loads(log_files[0].read_text().strip())
+        assert entry["hook"] == "UserPromptSubmit"
+        assert entry["prompt_preview"] == "implement JWT authentication feature"
+        assert entry["prompt_length"] == len("implement JWT authentication feature")
+        assert entry["session_id"] == "prompt123"
+
+    def test_user_prompt_preview_truncated(self, tmp_path):
+        """Long user prompts should be truncated to 500 chars in preview."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        long_prompt = "x" * 1000
+        hook_input = json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "user_prompt": long_prompt,
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "long123"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit) as exc_info:
+                        sal.main()
+                    assert exc_info.value.code == 0
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        assert len(entry["prompt_preview"]) == 500
+        assert entry["prompt_length"] == 1000
+
+    def test_user_prompt_empty_skipped(self):
+        """Empty user prompt should exit early without logging."""
+        hook_input = json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+            "user_prompt": "",
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with pytest.raises(SystemExit) as exc_info:
+                    sal.main()
+                assert exc_info.value.code == 0
+
+    def test_user_prompt_missing_key_skipped(self):
+        """Missing user_prompt key should exit early without logging."""
+        hook_input = json.dumps({
+            "hook_event_name": "UserPromptSubmit",
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with pytest.raises(SystemExit) as exc_info:
+                    sal.main()
+                assert exc_info.value.code == 0
+
+
+class TestSessionDatePinning:
+    """Test _get_session_date cross-midnight session date pinning."""
+
+    def test_returns_date_string(self, tmp_path):
+        """_get_session_date returns a YYYY-MM-DD date string."""
+        sal._SESSION_DATE_CACHE.clear()
+        with patch("session_activity_logger._find_log_dir", return_value=tmp_path):
+            date_str = sal._get_session_date("test-session-1")
+        assert len(date_str) == 10
+        assert date_str[4] == "-" and date_str[7] == "-"
+
+    def test_pinned_date_persists(self, tmp_path):
+        """Same session ID returns same date even if called again."""
+        sal._SESSION_DATE_CACHE.clear()
+        with patch("session_activity_logger._find_log_dir", return_value=tmp_path):
+            date1 = sal._get_session_date("persist-session")
+            date2 = sal._get_session_date("persist-session")
+        assert date1 == date2
+
+    def test_date_file_created(self, tmp_path):
+        """Session date file is created in the log directory."""
+        sal._SESSION_DATE_CACHE.clear()
+        with patch("session_activity_logger._find_log_dir", return_value=tmp_path):
+            sal._get_session_date("file-check-session")
+        date_file = tmp_path / ".session_date_file-check-session"
+        assert date_file.exists()
+        assert len(date_file.read_text().strip()) == 10
+
+
 class TestJsonFormat:
     """Test that log entries are valid compact JSON."""
 

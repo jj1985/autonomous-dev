@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+### Fixed
+
+- **Settings templates: all now register all 4 hook lifecycle layers** — Five settings templates (default, granular-bash, permission-batching, global_settings_template, and one more) were missing `UserPromptSubmit` and/or `Stop` hooks. All templates now consistently register `UserPromptSubmit` (prompt routing), `PreToolUse` (permission validation), `PostToolUse` (activity logging), and `Stop` (quality gate). Previously some templates silently dropped prompt validation and session end logging.
+
+- **session_activity_logger: UserPromptSubmit handler + session date pinning** — The logger now captures user prompts (preview + length) as `UserPromptSubmit` entries, making session logs complete from prompt to tool calls to response. Added `_get_session_date()` which pins each session to its start date using a small sidecar file — preventing midnight crossings from splitting a long session across two log files and breaking per-session analysis.
+
+- **unified_pre_tool: git bypass detection** — Added `_detect_git_bypass()` to block dangerous git flag combinations before they execute: `--no-verify` on commit/push/merge, `--force`/`-f` on push, `git reset --hard`, `git clean -f`/`-fd`, and the `-n` shorthand. Handles pipes by only parsing the first command segment. Previously these bypasses could silently skip pre-commit hooks and force-push to protected branches.
+
+- **pipeline_intent_validator: ghost invocation detection** — Added `detect_ghost_invocations()` which flags agent calls completing in under 10 seconds with fewer than 50 result words. Also added `duration_ms` field to `PipelineEvent` (populated from JSONL log entries) so timing data flows through to all validation checks. Ghost invocations indicate an agent was invoked but did no real work — a silent failure mode where the pipeline appears complete but key steps were skipped.
+
+- **continuous-improvement-analyst: explicit ghost invocation criteria** — Batch mode check for fast agents now includes the exact ghost detection rule (duration <10s AND result_word_count <50 → [GHOST]) matching the library implementation. Full mode now explicitly lists ghost invocations in the bypass check list with a reference to `detect_ghost_invocations()`. Aligns the agent's written criteria with the library's actual detection thresholds.
+
 ### Added
 
 - **Continuous-improvement-analyst agent rewrite: two-mode automation QA** (Issue #394)
