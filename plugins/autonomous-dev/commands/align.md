@@ -5,6 +5,8 @@ argument-hint: "[--project | --docs | --retrofit] [--dry-run] [--auto]"
 version: 3.1.0
 category: core
 allowed-tools: [Task, Read, Write, Edit, Grep, Glob]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # /align - Unified Alignment Command

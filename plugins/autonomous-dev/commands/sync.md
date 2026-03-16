@@ -3,6 +3,8 @@ name: sync
 description: "Sync plugin files (--github default, --env, --marketplace, --plugin-dev, --all, --uninstall)"
 argument-hint: "--github | --env | --marketplace | --plugin-dev | --all | --uninstall [--force]"
 allowed-tools: [Bash]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 Do NOT fetch any URLs or documentation. Execute the script below directly.

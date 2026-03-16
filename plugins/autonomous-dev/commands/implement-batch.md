@@ -2,7 +2,8 @@
 name: implement-batch
 description: Batch processing mode for /implement command
 version: 1.0.0
-internal: true
+disable-model-invocation: true
+user-invocable: false
 ---
 
 # BATCH FILE MODE

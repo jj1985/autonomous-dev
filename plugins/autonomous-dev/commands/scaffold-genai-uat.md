@@ -3,6 +3,8 @@ name: scaffold-genai-uat
 description: "Scaffold GenAI UAT tests (LLM-as-judge) into the current repo"
 argument-hint: "[--force] [--skip-congruence]"
 allowed-tools: [Task, Read, Write, Edit, Bash, Grep, Glob]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # /scaffold-genai-uat - GenAI UAT Test Scaffolding

@@ -3,6 +3,8 @@ name: advise
 description: Critical thinking analysis - validates alignment, challenges assumptions, identifies risks
 argument-hint: Proposal or decision to analyze (e.g., "Add Redis for caching")
 allowed-tools: [Task, Read, Grep, Glob, WebSearch, WebFetch]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # Critical Thinking Analysis

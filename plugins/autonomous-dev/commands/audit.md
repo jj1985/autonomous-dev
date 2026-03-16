@@ -3,6 +3,8 @@ name: audit
 description: Comprehensive quality audit - code quality, documentation, coverage, security
 argument-hint: Optional flags - --quick, --security, --docs, --code, --claude, --tests, --genai
 allowed-tools: [Task, Read, Grep, Glob]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # Comprehensive Quality Audit

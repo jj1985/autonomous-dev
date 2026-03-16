@@ -3,6 +3,8 @@ name: mem-search
 description: Search past observations and context from claude-mem persistent memory
 argument-hint: Search query (e.g., "authentication patterns" or "error handling")
 allowed-tools: [Bash, Read]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # Search claude-mem Persistent Memory

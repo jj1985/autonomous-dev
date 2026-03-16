@@ -3,6 +3,8 @@ name: health-check
 description: Validate all plugin components are working correctly (agents, hooks, commands)
 argument-hint: "[--verbose]"
 allowed-tools: [Read, Bash, Grep, Glob]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 ## Implementation

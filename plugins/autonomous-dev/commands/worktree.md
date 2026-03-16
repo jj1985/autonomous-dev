@@ -3,6 +3,8 @@ name: worktree
 description: "Manage git worktrees (--list default, --status, --review, --merge, --discard)"
 argument-hint: "Optional flags: --list (default), --status FEATURE, --review FEATURE, --merge FEATURE, --discard FEATURE"
 allowed-tools: [Task, Read, Write, Bash, Grep, Glob]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 ## Implementation

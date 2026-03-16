@@ -3,6 +3,8 @@ name: setup
 description: Interactive setup wizard - analyzes tech stack, generates PROJECT.md, configures hooks
 argument-hint: "[--project-dir <path>]"
 allowed-tools: [Task, Read, Write, Bash, Grep, Glob]
+disable-model-invocation: true
+user-invocable: true
 ---
 
 # /setup - Project Initialization Wizard
