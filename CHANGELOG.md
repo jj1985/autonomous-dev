@@ -186,6 +186,13 @@
 
 ### Changed
 
+- **Refactored `/implement` from 384-line inline to 143-line thin coordinator** (Issue #444)
+  - Delegates specialist work to agents via Agent tool instead of running inline steps
+  - All HARD GATEs preserved: test gate, hook registration, doc congruence, STEP 9 mandatory
+  - 63% context reduction in main conversation window per pipeline run
+  - Added Agent to allowed-tools (was: Task); added two new FORBIDDEN items to coordinator list
+  - New tests: `tests/unit/test_implement_command_structure.py`, `tests/genai/test_acceptance_implement_thin_coordinator.py`
+
 - **Batch worktree cleanup CWD protection** (Issue #410)
   - Fixed critical bug where deleting a worktree while shell CWD is inside it bricks the shell session
   - `cleanup_worktree()` now checks if current working directory is inside the worktree before deletion

@@ -43,13 +43,19 @@ class TestIssue206TestGateHardGate:
         step5_section = content.split("### STEP 5:")[1].split("### STEP 5.5")[0]
         assert "0 failures" in step5_section, "Regression #206: must require 0 failures"
 
-    def test_implement_md_step5_has_three_resolutions(self):
-        """STEP 5 must offer three resolution options: fix, skip, adjust."""
+    def test_implement_md_step5_has_resolutions(self):
+        """STEP 5 must offer fix/adjust resolutions and explicitly forbid skip.
+
+        Updated by Issue #364 (testing pipeline redesign): 'Skip it' was removed
+        as a resolution option. Skip is now explicitly FORBIDDEN via No New Skips
+        HARD GATE. Issue #206's core requirement (prevent test gate bypass) is
+        still enforced — just without listing skip as an option.
+        """
         content = (PLUGIN_DIR / "commands" / "implement.md").read_text()
         step5_section = content.split("### STEP 5:")[1].split("### STEP 5.5")[0]
         assert "Fix it" in step5_section, "Regression #206: must offer 'Fix it' resolution"
-        assert "Skip it" in step5_section, "Regression #206: must offer 'Skip it' resolution"
         assert "Adjust it" in step5_section, "Regression #206: must offer 'Adjust it' resolution"
+        assert "skip" in step5_section.lower(), "Regression #206: must reference skip (as forbidden)"
 
     def test_implement_md_step5_blocks_step6(self):
         """STEP 5 must explicitly block progression to STEP 6."""
