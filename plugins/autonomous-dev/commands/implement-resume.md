@@ -2,7 +2,6 @@
 name: implement-resume
 description: Resume mode for /implement command
 version: 1.0.0
-disable-model-invocation: true
 user-invocable: false
 ---
 

@@ -3,7 +3,6 @@ name: implement
 description: "Smart code implementation with full pipeline and batch modes"
 argument-hint: "<feature> | --batch <file> | --issues <nums> | --resume <id>"
 allowed-tools: [Agent, Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch]
-disable-model-invocation: true
 user-invocable: true
 ---
 

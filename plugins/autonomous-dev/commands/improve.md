@@ -3,7 +3,6 @@ name: improve
 description: "Analyze recent sessions for improvement opportunities"
 argument-hint: "[--auto-file] [--session <id>] [--date YYYY-MM-DD]"
 allowed-tools: [Task, Read, Bash, Glob, Grep]
-disable-model-invocation: true
 user-invocable: true
 ---
 
