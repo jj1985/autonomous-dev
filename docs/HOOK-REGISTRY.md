@@ -41,7 +41,9 @@ The plugin uses 17 active hooks (files on disk in `plugins/autonomous-dev/hooks/
 | validate_command_file_ops | PreToolUse | Enabled | Validate command file operations |
 | validate_project_alignment | PreCommit | Enabled | Validate PROJECT.md alignment |
 | validate_session_quality | Stop | Enabled | Validate session quality and completeness |
+| plan_mode_exit_detector | PostToolUse | Enabled | Detect ExitPlanMode calls and write marker to enforce /implement or /create-issue routing |
 | session_activity_logger | PostToolUse | Enabled | Structured JSONL activity logging for continuous improvement |
+| task_completed_handler | TaskCompleted | Enabled | Log task completion events to activity JSONL for pipeline observability |
 | genai_utils | Utility | Library | GenAI utilities for OpenRouter API calls |
 | genai_prompts | Utility | Library | Prompt templates for GenAI validation |
 | setup | Utility | Command | Setup wizard for PROJECT.md creation |
@@ -66,6 +68,7 @@ Runs after tool execution (non-blocking, informational).
 
 | Hook | Status | Key Env Vars | Purpose |
 |------|--------|--------------|---------|
+| plan_mode_exit_detector | Enabled | — | Detect ExitPlanMode tool calls and write `.claude/plan_mode_exit.json` marker; consumed by unified_prompt_validator to enforce /implement or /create-issue before raw edits |
 | post_file_move | Enabled | - | Track file moves for documentation updates |
 | auto_update_docs | Enabled | AUTO_UPDATE_DOCS (default: true) | Detect API changes and sync docs |
 | auto_add_to_regression | Opt-in (default: false) | AUTO_ADD_REGRESSION | Auto-create regression tests |
@@ -126,6 +129,14 @@ Runs after every turn/response completes (cannot block, informational only).
 | Hook | Status | Key Env Vars | Purpose |
 |------|--------|--------------|---------|
 | stop_quality_gate | Enabled | ENFORCE_QUALITY_GATE (default: true) | Run quality checks and provide feedback; stricter enforcement in autonomous-dev (#271) |
+
+### TaskCompleted Hooks
+
+Runs when a task completes (non-blocking, informational only). Must always exit 0.
+
+| Hook | Status | Key Env Vars | Purpose |
+|------|--------|--------------|---------|
+| task_completed_handler | Enabled | — | Log task completion events (task_id, subject, description, teammate, team) to daily activity JSONL. Preparation handler for future Agent-tool task visibility. |
 
 ### SessionStart Hooks
 
@@ -342,6 +353,7 @@ Consolidated into unified hooks:
 | **PreCommit** | Runs before git commit | Before git commit completes | Yes (EXIT_BLOCK = 2 blocks commit) |
 | **SubagentStop** | Runs when subagent completes | After agent like implementer, doc-master finishes | Yes (EXIT_BLOCK = 2 prevents agent exit) |
 | **Stop** | Runs after every turn/response | After Claude completes response | No (informational only, cannot block) |
+| **TaskCompleted** | Runs when a task completes | After a task (TaskUpdate) finishes | No (informational only, must exit 0) |
 | **SessionStart** | Runs when session starts | When Claude Code starts or /clear | No (initialization only) |
 | **PreSubagent** | Runs before subagent starts | Before spawning implementer, test-master, etc. | Yes (EXIT_BLOCK = 2 prevents agent spawn) |
 

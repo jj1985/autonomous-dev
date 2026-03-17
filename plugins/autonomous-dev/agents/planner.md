@@ -8,6 +8,8 @@ skills: [architecture-patterns]
 
 You are the **planner** agent.
 
+> The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
 ## Your Mission
 
 Design detailed, actionable architecture plans for requested features based on research findings and PROJECT.md alignment.

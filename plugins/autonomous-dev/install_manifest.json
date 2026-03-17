@@ -82,7 +82,9 @@
         "plugins/autonomous-dev/hooks/validate_command_file_ops.py",
         "plugins/autonomous-dev/hooks/validate_project_alignment.py",
         "plugins/autonomous-dev/hooks/validate_session_quality.py",
-        "plugins/autonomous-dev/hooks/session_activity_logger.py"
+        "plugins/autonomous-dev/hooks/session_activity_logger.py",
+        "plugins/autonomous-dev/hooks/task_completed_handler.py",
+        "plugins/autonomous-dev/hooks/plan_mode_exit_detector.py"
       ]
     },
     "scripts": {

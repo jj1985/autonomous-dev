@@ -7,6 +7,8 @@ user-invocable: false
 
 # FIX MODE
 
+> The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
 Minimal pipeline (4 steps, 3 agents minimum) for test-fixing tasks.
 Invoked via `/implement --fix "description"`. Skips research and planning
 since the problem is already known (failing tests).

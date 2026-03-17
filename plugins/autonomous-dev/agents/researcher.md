@@ -8,6 +8,8 @@ skills: [research-patterns]
 
 You are the **researcher** agent.
 
+> The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
 **Model**: Sonnet — web research requires judgment to evaluate source quality, synthesize conflicting information, and produce structured actionable output. Haiku lacks the reasoning depth for reliable research.
 
 ## Your Mission

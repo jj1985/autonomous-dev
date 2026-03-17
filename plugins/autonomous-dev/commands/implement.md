@@ -8,6 +8,8 @@ user-invocable: true
 
 # /implement — Thin Coordinator (Issue #444)
 
+> The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
 **You (Claude) are the coordinator.** Delegate specialist work to agents via the Agent tool. Each agent runs in isolated context — pass outputs from prior stages explicitly.
 
 | Mode | Flag | Description |
@@ -21,16 +23,16 @@ user-invocable: true
 
 ## Implementation
 
-**COORDINATOR FORBIDDEN LIST** (violations = pipeline failure):
-- ❌ Skipping any STEP (even under context pressure or time constraints)
-- ❌ Summarizing agent output instead of passing full results to next agent
-- ❌ Declaring "good enough" on failing tests (STEP 5 HARD GATE is absolute)
-- ❌ Running STEP 6 before STEP 5 test gate passes
-- ❌ Combining or parallelizing sequential steps (e.g., implementer + reviewer)
-- ❌ Treating STEP 8 as the final step (STEP 9 is mandatory)
-- ❌ Cleaning up pipeline state before STEP 9 launches
-- ❌ Writing implementation code yourself instead of delegating to agents
-- ❌ Containing detailed agent instructions inline — those belong in agents/*.md
+**COORDINATOR FORBIDDEN LIST** — You MUST NOT do any of the following (violations = pipeline failure):
+- ❌ You MUST NOT skip any STEP (even under context pressure or time constraints)
+- ❌ You MUST NOT summarize agent output instead of passing full results to next agent
+- ❌ You MUST NOT declare "good enough" on failing tests (STEP 5 HARD GATE is absolute)
+- ❌ You MUST NOT run STEP 6 before STEP 5 test gate passes
+- ❌ You MUST NOT combine or parallelize sequential steps (e.g., implementer + reviewer)
+- ❌ You MUST NOT treat STEP 8 as the final step (STEP 9 is mandatory)
+- ❌ You MUST NOT clean up pipeline state before STEP 9 launches
+- ❌ You MUST NOT write implementation code yourself instead of delegating to agents
+- ❌ You MUST NOT contain detailed agent instructions inline — those belong in agents/*.md
 
 ARGUMENTS: {{ARGUMENTS}}
 
@@ -111,11 +113,11 @@ For EACH failure, you MUST choose one:
 
 **HARD GATE: No New Skips** — Adding `@pytest.mark.skip` is FORBIDDEN. 0 new skips allowed. Skip count is tracked across sessions via `coverage_baseline.check_skip_regression()`. If the current skip count exceeds the baseline, the quality gate BLOCKS.
 
-**FORBIDDEN** (coverage/skip violations):
-- Adding `@pytest.mark.skip` to any test (0 new skips, enforced by baseline comparison)
-- Letting coverage drop more than 0.5% below baseline (enforced by `coverage_baseline.check_coverage_regression()`)
-- Declaring coverage loss "acceptable" or "minor"
-- Proceeding to STEP 6 when `step5_quality_gate.run_quality_gate()` returns `passed=False`
+**FORBIDDEN** — You MUST NOT do any of the following (coverage/skip violations):
+- ❌ You MUST NOT add `@pytest.mark.skip` to any test (0 new skips, enforced by baseline comparison)
+- ❌ You MUST NOT let coverage drop more than 0.5% below baseline (enforced by `coverage_baseline.check_coverage_regression()`)
+- ❌ You MUST NOT declare coverage loss "acceptable" or "minor"
+- ❌ You MUST NOT proceed to STEP 6 when `step5_quality_gate.run_quality_gate()` returns `passed=False`
 
 Loop until **0 failures, 0 errors**. Do NOT proceed to STEP 6 with any failures.
 
@@ -159,11 +161,11 @@ If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipp
 
 **REQUIRED**: **Agent**(subagent_type="continuous-improvement-analyst", model="sonnet", run_in_background=true) — Examines session logs for bypasses, test drift, pipeline completeness.
 
-**FORBIDDEN** (violations = pipeline failure):
-- ❌ Skipping STEP 9 for any reason (time pressure, context limits, "already reported")
-- ❌ Cleaning up pipeline state before launching the analyst
-- ❌ Inlining the analysis yourself instead of invoking the agent
-- ❌ Treating STEP 8 as the final step — STEP 9 is mandatory
+**FORBIDDEN** — You MUST NOT do any of the following (violations = pipeline failure):
+- ❌ You MUST NOT skip STEP 9 for any reason (time pressure, context limits, "already reported")
+- ❌ You MUST NOT clean up pipeline state before launching the analyst
+- ❌ You MUST NOT inline the analysis yourself instead of invoking the agent
+- ❌ You MUST NOT treat STEP 8 as the final step — STEP 9 is mandatory
 
 After launching analyst, cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib'); from pipeline_state import cleanup_pipeline; cleanup_pipeline('RUN_ID')" 2>/dev/null || true`
 

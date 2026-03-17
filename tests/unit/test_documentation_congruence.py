@@ -79,52 +79,52 @@ class TestVersionConsistency:
 # ---------------------------------------------------------------------------
 
 class TestComponentCounts:
-    """CLAUDE.md component counts must match reality."""
+    """ARCHITECTURE-OVERVIEW.md component counts must match reality."""
 
     @pytest.fixture
     def claude_md(self) -> str:
-        return _read(ROOT / "CLAUDE.md")
+        return _read(ROOT / "docs" / "ARCHITECTURE-OVERVIEW.md")
 
     def test_active_agent_count(self, claude_md):
         actual = _count_files(PLUGIN / "agents", "*.md", exclude_dirs=["archived"])
         documented = _extract_number(claude_md, r"(\d+)\s+agents?\s*\(")
-        assert documented is not None, "CLAUDE.md missing agent count"
+        assert documented is not None, "Docs missing agent count"
         assert actual == documented, (
-            f"Active agents: {actual} on disk, {documented} in CLAUDE.md"
+            f"Active agents: {actual} on disk, {documented} in docs"
         )
 
     def test_archived_agent_count(self, claude_md):
         actual = _count_files(PLUGIN / "agents" / "archived", "*.md")
         documented = _extract_number(claude_md, r"\((\d+)\s+archived\)")
-        assert documented is not None, "CLAUDE.md missing archived agent count"
+        assert documented is not None, "Docs missing archived agent count"
         assert actual == documented, (
-            f"Archived agents: {actual} on disk, {documented} in CLAUDE.md"
+            f"Archived agents: {actual} on disk, {documented} in docs"
         )
 
     def test_skill_count(self, claude_md):
         actual = sum(1 for _ in PLUGIN.glob("skills/*/SKILL.md")
                      if "archived" not in str(_))
         documented = _extract_number(claude_md, r"(\d+)\s+skills?")
-        assert documented is not None, "CLAUDE.md missing skill count"
+        assert documented is not None, "Docs missing skill count"
         assert actual == documented, (
-            f"Skills: {actual} on disk, {documented} in CLAUDE.md"
+            f"Skills: {actual} on disk, {documented} in docs"
         )
 
     def test_command_count(self, claude_md):
         actual = _count_files(PLUGIN / "commands", "*.md", exclude_dirs=["archived"])
         documented = _extract_number(claude_md, r"(\d+)\s+active commands?")
-        assert documented is not None, "CLAUDE.md missing command count"
+        assert documented is not None, "Docs missing command count"
         assert actual == documented, (
-            f"Commands: {actual} on disk, {documented} in CLAUDE.md"
+            f"Commands: {actual} on disk, {documented} in docs"
         )
 
     def test_library_count(self, claude_md):
         actual = sum(1 for _ in (PLUGIN / "lib").rglob("*.py")
                      if "__pycache__" not in str(_))
         documented = _extract_number(claude_md, r"(\d+)\s+libraries")
-        assert documented is not None, "CLAUDE.md missing library count"
+        assert documented is not None, "Docs missing library count"
         assert actual == documented, (
-            f"Libraries: {actual} on disk, {documented} in CLAUDE.md"
+            f"Libraries: {actual} on disk, {documented} in docs"
         )
 
     def test_active_hook_count(self, claude_md):
@@ -132,9 +132,9 @@ class TestComponentCounts:
         sh = _count_files(PLUGIN / "hooks", "*.sh", exclude_dirs=["archived"])
         actual = py + sh
         documented = _extract_number(claude_md, r"(\d+)\s+active hooks?")
-        assert documented is not None, "CLAUDE.md missing hook count"
+        assert documented is not None, "Docs missing hook count"
         assert actual == documented, (
-            f"Active hooks: {actual} on disk ({py} py + {sh} sh), {documented} in CLAUDE.md"
+            f"Active hooks: {actual} on disk ({py} py + {sh} sh), {documented} in docs"
         )
 
     def test_archived_hook_count(self, claude_md):
@@ -143,9 +143,9 @@ class TestComponentCounts:
                      if f.suffix in (".py", ".sh") and not f.name.endswith(",cover"))
         # Extract from pattern like "21 active hooks (62 archived)"
         documented = _extract_number(claude_md, r"hooks?\s*\((\d+)\s+archived\)")
-        assert documented is not None, "CLAUDE.md missing archived hook count"
+        assert documented is not None, "Docs missing archived hook count"
         assert actual == documented, (
-            f"Archived hooks: {actual} on disk, {documented} in CLAUDE.md"
+            f"Archived hooks: {actual} on disk, {documented} in docs"
         )
 
     def test_template_count(self):
@@ -224,7 +224,7 @@ class TestPipelineConsistency:
     def test_claude_md_says_8_steps(self):
         text = _read(ROOT / "CLAUDE.md")
         m = re.search(r"(\d+)-step\s+SDLC", text)
-        assert m, "CLAUDE.md missing N-step SDLC description"
+        assert m, "Docs missing N-step SDLC description"
         assert m.group(1) == "8", (
             f"CLAUDE.md says {m.group(1)}-step pipeline, should be 8"
         )
