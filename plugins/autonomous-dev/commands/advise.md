@@ -2,26 +2,156 @@
 name: advise
 description: Critical thinking analysis - validates alignment, challenges assumptions, identifies risks
 argument-hint: Proposal or decision to analyze (e.g., "Add Redis for caching")
-allowed-tools: [Task, Read, Grep, Glob, WebSearch, WebFetch]
+allowed-tools: [Read, Grep, Glob, WebSearch, WebFetch]
 disable-model-invocation: false
 user-invocable: true
 ---
 
 # Critical Thinking Analysis
 
-Invoke the **advisor agent** to analyze proposals, validate alignment, and identify risks before implementation.
+Analyze proposals, validate alignment, and identify risks before implementation. Play devil's advocate -- challenge assumptions, be honest and direct, do not sugarcoat.
 
 ## Implementation
 
-Invoke the advisor agent with the user's proposal.
+You are the critical thinking advisor. Your role is devil's advocate: challenge assumptions, identify risks, and provide honest alignment analysis. Do NOT delegate to any agent or use the Task tool. Execute all steps inline.
 
 ARGUMENTS: {{ARGUMENTS}}
 
-Use the Task tool to invoke the advisor agent with subagent_type="advisor" and provide the proposal from ARGUMENTS.
+Follow these steps in order:
+
+### STEP 1: Read PROJECT.md
+
+```bash
+cat .claude/PROJECT.md
+```
+
+Read `.claude/PROJECT.md` to understand:
+- Strategic goals and objectives
+- Current scope and constraints
+- Architectural principles
+- What is explicitly out of scope
+
+If `.claude/PROJECT.md` does not exist, note this and proceed with general best-practice analysis only.
+
+### STEP 2: Analyze the Proposal
+
+Parse the proposal from ARGUMENTS above. Identify:
+- What is being proposed (the change)
+- Why it might be proposed (the motivation)
+- What assumptions are embedded in the proposal
+- What the proposal does NOT address
+
+If ARGUMENTS is empty, ask the user what proposal or decision they want analyzed.
+
+### STEP 3: Score Alignment
+
+Score how well the proposal aligns with PROJECT.md goals on a 0-10 scale:
+
+| Score | Meaning |
+|-------|---------|
+| 9-10 | Directly serves multiple strategic goals |
+| 7-8 | Clearly serves one strategic goal |
+| 5-6 | Tangentially related to goals |
+| 3-4 | Does not serve stated goals |
+| 0-2 | Works against stated principles or constraints |
+
+If no PROJECT.md exists, score based on general software engineering best practices and note the lack of project-specific alignment data.
+
+### STEP 4: Generate Alternatives
+
+For every proposal, generate at least three alternatives:
+1. **Simpler alternative**: A less complex way to achieve the same goal
+2. **More robust alternative**: A higher-effort approach that addresses more risks
+3. **Hybrid alternative**: A phased approach (start simple, evolve if needed)
+
+Use WebSearch if needed to research technology choices, trade-offs, or industry patterns relevant to the proposal.
+
+### STEP 5: Output Structured Recommendation
+
+Present the analysis using this exact format:
+
+```
+============================================================
+CRITICAL THINKING ANALYSIS
+============================================================
+
+PROPOSAL: [restate the proposal in one sentence]
+
+------------------------------------------------------------
+ALIGNMENT SCORE: [0-10] / 10
+------------------------------------------------------------
+[1-2 sentence justification referencing specific PROJECT.md goals]
+
+------------------------------------------------------------
+DECISION: [PROCEED | CAUTION | RECONSIDER | REJECT]
+------------------------------------------------------------
+
+Decision criteria:
+- PROCEED (8-10): Strong alignment, manageable risk, clear benefit
+- CAUTION (6-7): Partial alignment, notable risks to address first
+- RECONSIDER (3-5): Weak alignment, better alternatives exist
+- REJECT (0-2): Against project principles or massively out of scope
+
+------------------------------------------------------------
+COMPLEXITY ASSESSMENT
+------------------------------------------------------------
+- Estimated LOC: [range]
+- Files affected: [range]
+- Estimated time: [range]
+- Dependencies added: [list or "none"]
+- Breaking changes: [yes/no + details]
+
+------------------------------------------------------------
+PROS
+------------------------------------------------------------
+- [pro 1]
+- [pro 2]
+- [pro 3]
+
+------------------------------------------------------------
+CONS
+------------------------------------------------------------
+- [con 1]
+- [con 2]
+- [con 3]
+
+------------------------------------------------------------
+ALTERNATIVES
+------------------------------------------------------------
+
+1. SIMPLER: [description]
+   Trade-off: [what you gain vs lose]
+
+2. MORE ROBUST: [description]
+   Trade-off: [what you gain vs lose]
+
+3. HYBRID: [description]
+   Trade-off: [what you gain vs lose]
+
+------------------------------------------------------------
+RISK ASSESSMENT
+------------------------------------------------------------
+- [risk 1]: [likelihood high/medium/low] | [impact high/medium/low]
+- [risk 2]: [likelihood] | [impact]
+- [risk 3]: [likelihood] | [impact]
+
+Mitigation: [key mitigations for highest risks]
+
+============================================================
+NEXT STEPS
+============================================================
+
+Based on the [DECISION] recommendation:
+- [specific actionable next step 1]
+- [specific actionable next step 2]
+- [specific actionable next step 3]
+```
+
+Be direct. If the proposal is a bad idea, say so clearly. If it is a good idea, say that too -- but still identify the risks.
 
 ## What This Does
 
-You describe a proposal or decision point. The advisor agent will:
+You describe a proposal or decision point. This command will:
 
 1. Validate alignment with PROJECT.md goals, scope, and constraints
 2. Analyze complexity cost vs benefit
@@ -29,7 +159,7 @@ You describe a proposal or decision point. The advisor agent will:
 4. Suggest simpler alternatives
 5. Provide clear recommendation (PROCEED/CAUTION/RECONSIDER/REJECT)
 
-**Time**: 2-3 minutes
+**Time**: 1-2 minutes (executes inline, no subagent)
 
 ## Usage
 
@@ -45,7 +175,7 @@ You describe a proposal or decision point. The advisor agent will:
 
 ## Output
 
-The advisor provides:
+The analysis provides:
 
 - **Alignment Score** (0-10): How well proposal serves PROJECT.md goals
 - **Decision**: PROCEED / CAUTION / RECONSIDER / REJECT
@@ -64,16 +194,12 @@ Use `/advise` when making significant decisions:
 - Technology replacements (GraphQL vs REST, etc.)
 - Scale changes (handling 100K users, etc.)
 
-## Integration
-
-The **advisor-triggers** skill automatically suggests `/advise` when it detects significant decision patterns in your requests.
-
 ## Next Steps
 
 After receiving advice:
 
-1. **PROCEED**: Continue with `/plan` or `/auto-implement`
-2. **CAUTION**: Address concerns, then proceed
+1. **PROCEED**: Continue with `/implement`
+2. **CAUTION**: Address concerns, then proceed with `/implement`
 3. **RECONSIDER**: Evaluate alternatives before proceeding
 4. **REJECT**: Don't implement, or update PROJECT.md first
 
@@ -81,20 +207,20 @@ After receiving advice:
 
 | Command | Time | What It Does |
 |---------|------|--------------|
-| `/advise` | 2-3 min | Critical analysis (this command) |
-| `/research` | 2-5 min | Pattern and best practice research |
-| `/plan` | 3-5 min | Architecture planning |
-| `/auto-implement` | 20-30 min | Full pipeline |
+| `/advise` | 1-2 min | Critical analysis (this command) |
+| `/implement` | 20-30 min | Full SDLC pipeline |
+| `/align` | 1-2 min | PROJECT.md alignment check |
+| `/audit` | 2-5 min | Quality audit |
 
 ## Technical Details
 
-This command invokes the `advisor` agent with:
-- **Model**: Opus (deep reasoning for critical analysis)
-- **Tools**: Read, Grep, Glob, Bash, WebSearch, WebFetch
+This command executes inline -- Claude reads the instructions and follows them directly in conversation. No subagent is invoked.
+
+- **Tools**: Read, Grep, Glob, WebSearch, WebFetch
 - **Permissions**: Read-only analysis (cannot modify code)
 
 ---
 
 **Part of**: Core workflow commands
-**Related**: `/plan`, `/auto-implement`, advisor-triggers skill
+**Related**: `/implement`, `/align`, `/audit`
 **GitHub Issue**: #158

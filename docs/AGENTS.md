@@ -9,11 +9,11 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-15 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+13 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: commit-message-generator, continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, pr-description-generator, quality-validator, researcher, researcher-local, reviewer, security-auditor, test-coverage-auditor, test-master (+ project-progress-tracker utility)
+**Active Agents**: commit-message-generator, continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, quality-validator, researcher, researcher-local, reviewer, security-auditor, test-coverage-auditor, test-master
 
-**Archived Agents** (14, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, project-bootstrapper, project-status-analyzer, setup-wizard, sync-validator
+**Archived Agents** (16, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, setup-wizard, sync-validator
 
 ---
 
@@ -59,14 +59,13 @@ Maximum depth for security and complex analysis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Active Agents**: 15
-**Note**: 15 active agents, all under 3,000 token target
+**Total Active Agents**: 13
+**Note**: 13 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
 | Status | Agent | Tokens | Notes |
 |--------|-------|--------|-------|
-| ✅ | project-progress-tracker | 1,728 | OK |
 | ✅ | doc-master | 1,634 | OK |
 | ✅ | security-auditor | 1,231 | OK |
 | ✅ | issue-creator | 1,113 | OK |
@@ -77,7 +76,6 @@ Maximum depth for security and complex analysis:
 | ✅ | test-master | 677 | OK |
 | ✅ | reviewer | 623 | OK |
 | ✅ | continuous-improvement-analyst | 580 | OK |
-| ✅ | pr-description-generator | 549 | OK |
 | ✅ | test-coverage-auditor | 450 | OK |
 | ✅ | commit-message-generator | 444 | OK |
 | ✅ | quality-validator | 418 | OK |
@@ -85,13 +83,13 @@ Maximum depth for security and complex analysis:
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 15 active agents under 3,000 token target
+- All 13 active agents under 3,000 token target
 
 ---
 
-## Archived Agents (Issue #331, #411)
+## Archived Agents (Issue #331, #411, #471)
 
-14 agents have been archived and moved to `plugins/autonomous-dev/agents/archived/`:
+16 agents have been archived and moved to `plugins/autonomous-dev/agents/archived/`:
 
 - **orchestrator**: Meta-agent for workflow coordination (consolidated into unified /implement command)
 - **advisor**: Critical thinking and validation (consolidated, Issue #331)
@@ -107,6 +105,8 @@ Maximum depth for security and complex analysis:
 - **project-status-analyzer**: Real-time project health analysis (consolidated, Issue #331)
 - **setup-wizard**: Intelligent interactive setup (consolidated, Issue #331)
 - **sync-validator**: Smart dev sync validation (consolidated, Issue #331)
+- **pr-description-generator**: Pull request description generation (archived, Issue #471)
+- **project-progress-tracker**: Goal progress tracking (archived, Issue #471)
 
 ---
 
@@ -185,10 +185,11 @@ These agents execute the main autonomous development workflow and provide specia
 
 ### reviewer
 
-**Purpose**: Quality gate (code review)
+**Purpose**: Quality gate (code review) — read-only; reports issues, never modifies files
 **Model**: Haiku (Tier 1 - cost optimized for pattern-based code review)
 **Skills**: code-review, python-standards
 **Execution**: Step 5 of /implement workflow (parallel validation - 60% faster with Phase 7 optimization)
+**Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
 
 ### security-auditor
 
@@ -227,13 +228,6 @@ These agents execute the main autonomous development workflow and provide specia
 **Security**: Path validation (CWE-22), log injection prevention (CWE-117), input validation (CWE-20)
 **Output**: Structured JSON pipeline report with stage metrics, quality summary, and checkpoint state
 
-### advisor
-
-**Purpose**: Critical thinking and validation (v3.0+)
-**Model**: Opus (Tier 3 - maximum depth for risk analysis and trade-offs)
-**Skills**: semantic-validation, advisor-triggers, research-patterns
-**Execution**: Checkpoint validation during workflow
-
 ### quality-validator
 
 **Purpose**: GenAI-powered feature validation (v3.0+)
@@ -261,13 +255,6 @@ These agents provide specialized functionality for alignment, git operations, pr
 **Skills**: git-workflow, code-review
 **Hook**: Auto-invoked by auto_git_workflow.py (SubagentStop lifecycle)
 
-### pr-description-generator
-
-**Purpose**: Pull request descriptions
-**Model**: Haiku (Tier 1 - cost optimized for structured formatting)
-**Skills**: github-workflow, documentation-guide, code-review
-**Command**: Invoked during PR creation workflow
-
 ### issue-creator
 
 **Purpose**: Generate well-structured GitHub issue descriptions (v3.10.0+, GitHub #58)
@@ -282,20 +269,6 @@ These agents provide specialized functionality for alignment, git operations, pr
 **Skills**: research-patterns, semantic-validation, file-organization, python-standards
 **Command**: /align --retrofit
 
-### project-progress-tracker
-
-**Purpose**: Track progress against goals
-**Model**: Haiku (Tier 1 - cost optimized for tracking and updates)
-**Skills**: project-management
-**Command**: /status
-
-### alignment-analyzer
-
-**Purpose**: Detailed alignment analysis
-**Model**: Sonnet (Tier 2 - balanced reasoning for conflict resolution)
-**Skills**: research-patterns, semantic-validation, file-organization
-**Command**: /align
-
 ### project-bootstrapper
 
 **Purpose**: Tech stack detection and setup (v3.0+)
@@ -308,7 +281,7 @@ These agents provide specialized functionality for alignment, git operations, pr
 **Purpose**: Intelligent setup - analyzes tech stack, recommends hooks (v3.1+)
 **Model**: Sonnet (Tier 2 - balanced reasoning for interactive setup)
 **Skills**: research-patterns, file-organization
-**Command**: /setup
+**Status**: Archived — /setup command now runs without agent invocation (Issue #470)
 
 ### project-status-analyzer
 

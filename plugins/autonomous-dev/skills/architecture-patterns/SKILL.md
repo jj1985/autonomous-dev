@@ -190,6 +190,5 @@ If the migration fails halfway through, what happens? Every plan needs a recover
 ## Cross-References
 
 - **research-patterns**: Research feeds into architecture planning
-- **project-alignment**: Plans must align with PROJECT.md
 - **code-review**: Plans are reviewed against these quality standards
 - **documentation-guide**: ADR format and documentation requirements
