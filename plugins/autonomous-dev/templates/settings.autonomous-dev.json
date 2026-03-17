@@ -116,6 +116,16 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 plugins/autonomous-dev/hooks/plan_mode_exit_detector.py",
+            "timeout": 3
+          }
+        ]
+      },
+      {
         "matcher": {
           "tools": [
             "Write",
@@ -174,6 +184,42 @@
           {
             "type": "command",
             "command": "python3 ~/.claude/hooks/unified_session_tracker.py"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/task_completed_handler.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash plugins/autonomous-dev/hooks/post_compact_enricher.sh",
+            "timeout": 5
           }
         ]
       }

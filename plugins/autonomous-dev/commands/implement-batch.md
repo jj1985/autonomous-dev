@@ -7,6 +7,8 @@ user-invocable: false
 
 # BATCH FILE MODE
 
+> The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
 ## Implementation
 
 Invoke the implementer agent to process each feature in the batch file sequentially with worktree isolation.

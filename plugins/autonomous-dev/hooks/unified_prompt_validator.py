@@ -35,6 +35,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -86,6 +87,10 @@ if LIB_DIR:
 # Check configuration from environment
 ENFORCE_WORKFLOW = os.environ.get("ENFORCE_WORKFLOW", "true").lower() == "true"
 QUALITY_NUDGE_ENABLED = os.environ.get("QUALITY_NUDGE_ENABLED", "true").lower() == "true"
+
+# Plan mode enforcement (Issue #358)
+PLAN_MODE_EXIT_MARKER = ".claude/plan_mode_exit.json"
+PLAN_MODE_STALE_MINUTES = 30
 
 
 # ============================================================================
@@ -244,6 +249,169 @@ def _log_activity(event: str, details: dict) -> None:
 
 
 # ============================================================================
+# Plan Mode Enforcement (Issue #358)
+# ============================================================================
+
+
+def _check_plan_mode_enforcement(user_prompt: str) -> Optional[int]:
+    """
+    Enforce /implement or /create-issue after plan mode exit.
+
+    If the plan mode exit marker exists, the user must use /implement or
+    /create-issue as their next action. Questions (ending with ?) are
+    allowed through. Stale markers (>30 min) are auto-deleted.
+
+    Args:
+        user_prompt: The user's submitted prompt text
+
+    Returns:
+        None if no enforcement needed (pass through)
+        0 if marker consumed by allowed command (pass through after cleanup)
+        2 if prompt is blocked (must use /implement or /create-issue)
+    """
+    try:
+        marker_path = Path(os.getcwd()) / PLAN_MODE_EXIT_MARKER
+        if not marker_path.exists():
+            return None
+
+        # Read marker to check staleness
+        try:
+            marker_data = json.loads(marker_path.read_text())
+            marker_ts = datetime.fromisoformat(marker_data.get("timestamp", ""))
+            age_minutes = (datetime.now(timezone.utc) - marker_ts).total_seconds() / 60.0
+            if age_minutes > PLAN_MODE_STALE_MINUTES:
+                marker_path.unlink(missing_ok=True)
+                return None
+        except (json.JSONDecodeError, ValueError, KeyError):
+            # Corrupted marker -- delete and pass through
+            marker_path.unlink(missing_ok=True)
+            return None
+
+        text = user_prompt.strip()
+
+        # Allow questions through
+        if text.endswith("?"):
+            return None
+
+        # Allow /implement and /create-issue -- consume marker
+        if re.match(r"^/(implement|create-issue)\b", text):
+            marker_path.unlink(missing_ok=True)
+            return 0
+
+        # Block everything else
+        message = (
+            "PLAN MODE EXIT DETECTED\n\n"
+            "You just exited plan mode. Your next action must use one of:\n"
+            "  /implement \"description\"  -- to execute the plan\n"
+            "  /create-issue \"description\"  -- to file an issue for later\n\n"
+            "Direct editing after plan mode bypasses testing, security review, and docs.\n"
+            "See: CLAUDE.md Critical Rules"
+        )
+        print(message, file=sys.stderr)
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "error": message,
+            }
+        }
+        print(json.dumps(output))
+        return 2
+
+    except Exception:
+        # Never block on enforcement errors
+        return None
+
+
+# ============================================================================
+# Compaction Recovery
+# ============================================================================
+
+COMPACTION_RECOVERY_MARKER = ".claude/compaction_recovery.json"
+
+
+def _check_compaction_recovery() -> None:
+    """
+    Check for and process compaction recovery marker.
+
+    If `.claude/compaction_recovery.json` exists, reads it, formats batch
+    context for stderr output, and deletes the marker. This re-injects
+    batch state after context compaction.
+
+    This function never raises exceptions and never blocks.
+    """
+    try:
+        marker_path = Path(os.getcwd()) / COMPACTION_RECOVERY_MARKER
+        if not marker_path.exists():
+            return
+
+        marker_data = json.loads(marker_path.read_text())
+
+        batch_id = marker_data.get("batch_id", "unknown")
+        current_index = marker_data.get("current_index", 0)
+        total_features = marker_data.get("total_features", 0)
+        features = marker_data.get("features", [])
+        compact_summary = marker_data.get("compact_summary", "")
+        checkpoint = marker_data.get("checkpoint", {})
+
+        next_feature_num = current_index + 1
+
+        # Get next feature description
+        next_feature_desc = f"Feature {next_feature_num}"
+        if features and current_index < len(features):
+            feat = features[current_index]
+            if isinstance(feat, str):
+                next_feature_desc = feat
+            elif isinstance(feat, dict):
+                next_feature_desc = feat.get("description", feat.get("title", next_feature_desc))
+
+        # Get completed/failed counts from checkpoint
+        completed_count = len(checkpoint.get("completed_features", []))
+        failed_count = len(checkpoint.get("failed_features", []))
+
+        # Format recovery context
+        lines = [
+            "",
+            "**BATCH STATE RECOVERED AFTER COMPACTION**",
+            "",
+            f"Batch ID: {batch_id}",
+            f"Progress: Feature {next_feature_num} of {total_features}",
+            f"Completed: {completed_count} | Failed: {failed_count}",
+            "",
+            f"Next Feature:",
+            f"  {next_feature_desc}",
+            "",
+        ]
+
+        if compact_summary:
+            lines.extend([
+                "Compaction Summary:",
+                f"  {compact_summary}",
+                "",
+            ])
+
+        lines.extend([
+            "CRITICAL WORKFLOW REQUIREMENT:",
+            "- Use /implement for EACH remaining feature",
+            "- NEVER implement directly (skips research, TDD, security audit, docs)",
+            "- Check .claude/batch_state.json for current feature",
+            "",
+        ])
+
+        print("\n".join(lines), file=sys.stderr)
+
+        # Delete marker after processing
+        marker_path.unlink(missing_ok=True)
+
+    except Exception:
+        # Never block on recovery errors - silently continue
+        try:
+            marker_path = Path(os.getcwd()) / COMPACTION_RECOVERY_MARKER
+            marker_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# ============================================================================
 # Main Hook Entry Point
 # ============================================================================
 
@@ -259,6 +427,9 @@ def main() -> int:
         0 if all checks pass or nudge detected (non-blocking)
         2 if workflow bypass detected (blocking)
     """
+    # Check for compaction recovery before processing prompt
+    _check_compaction_recovery()
+
     # Read input from stdin
     try:
         input_data = json.loads(sys.stdin.read())
@@ -275,6 +446,18 @@ def main() -> int:
     # Extract user prompt
     user_prompt = input_data.get('userPrompt', '')
     prompt_preview = user_prompt[:200] if user_prompt else ''
+
+    # Check plan mode enforcement (Issue #358)
+    plan_mode_result = _check_plan_mode_enforcement(user_prompt)
+    if plan_mode_result is not None:
+        if plan_mode_result == 2:
+            _log_activity("block", {
+                "prompt": prompt_preview,
+                "reason": "plan_mode_exit_enforcement",
+                "decision": "block",
+            })
+            return 2
+        # plan_mode_result == 0: marker consumed, continue normally
 
     # Detect command intent via routing table
     route = detect_command_intent(user_prompt)

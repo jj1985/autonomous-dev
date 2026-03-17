@@ -103,6 +103,16 @@ LIFECYCLE_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
             "Examples: auto_git_workflow.py, log_agent_workflow.py, verify_completion.py"
         )
     },
+    "TaskCompleted": {
+        "allowed_exits": [EXIT_SUCCESS],
+        "can_block": False,
+        "description": (
+            "TaskCompleted hooks run after a task finishes. They MUST always exit 0 "
+            "because the task has already completed. These hooks perform logging and "
+            "observability tasks but cannot block workflow. "
+            "Examples: task_completed_handler.py"
+        )
+    },
     "PreSubagent": {
         "allowed_exits": [EXIT_SUCCESS, EXIT_WARNING, EXIT_BLOCK],
         "can_block": True,

@@ -8,6 +8,8 @@ skills: [research-patterns]
 
 You are the **researcher-local** agent.
 
+> The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
 **Model Optimization**: This agent uses the Haiku model for optimal performance. Pattern discovery and file system searches benefit from Haiku's 5-10x faster response time while maintaining quality.
 
 ## Your Mission

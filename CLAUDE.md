@@ -12,7 +12,6 @@ Autonomous development plugin that provides:
 ## Installation
 
 ```bash
-# Primary install method (sets up global hooks, libs, config)
 bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/master/install.sh)
 ```
 
@@ -20,40 +19,11 @@ Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` t
 
 ## Critical Rules
 
-**Use the right command for every action:**
-
-| Action | Command | Why |
-|--------|---------|-----|
-| Code changes | `/implement "desc"` | Tests, security review, docs |
-| Any code change | `/implement "desc"` | Full pipeline always |
-| GitHub issues | `/create-issue "desc"` | Research, dedup, alignment |
-| Quality check | `/audit` | Coverage, security, docs |
-| Alignment | `/align` | PROJECT.md validation |
-| Doc updates | `/align --docs` | Sync docs with code |
-
-**Direct editing is only for**: user-facing docs (README.md, CHANGELOG.md, docs/*.md), config (.json/.yaml), typos (1-2 lines).
-
-**NEVER direct-edit without `/implement`**: `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` — these are functional infrastructure, not documentation. Always use `/implement` even though they're `.md` files.
-
-**After plan mode approval → use `/implement`**: When you exit plan mode with an approved implementation plan, do NOT start coding directly. Run `/implement "description"` with the plan. The plan IS the input to `/implement`, not a license to bypass it.
-
-**Why commands exist**: Each runs specialized agents that catch problems raw actions miss — alignment, testing, security, documentation. Skipping them means skipping quality.
-
-**Run `/improve` after `/implement` sessions.** Detects pipeline bypasses, gate violations, suspicious agents, hook failures. Use `--auto-file` to create GitHub issues for findings.
-
-**Use `/clear` after each feature.** Prevents context bloat.
-
-**Use `/sync` to update.** Then run `/reload-plugins` to pick up changes to commands, agents, and skills. If hooks or settings changed, do a full restart (Cmd+Q / Ctrl+Q) instead.
-
-## Code Navigation
-
-**Prefer LSP over Grep for code navigation.** When LSP is available:
-- `goToDefinition` - Find where functions/classes are defined
-- `findReferences` - Find all usages of a symbol
-- `incomingCalls` / `outgoingCalls` - Understand call hierarchies
-- `documentSymbol` - Get file structure overview
-
-Use Grep/Glob for: text patterns, file names, comments/strings.
+- **Direct editing is only for**: user-facing docs (README.md, CHANGELOG.md, docs/*.md), config (.json/.yaml), typos (1-2 lines).
+- **NEVER direct-edit without `/implement`**: `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` — these are functional infrastructure, not documentation.
+- **After plan mode approval → use `/implement`**: The plan IS the input to `/implement`, not a license to bypass it.
+- **Run `/improve` after `/implement` sessions.** Use `--auto-file` to create GitHub issues for findings.
+- **Use `/clear` after each feature.** Prevents context bloat.
 
 ## Commands
 
@@ -82,11 +52,9 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 - **Goals/Scope**: See [.claude/PROJECT.md](.claude/PROJECT.md)
 - **Operations**: See [.claude/local/OPERATIONS.md](.claude/local/OPERATIONS.md) (repo-specific procedures)
 
-### Agents
+## Reference
 
-13 specialist agents for autonomous development. See [docs/AGENTS.md](docs/AGENTS.md) for details.
-
-Key agents: researcher, planner, test-master, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst. See agents/archived/ for 16 archived agents.
+For component details (agents, hooks, skills, libraries), see [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
 
 ## Detailed Guides
 
@@ -103,9 +71,5 @@ Key agents: researcher, planner, test-master, implementer, reviewer, security-au
 | Testing strategy | [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) |
 | claude-mem integration | [docs/CLAUDE-MEM-INTEGRATION.md](docs/CLAUDE-MEM-INTEGRATION.md) |
 | Troubleshooting | [plugins/autonomous-dev/docs/TROUBLESHOOTING.md](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) |
-
-## Component Counts
-
-13 agents (16 archived), 16 skills, 16 active commands, 144 libraries, 17 active hooks (62 archived). See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
 
 **Last Updated**: 2026-03-17

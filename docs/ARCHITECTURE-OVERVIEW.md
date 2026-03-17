@@ -2,11 +2,13 @@
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
+**Component Counts**: 13 agents (16 archived), 16 skills, 16 active commands, 170 libraries, 21 active hooks (62 archived).
+
 ---
 
 ## Agents
 
-Specialized agents with skill integration for autonomous development. See [docs/AGENTS.md](docs/AGENTS.md) for complete details. See [CLAUDE.md](../CLAUDE.md) for current counts.
+Specialized agents with skill integration for autonomous development. See [docs/AGENTS.md](docs/AGENTS.md) for complete details. See component counts at the top of this file.
 
 **Key Features**:
 - Native skill integration (Issue #143): Agents declare skills via `skills:` frontmatter field - Claude Code 2.0 auto-loads skills when agent spawned
@@ -39,7 +41,7 @@ Agent model assignments optimized for cost-performance balance (13 active agents
 
 ## Skills
 
-Specialized skill packages using progressive disclosure to prevent context bloat. See [CLAUDE.md](../CLAUDE.md) for current counts.
+Specialized skill packages using progressive disclosure to prevent context bloat. See component counts at the top of this file.
 
 **How It Works**:
 - Agents declare skills in `skills:` frontmatter field, auto-loaded when spawned

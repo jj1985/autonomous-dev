@@ -23,7 +23,7 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 | **1** | EXIT_WARNING | Non-critical issue | Continue with warning |
 | **2** | EXIT_BLOCK | Critical issue | Block operation (PreCommit/PreSubagent only) |
 
-**Lifecycle constraints**: PreToolUse, SubagentStop, and Stop hooks must always exit 0. Only PreCommit and PreSubagent hooks can block.
+**Lifecycle constraints**: PreToolUse, SubagentStop, Stop, and TaskCompleted hooks must always exit 0. Only PreCommit and PreSubagent hooks can block.
 
 **Library**: `plugins/autonomous-dev/lib/hook_exit_codes.py` — see [LIBRARIES.md](LIBRARIES.md) for API.
 
@@ -81,7 +81,28 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
+| **plan_mode_exit_detector.py** | Detects `ExitPlanMode` tool calls and writes a marker at `.claude/plan_mode_exit.json`. Marker is consumed by `unified_prompt_validator.py` to enforce `/implement` or `/create-issue` routing before raw edits are allowed. Auto-expires after 30 minutes. Always exits 0. | — |
 | **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Handles PostToolUse (tool calls) and UserPromptSubmit (user prompts). Session date pinned on first activity to prevent midnight log splits. Non-blocking. | ACTIVITY_LOGGING |
+
+### PreCompact
+
+| Hook | Purpose | Key Env Vars |
+|------|---------|--------------|
+| **pre_compact_batch_saver.sh** | Saves in-progress batch state to `.claude/compaction_recovery.json` before context compaction. Captures batch_id, current_index, feature list, and RALPH checkpoint data. No-ops when no active batch. Always exits 0. | CHECKPOINT_DIR |
+
+### PostCompact
+
+| Hook | Purpose | Key Env Vars |
+|------|---------|--------------|
+| **post_compact_enricher.sh** | Enriches the compaction recovery marker with the compact_summary from stdin JSON after compaction completes. No-ops if no recovery marker present. Always exits 0. | — |
+
+**Compaction recovery flow**: PreCompact saves state → PostCompact adds summary → UserPromptSubmit (`unified_prompt_validator.py`) detects marker on next prompt, re-injects batch context into model output, and deletes marker. This ensures batch pipelines resume correctly after `/clear` or auto-compact without requiring manual state reconstruction.
+
+### TaskCompleted
+
+| Hook | Purpose | Key Env Vars |
+|------|---------|--------------|
+| **task_completed_handler.py** | Logs task completion events (task_id, subject, description, teammate, team) to the daily activity JSONL at `.claude/logs/activity/{date}.jsonl`. Preparation handler: TaskCompleted does not currently fire in the Agent-tool pipeline but is registered so infrastructure is ready. Always exits 0. | — |
 
 ### Stop
 
@@ -148,8 +169,61 @@ See `plugins/autonomous-dev/hooks/archived/README.md` for:
 
 ---
 
+## Agent Hooks (Experimental)
+
+> **Status**: Proof-of-concept. Advisory only, never enforcement. See [ADR-001-agent-hooks.md](ADR-001-agent-hooks.md) for full rationale.
+
+### type:agent vs type:command
+
+| Property | type:command | type:agent |
+|----------|-------------|------------|
+| **Format** | Python script (.py) | Markdown prompt (.md) |
+| **Execution** | Deterministic Python | LLM subagent (non-deterministic) |
+| **Tools available** | Full system access | Read, Grep, Glob only |
+| **Limits** | None | 50 tool turns, 60s timeout |
+| **Use case** | Enforcement, blocking | Advisory, semantic analysis |
+
+### Key Constraint: Advisory Only
+
+Agent hooks **always** return `{"decision": "approve"}`. They provide informational output (e.g., "these files are missing tests") but never block operations. This is a deliberate design choice:
+
+- LLM non-determinism makes blocking unreliable
+- "Hard blocking > nudges" philosophy requires deterministic enforcement
+- Advisory output adds value without disrupting workflow
+
+### Available Agent Hooks
+
+| Hook | Event | Purpose |
+|------|-------|---------|
+| **Stop-verify-test-coverage.md** | Stop | Advisory check: do modified source files have test files? |
+
+### How to Enable (Opt-in)
+
+Agent hooks are **not enabled by default**. To enable, add to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "agent",
+        "prompt": "plugins/autonomous-dev/hooks/Stop-verify-test-coverage.md",
+        "description": "Advisory: check test coverage for modified files"
+      }
+    ]
+  }
+}
+```
+
+To disable, remove the entry. No environment variable controls activation — presence in settings.json is sufficient.
+
+**Warning**: Agent hooks consume tokens on every invocation. Enable only when the advisory output is valuable for your workflow.
+
+---
+
 ## See Also
 
+- [ADR-001-agent-hooks.md](ADR-001-agent-hooks.md) — Architecture Decision Record for agent hooks
 - [HOOK-REGISTRY.md](HOOK-REGISTRY.md) — Environment variables, activation status
 - [SANDBOXING.md](SANDBOXING.md) — 4-layer security architecture
 - [GIT-AUTOMATION.md](GIT-AUTOMATION.md) — Git automation workflow

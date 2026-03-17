@@ -180,7 +180,8 @@
       "name": "Plan Mode used to justify direct prompt file edits",
       "description": "Model exits plan mode with approved plan, then uses 'plan called for .md changes' reasoning to bypass /implement and directly edit agents/*.md or commands/*.md",
       "issue": null,
-      "hard_gate": "CLAUDE.md Critical Rules: NEVER direct-edit agents/*.md, commands/*.md + prompt_file_edit_bypass hook",
+      "hard_gate": "CLAUDE.md Critical Rules: NEVER direct-edit agents/*.md, commands/*.md + plan_mode_exit_detector hook (Issue #358)",
+      "issue": "#358",
       "detection": {
         "type": "log_pattern",
         "indicators": [
