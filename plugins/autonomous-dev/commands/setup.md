@@ -2,7 +2,7 @@
 name: setup
 description: Interactive setup wizard - analyzes tech stack, generates PROJECT.md, configures hooks
 argument-hint: "[--project-dir <path>]"
-allowed-tools: [Task, Read, Write, Bash, Grep, Glob]
+allowed-tools: [Read, Write, Bash, Grep, Glob]
 disable-model-invocation: true
 user-invocable: true
 ---
@@ -149,38 +149,26 @@ See all options: cat .env  (file is fully documented)
 
 ### Step 2: Detect Project Type
 
-After files installed, invoke the **setup-wizard** agent with this context:
+After files are installed, detect the project type and generate PROJECT.md inline. Follow these steps:
 
-```
-CONTEXT FOR SETUP-WIZARD:
+**Detection rules:**
+- **BROWNFIELD**: Has README.md, src/, package.json, pyproject.toml, or >10 source files
+- **GREENFIELD**: Empty or near-empty project
 
-Step 1 (file installation) is COMPLETE. Files are in .claude/
-
-Your job now is:
-1. Detect if this is a BROWNFIELD (existing code) or GREENFIELD (new project)
-2. Generate or help create PROJECT.md
-3. Optionally configure hooks
-4. Validate the setup
-
-DETECTION RULES:
-- BROWNFIELD: Has README.md, src/, package.json, pyproject.toml, or >10 source files
-- GREENFIELD: Empty or near-empty project
-
-For BROWNFIELD:
+**For BROWNFIELD:**
 - Analyze: README.md, package.json/pyproject.toml, directory structure, git history
 - Generate: Comprehensive PROJECT.md (80-90% complete)
 - Mark TODOs: Only for CONSTRAINTS and CURRENT SPRINT (user must define)
 
-For GREENFIELD:
+**For GREENFIELD:**
 - Ask: Primary goal, architecture type, tech stack
 - Generate: PROJECT.md template with user inputs filled in
 - Mark TODOs: More sections need user input
 
-Then:
+**Then:**
 - Offer hook configuration (automatic vs manual workflow)
 - Run health check to validate
 - Show next steps
-```
 
 ---
 
@@ -408,7 +396,7 @@ Full restart required after setup:
    ├── Step 1: sync_dispatcher.py --github
    │   └── Reliable file installation (Python library)
    │
-   ├── Step 2: setup-wizard agent (GenAI)
+   ├── Step 2: Detect & Generate (inline)
    │   ├── Detect brownfield/greenfield
    │   ├── Analyze codebase (if brownfield)
    │   └── Generate PROJECT.md
@@ -420,7 +408,7 @@ Full restart required after setup:
        └── Validate installation
 ```
 
-**Key Design**: Delegates file installation to `sync_dispatcher.py` (reliable), focuses GenAI on PROJECT.md generation (what it's good at).
+**Key Design**: Delegates file installation to `sync_dispatcher.py` (reliable), handles PROJECT.md generation inline (detection + generation executed directly by Claude).
 
 ---
 

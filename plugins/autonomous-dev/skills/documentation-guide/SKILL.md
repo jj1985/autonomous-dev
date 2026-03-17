@@ -184,6 +184,5 @@ Write the CHANGELOG entry before or during implementation, not as an afterthough
 
 ## Cross-References
 
-- **project-alignment**: PROJECT.md as source of truth
 - **git-github**: Commit message and PR conventions
 - **code-review**: Documentation checklist item (#8)

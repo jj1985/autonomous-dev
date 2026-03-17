@@ -139,4 +139,3 @@ rather than replacing."
 
 - **security-patterns**: Security-specific research requirements
 - **architecture-patterns**: How research feeds into architecture planning
-- **project-alignment**: Ensuring research aligns with PROJECT.md scope

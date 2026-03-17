@@ -4,7 +4,7 @@ description: "Unified alignment command (--project, --docs, --retrofit)"
 argument-hint: "[--project | --docs | --retrofit] [--dry-run] [--auto]"
 version: 3.1.0
 category: core
-allowed-tools: [Task, Read, Write, Edit, Grep, Glob]
+allowed-tools: [Read, Write, Edit, Grep, Glob]
 disable-model-invocation: true
 user-invocable: true
 ---
@@ -69,7 +69,7 @@ python plugins/autonomous-dev/lib/validate_manifest_doc_alignment.py
 - **Regex only**: Fast, free, catches count mismatches
 
 ### Phase 2: Semantic Validation (GenAI)
-Run `alignment-analyzer` agent to check:
+Check the following:
 
 **PROJECT.md vs Code**:
 - Do GOALS match what's implemented?
@@ -321,19 +321,22 @@ python plugins/autonomous-dev/lib/retrofit_executor.py --rollback <timestamp>
 
 ARGUMENTS: {{ARGUMENTS}}
 
-Based on arguments, invoke the appropriate agent:
+Based on arguments, execute the appropriate mode inline:
+
+```bash
+# Quick scan (Phase 1)
+python plugins/autonomous-dev/lib/validate_manifest_doc_alignment.py
+```
 
 **Default mode** (`/align` or `/align --project`):
-- Invoke `alignment-analyzer` agent with Task tool
-- Agent performs 4-phase validation: quick scan, semantic validation, hooks review, interactive resolution
+- Execute Phase 1-4 as described above: quick scan, semantic validation, hooks review, interactive resolution
 
 **Documentation mode** (`/align --docs`):
-- Invoke `alignment-analyzer` agent with Task tool (docs-only mode)
-- Agent validates documentation consistency against PROJECT.md
+- Execute documentation consistency checks as described above
+- Validate documentation consistency against PROJECT.md
 
 **Retrofit mode** (`/align --retrofit`):
-- Invoke `alignment-analyzer` agent with Task tool (retrofit mode)
-- Agent executes 5-phase brownfield transformation
+- Execute 5-phase brownfield transformation as described above
 - Sub-flags: `--dry-run` (preview), `--auto` (non-interactive)
 
 ---
@@ -356,7 +359,7 @@ ELIF --docs flag:
 
 ELSE (default):
     → Phase 1: alignment_fixer.py (quick scan)
-    → Phase 2: alignment-analyzer agent (semantic validation)
+    → Phase 2: Semantic validation (inline)
     → Phase 3: Hook inflation review
     → Phase 4: Interactive resolution
 ```
@@ -365,7 +368,7 @@ ELSE (default):
 
 **Default mode**:
 - `validate_manifest_doc_alignment.py` - Quick count/reference scan
-- `alignment-analyzer` agent - Semantic validation (via Claude Code)
+- Semantic validation performed inline by Claude Code
 
 **--docs mode**:
 - `alignment_fixer.py` - Count validation
