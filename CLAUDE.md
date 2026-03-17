@@ -52,9 +52,9 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 - **Goals/Scope**: See [.claude/PROJECT.md](.claude/PROJECT.md)
 - **Operations**: See [.claude/local/OPERATIONS.md](.claude/local/OPERATIONS.md) (repo-specific procedures)
 
-## Reference
+## Component Counts
 
-For component details (agents, hooks, skills, libraries), see [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md).
+11 agents, 17 skills, 16 active commands, 165 libraries, 19 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
 
 ## Detailed Guides
 
@@ -72,4 +72,4 @@ For component details (agents, hooks, skills, libraries), see [docs/ARCHITECTURE
 | claude-mem integration | [docs/CLAUDE-MEM-INTEGRATION.md](docs/CLAUDE-MEM-INTEGRATION.md) |
 | Troubleshooting | [plugins/autonomous-dev/docs/TROUBLESHOOTING.md](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) |
 
-**Last Updated**: 2026-03-17
+**Last Updated**: 2026-03-18

@@ -155,10 +155,10 @@ class TestSkillDescriptionCompleteness:
         )
 
     def test_all_active_skills_present(self) -> None:
-        """At least 16 active skill directories exist (dynamic minimum threshold)."""
+        """At least 17 active skill directories exist (dynamic minimum threshold)."""
         skill_count = len(ACTIVE_SKILLS)
-        assert skill_count >= 16, (
-            f"Expected at least 16 active skills, found {skill_count}. "
+        assert skill_count >= 17, (
+            f"Expected at least 17 active skills, found {skill_count}. "
             f"Skills found: {SKILL_NAMES}"
         )
 

@@ -144,23 +144,43 @@ class TestMergedSkills:
             "github-workflow should be merged into git-github"
         )
 
-    def test_skill_integration_exists(self) -> None:
-        """skill-integration should exist (absorbed skill-integration-templates)."""
-        skill_file = SKILLS_DIR / "skill-integration" / "SKILL.md"
-        assert skill_file.exists(), (
-            f"skill-integration/SKILL.md not found: {skill_file}"
+    def test_skill_integration_archived(self) -> None:
+        """skill-integration should be archived (meta-skill, no longer needed)."""
+        assert not (SKILLS_DIR / "skill-integration" / "SKILL.md").exists(), (
+            "skill-integration should be archived — meta-skill served its purpose"
         )
 
     def test_skill_integration_templates_removed(self) -> None:
         """skill-integration-templates should not exist as separate skill."""
         assert not (SKILLS_DIR / "skill-integration-templates").exists(), (
-            "skill-integration-templates should be merged into skill-integration"
+            "skill-integration-templates should be archived"
         )
 
-    def test_error_handling_patterns_removed(self) -> None:
-        """error-handling-patterns should be merged into python-standards."""
-        assert not (SKILLS_DIR / "error-handling-patterns").exists(), (
-            "error-handling-patterns should be merged into python-standards"
+    def test_error_handling_exists(self) -> None:
+        """error-handling should exist as a standalone skill."""
+        skill_file = SKILLS_DIR / "error-handling" / "SKILL.md"
+        assert skill_file.exists(), (
+            f"error-handling/SKILL.md not found: {skill_file}"
+        )
+
+    def test_debugging_workflow_exists(self) -> None:
+        """debugging-workflow should exist as a standalone skill."""
+        skill_file = SKILLS_DIR / "debugging-workflow" / "SKILL.md"
+        assert skill_file.exists(), (
+            f"debugging-workflow/SKILL.md not found: {skill_file}"
+        )
+
+    def test_refactoring_patterns_exists(self) -> None:
+        """refactoring-patterns should exist as a standalone skill."""
+        skill_file = SKILLS_DIR / "refactoring-patterns" / "SKILL.md"
+        assert skill_file.exists(), (
+            f"refactoring-patterns/SKILL.md not found: {skill_file}"
+        )
+
+    def test_quality_scoring_archived(self) -> None:
+        """quality-scoring should be archived (realign-specific, too niche)."""
+        assert not (SKILLS_DIR / "quality-scoring" / "SKILL.md").exists(), (
+            "quality-scoring should be archived — too niche for general plugin"
         )
 
 

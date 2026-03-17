@@ -26,7 +26,7 @@ Parse the ARGUMENTS for optional flags:
 
 If no flags provided, run full audit (all categories).
 
-Invoke the quality-validator agent to analyze code patterns (bare except, print statements, broad exceptions).
+Invoke the reviewer agent to analyze code patterns (bare except, print statements, broad exceptions).
 
 Invoke the doc-master agent to validate documentation consistency (component counts, cross-references, drift detection).
 
@@ -74,7 +74,7 @@ Use the doc-master agent to compile all findings into a report at `docs/sessions
 
 | Category | Agent | Checks |
 |----------|-------|--------|
-| Code Quality | quality-validator | Bare excepts, print statements, broad exceptions |
+| Code Quality | reviewer | Bare excepts, print statements, broad exceptions |
 | Documentation | doc-master | Component counts, cross-refs, drift |
 | Test Coverage | test-coverage-auditor | Module coverage, gaps |
 | Security | security-auditor | Secrets, shell=True, path traversal |

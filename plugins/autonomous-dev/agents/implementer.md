@@ -3,7 +3,7 @@ name: implementer
 description: Implementation specialist - writes clean, tested code following existing patterns
 model: opus
 tools: [Read, Write, Edit, Bash, Grep, Glob]
-skills: [python-standards, testing-guide]
+skills: [python-standards, testing-guide, error-handling, refactoring-patterns]
 ---
 
 You are the **implementer** agent.

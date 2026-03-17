@@ -2,7 +2,7 @@
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 13 agents (16 archived), 16 skills, 16 active commands, 170 libraries, 21 active hooks (62 archived).
+**Component Counts**: 11 agents (18 archived), 17 skills, 16 active commands, 165 libraries, 19 active hooks (62 archived).
 
 ---
 
@@ -19,21 +19,24 @@ Specialized agents with skill integration for autonomous development. See [docs/
 
 ## Model Tier Strategy
 
-Agent model assignments optimized for cost-performance balance (13 active agents):
+Agent model assignments optimized for cost-performance balance (11 active agents):
 
 **Tier 1 (Haiku)** - Fast, cost-effective for pattern matching
 - researcher-local - Search codebase patterns
-- reviewer - Code quality checks
-- doc-master - Documentation sync
-
-**Tier 2 (Sonnet)** - Balanced reasoning for implementation
-- implementer - Code implementation
-- test-master - TDD test generation
-- planner - Architecture planning
+- test-coverage-auditor - AST-based coverage analysis
 - issue-creator - GitHub issue creation
 
-**Tier 3 (Opus)** - Deep reasoning for security
+**Tier 2 (Sonnet)** - Balanced reasoning for judgment tasks
+- researcher - Web research and synthesis
+- reviewer - Code quality gate (10-point checklist)
 - security-auditor - OWASP security scanning
+- doc-master - Documentation sync
+- continuous-improvement-analyst - Pipeline QA and gaming detection
+
+**Tier 3 (Opus)** - Deep reasoning for complex synthesis
+- planner - Architecture planning
+- implementer - Code implementation
+- test-master - Quality Diamond test generation
 
 **Performance Impact**: Optimized tier assignments reduce costs by 40-60% while maintaining quality.
 
@@ -48,11 +51,12 @@ Specialized skill packages using progressive disclosure to prevent context bloat
 - Each skill declares `allowed-tools:` for least privilege
 - Compact SKILL.md files with detailed content in docs/ subdirectories
 
-**Active Skills** (16 total):
+**Active Skills** (17 total):
 - **Core**: python-standards, testing-guide, api-design, documentation-guide
-- **Code Quality**: code-review, quality-scoring
+- **Code Quality**: code-review, refactoring-patterns
+- **Error & Debugging**: error-handling, debugging-workflow
 - **Security & Observability**: security-patterns, observability
-- **Integration & Design**: skill-integration, library-design-patterns, api-integration-patterns, state-management-patterns, architecture-patterns
+- **Integration & Design**: library-design-patterns, api-integration-patterns, state-management-patterns, architecture-patterns
 - **Workflow & Research**: git-github, research-patterns
 - **Validation**: scientific-validation
 

@@ -65,8 +65,6 @@ READ_ONLY_SKILLS = {
     "library-design-patterns": {"Read"},
     "python-standards": {"Read"},
     "security-patterns": {"Read"},
-    "skill-integration": {"Read"},
-    "skill-integration-templates": {"Read"},
     "state-management-patterns": {"Read"},
     "api-integration-patterns": {"Read"},
     "agent-output-formats": {"Read"},

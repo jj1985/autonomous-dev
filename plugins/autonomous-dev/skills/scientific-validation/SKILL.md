@@ -1,10 +1,6 @@
 ---
 name: scientific-validation
-version: 2.1.0
-type: knowledge
 description: "Scientific method for validating claims with pre-registration, power analysis, statistical rigor, and Bayesian methods. Use when testing hypotheses, running experiments, or validating claims from papers. TRIGGER when: validate, hypothesis, experiment, backtest, evidence, statistical test. DO NOT TRIGGER when: routine coding, config changes, documentation, non-experimental tasks."
-keywords: scientific method, hypothesis, validation, experiment, p-value, sample size, bias, out-of-sample, backtest, evidence, claims, power analysis, Bayesian, sensitivity
-auto_activate: false
 allowed-tools: [Read, Grep, Glob, Bash, Write]
 ---
 

@@ -24,13 +24,14 @@ class TestDynamicComponentCounts:
         return len([f for f in agents_dir.glob("*.md") if f.name != "README.md"])
 
     def _count_skills(self, plugins_dir: Path) -> int:
-        """Count skill directories (each skill is a directory with SKILL.md)."""
+        """Count active skill directories (excluding archived, __pycache__)."""
         skills_dir = plugins_dir / "skills"
         if not skills_dir.exists():
             return 0
+        excluded = {"archived", "__pycache__"}
         return len([
             d for d in skills_dir.iterdir()
-            if d.is_dir() and not d.name.startswith(".")
+            if d.is_dir() and d.name not in excluded and not d.name.startswith(".")
         ])
 
     def _count_commands(self, plugins_dir: Path) -> int:
