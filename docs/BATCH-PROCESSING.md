@@ -1492,7 +1492,7 @@ SESSIONSTART_BATCH_RECOVERY=true
 ### See Also
 
 - [docs/LIBRARIES.md](LIBRARIES.md#checkpoint-manager) - CheckpointManager API reference
-- [docs/SESSION-STATE-PERSISTENCE.md](SESSION-STATE-PERSISTENCE.md) - Session state details
+- `plugins/autonomous-dev/lib/session_state_manager.py` - Session state implementation
 
 ---
 

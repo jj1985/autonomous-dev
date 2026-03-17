@@ -10414,7 +10414,7 @@ Target: 95% coverage of core functionality
 
 **Documentation**:
 - [HOOKS.md - pre_commit_gate.py section](HOOKS.md#pre_commit_gatepy)
-- [docs/DEVELOPMENT.md - TDD workflow](docs/DEVELOPMENT.md)
+- [TESTING-STRATEGY.md - TDD workflow](TESTING-STRATEGY.md)
 
 **Implementation**:
 - `plugins/autonomous-dev/lib/status_tracker.py` (363 lines)

@@ -170,6 +170,10 @@
       "Agent",
       "AgentOutputTool",
       "EnterWorktree",
+      "ExitWorktree",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
       "KillShell",
       "LSP",
       "ToolSearch"

@@ -73,7 +73,7 @@ Added `AgentTracker.save_agent_checkpoint()` class method for agent convenience:
 - Graceful degradation in user projects (returns False, doesn't block workflow)
 - No subprocess calls (uses Python imports instead)
 
-**See**: `docs/DEVELOPMENT.md` Scenario 2.5 for integration pattern
+**See**: `plugins/autonomous-dev/lib/agent_tracker.py` for integration pattern
 
 ---
 

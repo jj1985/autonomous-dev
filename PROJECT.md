@@ -237,7 +237,7 @@ autonomous-dev/
 ├── plugins/autonomous-dev/     # Plugin source (what users install)
 │   ├── agents/                 # Pipeline + utility agents
 │   ├── commands/               # Slash commands
-│   ├── hooks/                  # Automation hooks (21 active, 62 archived)
+│   ├── hooks/                  # Automation hooks (17 active, 62 archived)
 │   ├── skills/                 # Skill packages
 │   ├── lib/                    # Python libraries
 │   ├── templates/              # Settings templates (6 variants)

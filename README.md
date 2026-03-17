@@ -175,8 +175,8 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 7. **security-auditor** (Opus) - Scans for OWASP vulnerabilities
 8. **doc-master** (Haiku) - Updates documentation to match code changes
 
-**Utility Agents** (6 more):
-- commit-message-generator, continuous-improvement-analyst, issue-creator, quality-validator, sync-validator, test-coverage-auditor
+**Utility Agents** (7 more):
+- commit-message-generator, continuous-improvement-analyst, issue-creator, pr-description-generator, project-progress-tracker, quality-validator, test-coverage-auditor
 
 **How Agents Work**:
 - Agents are markdown prompts (not Python files)

@@ -353,7 +353,7 @@ Consolidated into unified hooks:
 - [HOOKS.md](HOOKS.md) - Complete hook architecture, patterns, and implementation guide
 - [SANDBOXING.md](SANDBOXING.md) - Sandbox enforcer, permission system, and MCP security
 - [GIT-AUTOMATION.md](GIT-AUTOMATION.md) - Git automation workflow and consent model
-- [TESTING-TIERS.md](TESTING-TIERS.md) - Test categorization and hook testing patterns
+- [TESTING-STRATEGY.md](TESTING-STRATEGY.md) - Test categorization and hook testing patterns
 
 **Related Components**:
 - [CLAUDE.md](../CLAUDE.md) - Project instructions and architecture overview

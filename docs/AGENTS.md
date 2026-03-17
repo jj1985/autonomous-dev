@@ -60,16 +60,12 @@ Maximum depth for security and complex analysis:
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
 **Total Active Agents**: 15
-**Note**: Token audit reflects pre-consolidation count; recount pending after #411 registry cleanup
+**Note**: 15 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
 | Status | Agent | Tokens | Notes |
 |--------|-------|--------|-------|
-| ❌ | setup-wizard | 6,520 | 2.17x over target - needs optimization |
-| ⚠️ | project-status-analyzer | 2,341 | Under target but large |
-| ⚠️ | sync-validator | 2,314 | Under target but large |
-| ✅ | brownfield-analyzer | 1,792 | OK |
 | ✅ | project-progress-tracker | 1,728 | OK |
 | ✅ | doc-master | 1,634 | OK |
 | ✅ | security-auditor | 1,231 | OK |
@@ -80,18 +76,16 @@ Maximum depth for security and complex analysis:
 | ✅ | implementer | 830 | OK |
 | ✅ | test-master | 677 | OK |
 | ✅ | reviewer | 623 | OK |
-| ✅ | project-bootstrapper | 581 | OK |
-| ✅ | advisor | 561 | OK |
+| ✅ | continuous-improvement-analyst | 580 | OK |
 | ✅ | pr-description-generator | 549 | OK |
-| ✅ | alignment-analyzer | 470 | OK |
+| ✅ | test-coverage-auditor | 450 | OK |
 | ✅ | commit-message-generator | 444 | OK |
-| ✅ | alignment-validator | 421 | OK |
 | ✅ | quality-validator | 418 | OK |
 
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- Token audit table above reflects pre-consolidation state; many listed agents are now archived
+- All 15 active agents under 3,000 token target
 
 ---
 
@@ -175,7 +169,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Research Context**: Receives testing_guidance from researcher-local and researcher-web (Issue #130)
   - Uses test_file_patterns, edge_cases_to_test, mocking_patterns from researchers
   - Falls back to Grep/Glob pattern discovery if research context not provided
-**Context Isolation**: Runs in separate context. Writes tests to disk for implementer. See [TDD-CONTEXT-ISOLATION.md](TDD-CONTEXT-ISOLATION.md).
+**Context Isolation**: Runs in separate context. Writes tests to disk for implementer. See testing-guide skill for context isolation patterns.
 
 ### implementer
 
@@ -187,13 +181,13 @@ These agents execute the main autonomous development workflow and provide specia
   - Uses reusable_functions, import_patterns, error_handling_patterns from researchers
   - Uses design_patterns, performance_tips, library_integration_tips from web research
   - Falls back to Grep/Glob pattern discovery if research context not provided
-**Context Isolation**: Runs in separate context. Reads only test files from disk, not test-master's reasoning. See [TDD-CONTEXT-ISOLATION.md](TDD-CONTEXT-ISOLATION.md).
+**Context Isolation**: Runs in separate context. Reads only test files from disk, not test-master's reasoning. See testing-guide skill for context isolation patterns.
 
 ### reviewer
 
 **Purpose**: Quality gate (code review)
 **Model**: Haiku (Tier 1 - cost optimized for pattern-based code review)
-**Skills**: code-review, consistency-enforcement, python-standards
+**Skills**: code-review, python-standards
 **Execution**: Step 5 of /implement workflow (parallel validation - 60% faster with Phase 7 optimization)
 
 ### security-auditor

@@ -84,7 +84,7 @@ The sections below document archived commands for historical reference. These co
 |---------|------|-------------|
 | `/pr-create` | < 5s | Create pull request with optional reviewer assignment (default: draft mode) |
 
-**See**: [PR-AUTOMATION.md](PR-AUTOMATION.md) for complete reference with flags and examples
+**See**: `plugins/autonomous-dev/lib/pr_automation.py` for implementation details
 
 ### Documentation Commands (2)
 
