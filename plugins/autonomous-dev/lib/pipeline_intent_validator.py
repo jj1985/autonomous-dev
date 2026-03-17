@@ -38,6 +38,7 @@ class PipelineEvent:
     result_word_count: int = 0
     duration_ms: int = 0
     success: bool = True
+    agent_transcript_path: str = ""
 
 
 @dataclass
@@ -157,6 +158,18 @@ def parse_session_logs(
                 pipeline_action="test_run",
                 duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
+            ))
+        elif entry.get("hook") == "SubagentStop":
+            events.append(PipelineEvent(
+                timestamp=entry.get("timestamp", ""),
+                tool="Agent",
+                agent=entry.get("agent", "main"),
+                subagent_type=entry.get("subagent_type", ""),
+                pipeline_action="agent_completion",
+                result_word_count=entry.get("result_word_count", 0),
+                duration_ms=entry.get("duration_ms", 0),
+                success=entry.get("success", True),
+                agent_transcript_path=entry.get("agent_transcript_path", ""),
             ))
 
     # Sort by timestamp

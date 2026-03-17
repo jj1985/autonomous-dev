@@ -168,7 +168,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/unified_session_tracker.py subagent 'Subagent completed task'"
+            "command": "python3 ~/.claude/hooks/unified_session_tracker.py"
           }
         ]
       }

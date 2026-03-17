@@ -13,30 +13,31 @@ Consolidates SubagentStop session tracking hooks:
 
 Hook: SubagentStop (runs when a subagent completes)
 
+Input: JSON via stdin (provided by Claude Code SubagentStop hook).
+Fields: agent_type, agent_id, agent_transcript_path, last_assistant_message,
+        session_id, hook_event_name, stop_hook_active.
+
 Environment Variables (opt-in/opt-out):
     TRACK_SESSIONS=true/false (default: true)
     TRACK_PIPELINE=true/false (default: true)
     AUTO_UPDATE_PROGRESS=true/false (default: false)
 
-Environment Variables (provided by Claude Code):
-    CLAUDE_AGENT_NAME - Name of the subagent that completed
-    CLAUDE_AGENT_OUTPUT - Output from the subagent
-    CLAUDE_AGENT_STATUS - Status: "success" or "error"
-
 Exit codes:
     0: Always (non-blocking hook)
 
 Usage:
-    # As SubagentStop hook (automatic)
-    CLAUDE_AGENT_NAME=researcher CLAUDE_AGENT_STATUS=success python unified_session_tracker.py
+    # As SubagentStop hook (automatic via stdin)
+    echo '{"agent_type":"researcher",...}' | python unified_session_tracker.py
 """
 
 import json
 import os
+import re
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 # ============================================================================
@@ -100,6 +101,163 @@ except ImportError:
 TRACK_SESSIONS = os.environ.get("TRACK_SESSIONS", "true").lower() == "true"
 TRACK_PIPELINE = os.environ.get("TRACK_PIPELINE", "true").lower() == "true"
 AUTO_UPDATE_PROGRESS = os.environ.get("AUTO_UPDATE_PROGRESS", "false").lower() == "true"
+
+
+# ============================================================================
+# Log Directory Discovery
+# ============================================================================
+
+# In-process cache for session date
+_SESSION_DATE_CACHE: dict = {}
+
+
+def _find_log_dir() -> Path:
+    """Find the .claude/logs/activity directory.
+
+    Walks up from cwd to find an existing .claude directory, then uses
+    its logs/activity subdirectory. Falls back to cwd/.claude/logs/activity.
+
+    Returns:
+        Path to the activity log directory.
+    """
+    cwd = Path.cwd()
+    for parent in [cwd] + list(cwd.parents):
+        claude_dir = parent / ".claude"
+        if claude_dir.exists():
+            return claude_dir / "logs" / "activity"
+
+    # Fallback to cwd
+    return cwd / ".claude" / "logs" / "activity"
+
+
+def _get_session_date(session_id: str) -> str:
+    """Get the pinned date for a session, preventing cross-midnight mislabeling.
+
+    Each session gets a date pinned on first activity. If the session spans
+    midnight, all entries still use the original date so they land in the
+    same log file.
+
+    Args:
+        session_id: The Claude session identifier.
+
+    Returns:
+        Date string in YYYY-MM-DD format.
+    """
+    # Check in-process cache first
+    if session_id in _SESSION_DATE_CACHE:
+        return _SESSION_DATE_CACHE[session_id]
+
+    # Check for session date file
+    log_dir = _find_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    safe_session_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", session_id)
+    date_file = log_dir / f".session_date_{safe_session_id}"
+
+    try:
+        if date_file.exists():
+            stored_date = date_file.read_text().strip()
+            # Validate freshness: if file is older than 24 hours, start fresh
+            file_age_seconds = time.time() - date_file.stat().st_mtime
+            if file_age_seconds < 86400 and stored_date:
+                _SESSION_DATE_CACHE[session_id] = stored_date
+                return stored_date
+    except Exception:
+        pass
+
+    # Fall back to current date and persist it
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    try:
+        date_file.write_text(date_str)
+    except Exception:
+        pass
+    _SESSION_DATE_CACHE[session_id] = date_str
+    return date_str
+
+
+# ============================================================================
+# Stdin Parsing
+# ============================================================================
+
+def _parse_stdin() -> Dict:
+    """Read and parse JSON from stdin (SubagentStop hook input).
+
+    Returns:
+        Parsed dict from stdin, or empty dict if stdin is empty/unparseable.
+    """
+    try:
+        raw = sys.stdin.read().strip()
+        if not raw:
+            return {}
+        return json.loads(raw)
+    except (json.JSONDecodeError, Exception):
+        return {}
+
+
+def _validate_transcript_path(path_str: str) -> str:
+    """Validate agent_transcript_path is within ~/.claude.
+
+    Args:
+        path_str: Raw transcript path string.
+
+    Returns:
+        Validated path string, or empty string if invalid/unsafe.
+    """
+    if not path_str:
+        return ""
+
+    try:
+        resolved = Path(path_str).resolve()
+        claude_home = (Path.home() / ".claude").resolve()
+        if resolved.is_relative_to(claude_home):
+            return str(resolved)
+        return ""
+    except Exception:
+        return ""
+
+
+def _compute_duration_ms() -> int:
+    """Compute duration_ms by diffing against agent_tracker started_at.
+
+    Returns:
+        Duration in milliseconds, or 0 if not available.
+    """
+    if not HAS_AGENT_TRACKER:
+        return 0
+
+    try:
+        tracker = AgentTracker()
+        session_data = tracker.get_current_session()
+        if session_data and "started_at" in session_data:
+            started_at_str = session_data["started_at"]
+            # Parse ISO format timestamp
+            started_at = datetime.fromisoformat(started_at_str)
+            now = datetime.now(timezone.utc)
+            # Handle naive datetime
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            delta = now - started_at
+            return max(0, int(delta.total_seconds() * 1000))
+    except Exception:
+        pass
+
+    return 0
+
+
+def _determine_success(output: str) -> bool:
+    """Determine success from last_assistant_message content.
+
+    Args:
+        output: The last assistant message text.
+
+    Returns:
+        True if no error indicators found in output.
+    """
+    if not output:
+        return True
+
+    error_indicators = ["error", "traceback", "failed", "exception", "fatal"]
+    output_lower = output.lower()
+    return not any(indicator in output_lower for indicator in error_indicators)
 
 
 # ============================================================================
@@ -335,6 +493,58 @@ def update_project_progress() -> bool:
 
 
 # ============================================================================
+# JSONL Activity Logging
+# ============================================================================
+
+def _write_jsonl_entry(
+    *,
+    subagent_type: str,
+    duration_ms: int,
+    result_word_count: int,
+    agent_transcript_path: str,
+    session_id: str,
+    success: bool,
+) -> bool:
+    """Write a structured JSONL entry for the SubagentStop event.
+
+    Args:
+        subagent_type: The agent type that completed.
+        duration_ms: Computed duration in milliseconds.
+        result_word_count: Word count of last_assistant_message.
+        agent_transcript_path: Validated transcript path or empty string.
+        session_id: Session identifier.
+        success: Whether the agent completed successfully.
+
+    Returns:
+        True if written successfully, False otherwise.
+    """
+    try:
+        log_dir = _find_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        date_str = _get_session_date(session_id)
+        log_file = log_dir / f"{date_str}.jsonl"
+
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "hook": "SubagentStop",
+            "subagent_type": subagent_type,
+            "duration_ms": duration_ms,
+            "result_word_count": result_word_count,
+            "agent_transcript_path": agent_transcript_path,
+            "session_id": session_id,
+            "success": success,
+        }
+
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+
+        return True
+    except Exception:
+        return False
+
+
+# ============================================================================
 # Main Hook Entry Point
 # ============================================================================
 
@@ -342,30 +552,80 @@ def main() -> int:
     """
     Main hook entry point.
 
-    Reads agent info from environment, dispatches tracking.
+    Reads agent info from stdin JSON (SubagentStop hook input), with
+    fallback to environment variables for backward compatibility.
 
     Returns:
         Always 0 (non-blocking hook)
     """
-    # Get agent info from environment (provided by Claude Code)
-    agent_name = os.environ.get("CLAUDE_AGENT_NAME", "unknown")
-    agent_output = os.environ.get("CLAUDE_AGENT_OUTPUT", "")
-    agent_status = os.environ.get("CLAUDE_AGENT_STATUS", "success")
-
-    # Create summary message
-    summary = agent_output[:100].replace("\n", " ") if agent_output else "Completed"
-
-    # Dispatch tracking (all are non-blocking)
     try:
+        # Parse stdin JSON (SubagentStop provides input via stdin)
+        hook_input = _parse_stdin()
+
+        # Check for infinite loop prevention
+        if hook_input.get("stop_hook_active", False):
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "SubagentStop"
+                }
+            }
+            print(json.dumps(output))
+            return 0
+
+        # Extract fields from stdin, fall back to env vars
+        if hook_input:
+            agent_name = hook_input.get("agent_type", "unknown")
+            agent_output = hook_input.get("last_assistant_message", "")
+            session_id = hook_input.get("session_id", os.environ.get("CLAUDE_SESSION_ID", "unknown"))
+            agent_transcript_path_raw = hook_input.get("agent_transcript_path", "")
+        else:
+            # Backward compatibility: fall back to environment variables
+            agent_name = os.environ.get("CLAUDE_AGENT_NAME", "unknown")
+            agent_output = os.environ.get("CLAUDE_AGENT_OUTPUT", "")
+            session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
+            agent_transcript_path_raw = ""
+
+        # Determine status from env or output content
+        agent_status = os.environ.get("CLAUDE_AGENT_STATUS", "success")
+        if agent_output and not _determine_success(agent_output):
+            agent_status = "error"
+
+        # Validate transcript path
+        agent_transcript_path = _validate_transcript_path(agent_transcript_path_raw)
+
+        # Compute duration
+        duration_ms = _compute_duration_ms()
+
+        # Compute word count
+        result_word_count = len(agent_output.split()) if agent_output else 0
+
+        # Determine success
+        success = _determine_success(agent_output)
+
+        # Create summary message
+        summary = agent_output[:100].replace("\n", " ") if agent_output else "Completed"
+
+        # Dispatch tracking (all are non-blocking)
         # Basic session logging
         track_basic_session(agent_name, summary)
 
         # Structured pipeline tracking
         track_pipeline_completion(agent_name, agent_output, agent_status)
 
+        # JSONL activity logging for CI agent visibility
+        _write_jsonl_entry(
+            subagent_type=agent_name,
+            duration_ms=duration_ms,
+            result_word_count=result_word_count,
+            agent_transcript_path=agent_transcript_path,
+            session_id=session_id,
+            success=success,
+        )
+
         # PROJECT.md progress updates (only for doc-master)
         if should_trigger_progress_update(agent_name) and check_pipeline_complete():
             update_project_progress()
+
     except Exception:
         # Graceful degradation - never block workflow
         pass

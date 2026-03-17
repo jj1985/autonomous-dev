@@ -166,6 +166,17 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/unified_session_tracker.py"
+          }
+        ]
+      }
     ]
   }
 }

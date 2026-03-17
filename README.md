@@ -211,7 +211,7 @@ Hooks run automatically at key moments to enforce quality without manual interve
 - **stop_quality_gate.py**: End-of-turn quality checks (pytest, ruff, mypy)
 - **enforce_tdd.py**: Test-first workflow enforcement (specification/acceptance tests before implementation)
 - **enforce_orchestrator.py**: PROJECT.md alignment validation
-- **unified_session_tracker.py**: Session state persistence across `/clear` operations
+- **unified_session_tracker.py**: SubagentStop session tracking — captures agent timing (`duration_ms`), validates transcript paths, and writes JSONL entries consumed by pipeline intent validation and ghost invocation detection
 
 **Hook Exit Code Semantics**:
 - `EXIT_SUCCESS (0)`: Hook passed, continue execution

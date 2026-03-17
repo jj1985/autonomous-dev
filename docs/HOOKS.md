@@ -75,7 +75,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_session_tracker.py** | Session logging, pipeline tracking, progress updates | TRACK_SESSIONS, TRACK_PIPELINE |
+| **unified_session_tracker.py** | Session logging, pipeline tracking, progress updates. Reads stdin JSON from Claude Code, computes duration_ms, validates agent_transcript_path, writes JSONL for pipeline_intent_validator ghost detection. | TRACK_SESSIONS, TRACK_PIPELINE |
 
 ### PostToolUse
 

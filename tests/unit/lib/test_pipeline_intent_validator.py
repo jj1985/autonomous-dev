@@ -580,6 +580,88 @@ class TestDetectGhostInvocations:
         assert len(ghost_findings) == 1
 
 
+class TestSubagentStopParsing:
+    """Tests for SubagentStop JSONL entry parsing."""
+
+    def test_parse_subagent_stop_entry(self, tmp_path):
+        """SubagentStop JSONL creates PipelineEvent with pipeline_action=agent_completion."""
+        log_file = tmp_path / "session.jsonl"
+        entry = {
+            "timestamp": "2026-03-17T10:00:00+00:00",
+            "hook": "SubagentStop",
+            "subagent_type": "researcher",
+            "duration_ms": 5000,
+            "result_word_count": 150,
+            "agent_transcript_path": "/Users/test/.claude/transcripts/abc.jsonl",
+            "session_id": "test-session",
+            "success": True,
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+        events = parse_session_logs(log_file)
+        assert len(events) == 1
+        e = events[0]
+        assert e.pipeline_action == "agent_completion"
+        assert e.subagent_type == "researcher"
+        assert e.tool == "Agent"
+        assert e.success is True
+
+    def test_subagent_stop_duration_ms(self, tmp_path):
+        """duration_ms is populated from SubagentStop entry."""
+        log_file = tmp_path / "session.jsonl"
+        entry = {
+            "timestamp": "2026-03-17T10:05:00+00:00",
+            "hook": "SubagentStop",
+            "subagent_type": "implementer",
+            "duration_ms": 120000,
+            "result_word_count": 500,
+            "session_id": "test-session",
+            "success": True,
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+        events = parse_session_logs(log_file)
+        assert len(events) == 1
+        assert events[0].duration_ms == 120000
+
+    def test_subagent_stop_with_transcript_path(self, tmp_path):
+        """agent_transcript_path is populated on PipelineEvent."""
+        log_file = tmp_path / "session.jsonl"
+        entry = {
+            "timestamp": "2026-03-17T10:10:00+00:00",
+            "hook": "SubagentStop",
+            "subagent_type": "planner",
+            "duration_ms": 30000,
+            "result_word_count": 200,
+            "agent_transcript_path": "/Users/test/.claude/transcripts/planner.jsonl",
+            "session_id": "test-session",
+            "success": True,
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+        events = parse_session_logs(log_file)
+        assert len(events) == 1
+        assert events[0].agent_transcript_path == "/Users/test/.claude/transcripts/planner.jsonl"
+
+    def test_ghost_detection_uses_subagent_stop(self, tmp_path):
+        """detect_ghost_invocations works with SubagentStop events (agent_completion)."""
+        log_file = tmp_path / "session.jsonl"
+        entry = {
+            "timestamp": "2026-03-17T10:00:00+00:00",
+            "hook": "SubagentStop",
+            "subagent_type": "researcher",
+            "duration_ms": 3000,
+            "result_word_count": 10,
+            "session_id": "test-session",
+            "success": True,
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+        events = parse_session_logs(log_file)
+        assert len(events) == 1
+        # SubagentStop events have tool="Agent" and subagent_type set,
+        # so ghost detection should pick them up
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 1
+        assert findings[0].finding_type == "ghost_invocation"
+
+
 class TestDataStructures:
     """Tests for PipelineEvent and Finding dataclasses."""
 
