@@ -3,7 +3,7 @@ name: create-issue
 description: "Create GitHub issue with automated research (--quick for fast mode)"
 argument-hint: "Issue title [--quick] (e.g., 'Add JWT authentication' or 'Add JWT authentication --quick')"
 allowed-tools: [Task, Read, Bash, Grep, Glob]
-disable-model-invocation: true
+disable-model-invocation: false
 user-invocable: true
 ---
 
