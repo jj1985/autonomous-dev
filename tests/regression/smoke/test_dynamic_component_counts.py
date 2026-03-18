@@ -42,23 +42,22 @@ class TestDynamicComponentCounts:
         return len(list(commands_dir.glob("*.md")))
 
     def _count_active_hooks(self, plugins_dir: Path) -> int:
-        """Count active hook .py files (not in archived/, not __init__)."""
+        """Count active hook files (.py and .sh, not in archived/, not __init__)."""
         hooks_dir = plugins_dir / "hooks"
         if not hooks_dir.exists():
             return 0
-        return len([
-            f for f in hooks_dir.glob("*.py")
-            if f.name != "__init__.py"
-        ])
+        py = [f for f in hooks_dir.glob("*.py") if f.name != "__init__.py"]
+        sh = list(hooks_dir.glob("*.sh"))
+        return len(py) + len(sh)
 
     def _count_libraries(self, plugins_dir: Path) -> int:
-        """Count library .py files (recursive, excluding __init__)."""
+        """Count library .py files (recursive, excluding __pycache__)."""
         lib_dir = plugins_dir / "lib"
         if not lib_dir.exists():
             return 0
         return len([
             f for f in lib_dir.rglob("*.py")
-            if f.name != "__init__.py"
+            if "__pycache__" not in str(f)
         ])
 
     def _parse_claude_md_counts(self, project_root: Path) -> dict[str, int]:

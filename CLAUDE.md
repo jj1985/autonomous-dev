@@ -55,7 +55,7 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 
 ## Component Counts
 
-11 agents, 17 skills, 17 active commands, 166 libraries, 19 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
+11 agents, 17 skills, 17 active commands, 171 libraries, 25 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
 
 ## Detailed Guides
 
