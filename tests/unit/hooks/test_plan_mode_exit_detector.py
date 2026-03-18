@@ -128,3 +128,84 @@ class TestPlanModeExitDetector:
 
         assert (tmp_path / ".claude").exists()
         assert (tmp_path / MARKER_PATH).exists()
+
+    def test_exit_plan_mode_captures_tool_response(self, tmp_path: Path):
+        """ExitPlanMode should capture plan content from tool_response."""
+        input_data = json.dumps({
+            "tool_name": "ExitPlanMode",
+            "tool_response": {"plan": "## Phase 1\nBuild the thing\n## Phase 2\nTest the thing"}
+        })
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
+        assert "plan_content" in marker_data
+        assert "Phase 1" in marker_data["plan_content"]
+
+    def test_exit_plan_mode_no_tool_response_omits_plan_content(self, tmp_path: Path):
+        """Missing tool_response should not include plan_content field."""
+        input_data = json.dumps({"tool_name": "ExitPlanMode"})
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
+        assert "plan_content" not in marker_data
+
+    def test_plan_content_truncated_at_10k(self, tmp_path: Path):
+        """Plan content should be truncated to 10,000 characters."""
+        long_plan = "x" * 15000
+        input_data = json.dumps({
+            "tool_name": "ExitPlanMode",
+            "tool_response": {"plan": long_plan}
+        })
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
+        assert len(marker_data["plan_content"]) == 10000
+
+    def test_exit_plan_mode_captures_string_tool_response(self, tmp_path: Path):
+        """String tool_response should be captured as plan_content."""
+        input_data = json.dumps({
+            "tool_name": "ExitPlanMode",
+            "tool_response": "Plan: build feature X then test it"
+        })
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
+        assert "plan_content" in marker_data
+        assert "build feature X" in marker_data["plan_content"]
+
+    def test_exit_plan_mode_captures_content_field(self, tmp_path: Path):
+        """tool_response with 'content' field (no 'plan') should be captured."""
+        input_data = json.dumps({
+            "tool_name": "ExitPlanMode",
+            "tool_response": {"content": "Detailed plan content here"}
+        })
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
+        assert "plan_content" in marker_data
+        assert "Detailed plan content here" in marker_data["plan_content"]

@@ -31,6 +31,7 @@ Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` t
 |---------|---------|
 | `/implement` | Code changes (full pipeline, --batch, --issues, --resume, --fix) |
 | `/create-issue` | GitHub issue with automated research (--quick) |
+| `/plan-to-issues` | Batch-convert plan into GitHub issues (--quick) |
 | `/align` | Alignment check (--project, --docs, --retrofit) |
 | `/audit` | Quality audit (--quick, --security, --docs, --code, --claude, --tests) |
 | `/setup` | Interactive setup wizard |
@@ -55,7 +56,7 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 
 ## Component Counts
 
-11 agents, 17 skills, 17 active commands, 171 libraries, 25 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
+11 agents, 17 skills, 18 active commands, 171 libraries, 25 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
 
 ## Detailed Guides
 

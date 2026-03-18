@@ -1,0 +1,259 @@
+---
+name: plan-to-issues
+description: "Batch-convert plan mode output into GitHub issues (--quick for fast mode)"
+argument-hint: "[--quick] (e.g., '/plan-to-issues' or '/plan-to-issues --quick')"
+allowed-tools: [Agent, Read, Bash, Grep, Glob]
+disable-model-invocation: false
+user-invocable: true
+---
+
+# Batch-Convert Plan into GitHub Issues
+
+Convert plan mode output (or any discussed plan) into individual, trackable GitHub issues.
+
+## Modes
+
+| Mode | Time | Description |
+|------|------|-------------|
+| **Default (thorough)** | 10-15 min | Full issue bodies with all sections |
+| **--quick** | 5-8 min | Summary, Implementation, Acceptance Criteria only |
+
+## Implementation
+
+**CRITICAL**: Follow these steps in order. Each checkpoint validates before proceeding.
+
+ARGUMENTS: {{ARGUMENTS}}
+
+---
+
+### STEP 0: Parse Arguments
+
+Parse the `{{ARGUMENTS}}` placeholder for flags:
+
+```
+--quick       Fast mode (fewer sections per issue, no prompts)
+```
+
+If `--quick` is present, set quick_mode=true. Everything else is ignored (plan comes from context).
+
+---
+
+### STEP 1: Extract Plan Items
+
+The plan is in the **current conversation context** -- the user just discussed and/or approved a plan. Extract individual work items by scanning the conversation for structural markers:
+
+**Patterns to match** (in order of specificity):
+1. Numbered lists: `1. Item description`, `2. Another item`
+2. Bold bullet items: `- **Phase 1: Name** -- description`
+3. Section headers: `## Phase 1: Name`
+4. Task items: `- [ ] Task description`, `- [x] Done task`
+5. Unicode markers: `task description`
+6. Phase/step labels: `Phase N:`, `Step N:`
+
+**Each extracted item needs**:
+- A short title (suitable for GitHub issue title, prefixed with `feat:`, `fix:`, `refactor:`, etc.)
+- A description (the content/details associated with that item)
+
+**Plan mode exit marker**: Check for `.claude/plan_mode_exit.json`. If it exists, note it as confirmation that plan mode was used. Read any `plan_content` field from the marker to supplement extraction.
+
+**If no items can be extracted**: Prompt the user to describe the plan items explicitly. Do NOT proceed without items.
+
+---
+
+### CHECKPOINT: Validate Extraction
+
+Verify:
+- At least 1 item was extracted
+- Cap at 20 issues maximum (if more than 20, warn the user and ask them to prioritize)
+- Display the extracted items in a numbered list:
+
+```
+Extracted N plan items:
+
+  1. feat: Project model system -- Core data model for projects
+  2. feat: Recipe YAML configs -- Configuration file format
+  3. refactor: CLI argument parser -- Modernize argument handling
+  ...
+
+Are these correct? Reply 'yes' to proceed, or describe corrections.
+```
+
+**REQUIRE** explicit user confirmation before proceeding. Do NOT auto-proceed.
+
+---
+
+### STEP 2: Generate Issue Bodies
+
+For each extracted item, invoke the **issue-creator** agent (subagent_type="issue-creator") with:
+- The item title and description
+- Mode flag (quick or default)
+
+**In --quick mode**: Tell the agent to include ONLY:
+1. Summary (1-2 sentences)
+2. Implementation Approach
+3. Acceptance Criteria
+
+**In default mode**: Tell the agent to include the full template (Summary, What Does NOT Work, Scenarios, Implementation Approach, Test Scenarios, Acceptance Criteria).
+
+**CRITICAL**: Run issue-creator calls SEQUENTIALLY (one at a time), not in parallel. Parallel calls would explode context size.
+
+Collect the generated title and body for each item.
+
+---
+
+### STEP 3: Preview Table
+
+Display a dry-run table showing all issues that will be created:
+
+```
+Issues to create (N total):
+
+  # | Title                              | Sections
+  --|------------------------------------|---------
+  1 | feat: Project model system          | 6
+  2 | feat: Recipe YAML configs           | 6
+  3 | refactor: CLI argument parser       | 3
+  ...
+
+Create these N issues? Reply 'yes' to proceed, 'no' to cancel.
+```
+
+**REQUIRE** explicit user confirmation. Do NOT proceed without it.
+
+---
+
+### STEP 4: Create Issues
+
+For each confirmed item, use the Bash tool:
+
+1. Write the issue body to a temp file:
+   ```bash
+   cat > /tmp/plan_issue_N.md << 'ISSUE_EOF'
+   <issue body content>
+   ISSUE_EOF
+   ```
+
+2. Sanitize the title:
+   - Strip backticks, semicolons, pipes, dollar signs
+   - Limit to 256 characters
+   - Escape double quotes
+
+3. Create the issue:
+   ```bash
+   gh issue create --title "SANITIZED_TITLE" --body-file /tmp/plan_issue_N.md
+   ```
+
+4. Sleep 1 second between calls (GitHub rate limiting)
+
+5. Collect created issue numbers and URLs
+
+**Error handling**: If `gh issue create` fails for one issue, log the error and continue with the remaining issues. Report failures in the summary.
+
+---
+
+### STEP 5: Output Summary
+
+Display the final summary:
+
+```
+Created N issues:
+  #101: feat: Project model system
+  #102: feat: Recipe YAML configs
+  #103: refactor: CLI argument parser
+  ...
+
+Ready to implement:
+  /implement --issues #101,#102,#103
+
+Research cached for reuse by /implement.
+```
+
+**Cleanup**:
+- Remove temp files: `rm -f /tmp/plan_issue_*.md`
+- Consume plan_mode_exit marker if present: delete `.claude/plan_mode_exit.json`
+
+If any issues failed to create, list them separately:
+
+```
+Failed to create (N):
+  - "feat: Widget system" -- Error: gh: not authenticated
+```
+
+---
+
+## Prerequisites
+
+**Required**:
+- gh CLI installed: https://cli.github.com/
+- gh CLI authenticated: `gh auth login`
+- Git repository with GitHub remote
+
+---
+
+## Error Handling
+
+### gh CLI Not Installed
+
+```
+Error: gh CLI is not installed
+
+Install gh CLI:
+  macOS: brew install gh
+  Linux: See https://cli.github.com/
+  Windows: Download from https://cli.github.com/
+
+After installing, authenticate:
+  gh auth login
+```
+
+### No Plan Items Found
+
+```
+No plan items detected in the current conversation.
+
+Please describe the items you want to create issues for, either:
+1. As a numbered list: "1. Feature A  2. Feature B  3. Feature C"
+2. Or describe the plan and I'll extract items from it
+```
+
+### Too Many Items
+
+```
+Warning: Extracted 25 items (max 20 per batch).
+
+Please prioritize -- which items should be created first?
+Or split into multiple /plan-to-issues runs.
+```
+
+---
+
+## Usage
+
+```bash
+# Default mode (thorough, all sections)
+/plan-to-issues
+
+# Quick mode (fewer sections, faster)
+/plan-to-issues --quick
+```
+
+---
+
+## Technical Details
+
+**Agents Used**:
+- **issue-creator**: Generate structured issue body (sequential calls)
+
+**Tools Used**:
+- gh CLI: Issue creation
+- Bash: File operations and gh commands
+
+**Security**:
+- CWE-78: Command injection prevention (title sanitization)
+- CWE-20: Input validation (length limits, character filtering)
+
+---
+
+**Part of**: Core workflow commands
+**Related**: `/create-issue`, `/implement --issues`
+**Introduced in**: v3.51.0 (GitHub Issue #488)

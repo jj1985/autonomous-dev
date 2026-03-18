@@ -9,6 +9,7 @@ This project uses the **autonomous-dev** plugin for Claude Code, providing AI-po
 | Code changes | `/implement "desc"` | Tests, security review, docs |
 | Quick code fix | `/implement --quick "desc"` | Fast test + implement |
 | GitHub issues | `/create-issue "desc"` | Research, dedup, alignment |
+| Batch plan to issues | `/plan-to-issues` | Convert plan to trackable issues |
 | Quality check | `/audit` | Coverage, security, docs |
 | Alignment | `/align` | PROJECT.md validation |
 | Doc updates | `/align --docs` | Sync docs with code |

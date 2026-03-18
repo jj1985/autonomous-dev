@@ -138,6 +138,7 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 | `/status` | View PROJECT.md goal progress with recommendations |
 | `/mem-search` | Search claude-mem persistent memory (optional) |
 | `/sweep` | Codebase hygiene — detect and fix dead tests, doc drift, code rot (--tests, --docs, --code, --fix) |
+| `/plan-to-issues` | Convert an approved plan into a GitHub issue backlog, ready for `/implement --issues` |
 
 ---
 

@@ -55,10 +55,22 @@ def main() -> int:
         marker_path = Path(os.getcwd()) / MARKER_PATH
         marker_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Extract plan content from tool_response if available
+        tool_response = input_data.get("tool_response", {})
+        plan_content = ""
+        if isinstance(tool_response, dict):
+            plan_content = tool_response.get("plan", "") or tool_response.get("content", "") or ""
+        elif isinstance(tool_response, str):
+            plan_content = tool_response
+
         marker_data = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "session_id": os.environ.get("CLAUDE_SESSION_ID", "unknown"),
         }
+
+        # Add plan content if available (truncate to 10K chars)
+        if plan_content:
+            marker_data["plan_content"] = plan_content[:10000]
 
         marker_path.write_text(json.dumps(marker_data, indent=2))
     except Exception:

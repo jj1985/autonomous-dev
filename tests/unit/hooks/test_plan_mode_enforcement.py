@@ -110,6 +110,22 @@ class TestPlanModeEnforcementWithMarker:
             result = _check_plan_mode_enforcement("/create-issue --quick fix login")
         assert result == 0
 
+    def test_plan_to_issues_command_passes_and_consumes_marker(self, tmp_path: Path):
+        """'/plan-to-issues' should pass and delete the marker."""
+        marker = _write_marker(tmp_path)
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/plan-to-issues")
+        assert result == 0
+        assert not marker.exists()
+
+    def test_plan_to_issues_with_quick_flag_passes(self, tmp_path: Path):
+        """'/plan-to-issues --quick' should pass and delete the marker."""
+        marker = _write_marker(tmp_path)
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/plan-to-issues --quick")
+        assert result == 0
+        assert not marker.exists()
+
     def test_other_commands_blocked(self, tmp_path: Path):
         """Other slash commands like /audit should be blocked."""
         _write_marker(tmp_path)
@@ -180,3 +196,11 @@ class TestPlanModeEnforcementEdgeCases:
         # Should also output JSON to stdout
         output = json.loads(captured.out)
         assert "error" in output["hookSpecificOutput"]
+
+    def test_block_message_includes_plan_to_issues(self, tmp_path: Path, capsys):
+        """Block message should mention /plan-to-issues as an option."""
+        _write_marker(tmp_path)
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            _check_plan_mode_enforcement("make the changes now")
+        captured = capsys.readouterr()
+        assert "/plan-to-issues" in captured.err

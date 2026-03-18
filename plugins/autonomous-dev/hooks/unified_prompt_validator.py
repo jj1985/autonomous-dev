@@ -294,7 +294,7 @@ def _check_plan_mode_enforcement(user_prompt: str) -> Optional[int]:
             return None
 
         # Allow /implement and /create-issue -- consume marker
-        if re.match(r"^/(implement|create-issue)\b", text):
+        if re.match(r"^/(implement|create-issue|plan-to-issues)\b", text):
             marker_path.unlink(missing_ok=True)
             return 0
 
@@ -303,7 +303,8 @@ def _check_plan_mode_enforcement(user_prompt: str) -> Optional[int]:
             "PLAN MODE EXIT DETECTED\n\n"
             "You just exited plan mode. Your next action must use one of:\n"
             "  /implement \"description\"  -- to execute the plan\n"
-            "  /create-issue \"description\"  -- to file an issue for later\n\n"
+            "  /create-issue \"description\"  -- to file an issue for later\n"
+            "  /plan-to-issues  -- to convert plan into multiple issues\n\n"
             "Direct editing after plan mode bypasses testing, security review, and docs.\n"
             "See: CLAUDE.md Critical Rules"
         )
