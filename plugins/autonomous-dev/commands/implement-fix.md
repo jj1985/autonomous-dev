@@ -13,9 +13,36 @@ Minimal pipeline (4 steps, 3 agents minimum) for test-fixing tasks.
 Invoked via `/implement --fix "description"`. Skips research and planning
 since the problem is already known (failing tests).
 
+## Fix Mode Progress Protocol
+
+Output structured progress at each step. Same format conventions as the full pipeline protocol.
+
+**Step Banner**: `STEP FN/4 — Step Name` with agent info where applicable.
+**Timing**: Capture `FIX_START=$(date +%s)` at pipeline start. Capture per-step timing.
+**Gate Results**: `GATE: name — PASS/BLOCKED`
+**Final Summary** (after STEP F4):
+```
+========================================
+FIX COMPLETE
+========================================
+Step  Description         Agent(s)              Time    Status
+----  ------------------  --------------------  ------  ------
+F1    Alignment           —                     2s      PASS
+F1.5  Pre-staged check    —                     1s      PASS
+F2    Test context         —                    5s      done
+F3    Implementation      implementer (Opus)    2:30    done
+F3    Test gate           —                     8s      PASS
+F4    Review + docs       reviewer, doc-master  45s     done
+========================================
+Total: 3:31 | Tests: N passed, M failed | Files changed: N
+========================================
+```
+
 ## Implementation
 
 ### STEP F1: Validate PROJECT.md Alignment
+
+**Progress**: Output step banner (STEP F1/4 — Alignment). Capture FIX_START. Output gate result.
 
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`").
 Check that the fix is within project scope. If misaligned: BLOCK with reason.
@@ -23,6 +50,8 @@ Check that the fix is within project scope. If misaligned: BLOCK with reason.
 This is the same alignment gate as the full pipeline STEP 1.
 
 ### STEP F1.5: Pre-Staged Files Check — HARD GATE
+
+**Progress**: Output step banner (STEP F1.5/4 — Pre-Staged Check). Output gate result.
 
 ```bash
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
@@ -57,6 +86,8 @@ Do NOT proceed to STEP F2 until the staging area is clean.
 
 ### STEP F2: Gather Test Context
 
+**Progress**: Output step banner (STEP F2/4 — Test Context). Output test failure summary after.
+
 Run the test suite to capture current failures:
 
 ```bash
@@ -80,6 +111,8 @@ Fix Mode - Test Context:
 ```
 
 ### STEP F3: Implementer (Opus) - HARD GATE
+
+**Progress**: Output step banner (STEP F3/4 — Implementation, Agent: implementer (Opus)). Output agent completion, then test gate result with counts.
 
 Invoke the implementer agent with the failing test output and affected files.
 
@@ -122,6 +155,8 @@ If fixing a bug, at least one NEW test must be added that would FAIL without the
 - Adding a test that passes both with and without the fix (that's not a regression test)
 
 ### STEP F4: Reviewer + Doc-master (parallel)
+
+**Progress**: Output step banner (STEP F4/4 — Review + Docs, Agents: reviewer (Sonnet), doc-master (Sonnet)). Output each agent completion. Then output Final Summary table.
 
 Invoke TWO agents in PARALLEL:
 

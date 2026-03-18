@@ -17,7 +17,42 @@ Invoke the implementer agent to process each feature in the batch file sequentia
 
 Process multiple features from a file with automatic worktree isolation.
 
+## Batch Mode Progress Protocol
+
+Batch mode adds two layers on top of the full pipeline's progress protocol:
+
+**Batch Header** — output at start of batch:
+```
+========================================
+BATCH START — N features
+Mode: acceptance-first | Worktree: .worktrees/$BATCH_ID
+========================================
+```
+
+**Per-Feature Header** — output before each feature's pipeline:
+```
+----------------------------------------
+Feature M/N — "feature description"
+----------------------------------------
+```
+
+**Per-Feature Footer** — output after each feature's pipeline:
+```
+  Feature M/N complete (Xs) | Tests: P passed | Running total: M/N done
+```
+
+Within each feature, follow the full pipeline's step banner and agent completion format.
+
+**Batch Summary Timing** — enhance STEP B5 with per-feature timing:
+```
+  Feature 1: "description"       2:30
+  Feature 2: "description"       3:15
+  Feature 3: "description"       FAILED (reason)
+```
+
 **STEP B0: Pre-Staged Files Check — HARD GATE**
+
+**Progress**: Output batch header after worktree creation. Output gate result for pre-staged check.
 
 ```bash
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
@@ -51,6 +86,8 @@ Do NOT proceed to STEP B1 until the staging area is clean.
 - ❌ Creating worktrees with pre-staged files in the index
 
 **STEP B1: Create Worktree**
+
+**Progress**: Capture `BATCH_START=$(date +%s)` after worktree creation.
 
 Before processing features, create an isolated worktree and change to it:
 
@@ -90,6 +127,8 @@ Note: The `create_batch_worktree()` function automatically changes the current w
 
 **STEP B2: Parse Features File**
 
+**Progress**: Output feature count summary.
+
 Use the Read tool to read the batch file specified in ARGUMENTS (after `--batch`).
 
 Parse the content:
@@ -113,7 +152,7 @@ Starting batch processing in worktree: .worktrees/$BATCH_ID
 
 For each feature in the list:
 
-1. Display progress: `Feature M of N: [feature description]`
+1. Display progress using per-feature header: `Feature M/N — "feature description"` (see Batch Mode Progress Protocol). After each feature completes, output per-feature footer with elapsed time and running total.
 2. Execute the **full pipeline (STEPS 1-8)** for this feature, with BATCH CONTEXT prepended to ALL agent prompts
 3. If a feature fails, log the failure and continue to the next feature
 4. **HARD GATE: Per-Issue Agent Count Verification**
@@ -262,6 +301,8 @@ After ALL features in batch are processed, YOU (the coordinator) MUST finalize:
    **HARD GATE**: The coordinator MUST close all successfully implemented issues. Skipping this step is a pipeline completeness violation. If `gh` CLI is unavailable, log a warning but do not fail the batch.
 
 **STEP B5: Batch Summary**
+
+Include per-feature timing breakdown in the summary (see Batch Mode Progress Protocol).
 
 Show results based on STEP B4 outcome:
 

@@ -34,6 +34,71 @@ user-invocable: true
 - ❌ You MUST NOT write implementation code yourself instead of delegating to agents
 - ❌ You MUST NOT contain detailed agent instructions inline — those belong in agents/*.md
 
+### Pipeline Progress Protocol
+
+**You MUST output structured progress to the user at each pipeline milestone.** This keeps the user informed of what's happening, which agents are running, and how long each step takes.
+
+**Timing**: Capture `STEP_START=$(date +%s)` before each step. After each step, calculate elapsed: `STEP_ELAPSED=$(( $(date +%s) - STEP_START ))`. Format: `Xs` if under 60s, `M:SS` if 60s+.
+
+**Step Banner** — output before each step begins:
+```
+========================================
+STEP N/TOTAL — Step Name
+Agent: agent-name (Model) [or "Agents: a, b (Model)" for parallel]
+========================================
+```
+
+For non-agent steps (gates, checks), omit the Agent line.
+
+**Agent Completion** — output after each agent returns:
+```
+  [done] agent-name              Xs
+```
+On failure:
+```
+  [FAIL] agent-name              Xs — reason
+```
+
+**HARD GATE Result** — output after each gate check:
+```
+  GATE: gate-name — PASS                Xs
+```
+or:
+```
+  GATE: gate-name — BLOCKED (reason)
+```
+
+**Test Gate Result** (STEP 5) — output after pytest:
+```
+  Tests: N passed, M failed, K skipped | Coverage: X.X% (baseline: Y.Y%)
+```
+
+**Final Summary** (STEP 8) — output the full pipeline summary:
+```
+========================================
+PIPELINE COMPLETE
+========================================
+Step   Description                  Agent(s)                     Time     Status
+-----  ---------------------------  ---------------------------  -------  ------
+0.5    Pre-staged check             —                            2s       PASS
+1      Alignment                    —                            3s       PASS
+1.5    Research cache               —                            1s       MISS
+2      Research                     researcher-local, researcher 45s      done
+3      Planning                     planner                      1:32     done
+3.5    Acceptance tests             —                            18s      done
+5      Implementation               implementer                  3:45     done
+5      Test gate                    —                            12s      PASS
+5.5    Hook registration            —                            2s       PASS
+6      Validation                   reviewer, security, docs     52s      done
+7      Verification                 —                            3s       PASS
+8      Git operations               —                            5s       done
+8.5    Doc congruence               —                            8s       PASS
+9      Continuous improvement       ci-analyst                   (bg)     done
+========================================
+Total: 7:08 | Files changed: N | Tests: N passed, M failed | Security: PASS
+========================================
+```
+
 ARGUMENTS: {{ARGUMENTS}}
 
 ---
@@ -47,6 +112,7 @@ Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--
 Activate pipeline state:
 ```bash
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
+PIPELINE_START=$(date +%s)
 python3 -c "
 import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
 from pipeline_state import create_pipeline, save_pipeline
@@ -64,6 +130,8 @@ echo '{"session_start":"'$(date +%Y-%m-%dT%H:%M:%S)'","mode":"MODE","run_id":"'$
 Execute steps IN ORDER. Default mode uses acceptance-first testing (7 agents). TDD-first mode (`--tdd-first`) adds test-master (8 agents).
 
 ### STEP 0.5: Pre-Staged Files Check — HARD GATE
+
+**Progress**: Output step banner (STEP 1/14 — Pre-Staged Files Check). Output gate result after check.
 
 ```bash
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
@@ -98,9 +166,13 @@ Do NOT proceed to STEP 1 until the staging area is clean.
 
 ### STEP 1: Validate PROJECT.md Alignment — HARD GATE
 
+**Progress**: Output step banner (STEP 2/14 — Alignment). Output gate result after.
+
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`"). Check feature against GOALS, SCOPE, CONSTRAINTS. If misaligned: BLOCK with reason and options.
 
 ### STEP 1.5: Check Research Cache
+
+**Progress**: Output step banner (STEP 3/14 — Research Cache). Output CACHE_HIT or CACHE_MISS after.
 
 ```bash
 python3 -c "
@@ -114,6 +186,8 @@ CACHE_HIT → load cached research, skip STEP 2, pass to STEP 3. CACHE_MISS → 
 
 ### STEP 2: Parallel Research (2 agents)
 
+**Progress**: Output step banner (STEP 4/14 — Research, Agents: researcher-local (Haiku), researcher (Sonnet)). Output agent completions after each returns.
+
 Invoke TWO agents in PARALLEL (single message, both Agent tool calls):
 1. **Agent**(subagent_type="researcher-local", model="haiku") — "Search codebase for patterns related to: {feature}. Output JSON with findings and sources."
 2. **Agent**(subagent_type="researcher", model="sonnet") — "Research best practices for: {feature}. MUST use WebSearch. Output JSON with findings, sources, security considerations."
@@ -122,17 +196,25 @@ Validation: If web researcher shows 0 tool uses, retry. Merge both outputs. Pers
 
 ### STEP 3: Planner (1 agent)
 
+**Progress**: Output step banner (STEP 5/14 — Planning, Agent: planner (Opus)). Output agent completion after.
+
 **Agent**(subagent_type="planner", model="opus") — Pass merged research + feature description. Output: file-by-file plan, dependencies, edge cases, testing strategy.
 
 ### STEP 3.5: Generate Acceptance Tests (default mode only)
+
+**Progress**: Output step banner (STEP 6/14 — Acceptance Tests). Output completion after.
 
 Skip if `--tdd-first`. Check `tests/genai/conftest.py` exists (if not, fall back to TDD-first). Generate `tests/genai/test_acceptance_{slug}.py` with one `genai.judge()` test per acceptance criterion from planner output.
 
 ### STEP 4: Test-Master (--tdd-first only)
 
+**Progress**: Output step banner (STEP 7/14 — Test-Master, Agent: test-master (Opus)). Skip banner if not --tdd-first. Output agent completion after.
+
 If `--tdd-first`: **Agent**(subagent_type="test-master", model="opus") — Pass planner output + file list + GenAI infra status (`test -f tests/genai/conftest.py && echo "GENAI_INFRA=EXISTS" || echo "GENAI_INFRA=ABSENT"`). Otherwise: skip (implementer writes unit tests alongside code in default acceptance-first mode).
 
 ### STEP 5: Implementer + Test Gate — HARD GATE
+
+**Progress**: Output step banner (STEP 8/14 — Implementation + Test Gate, Agent: implementer (Opus)). Output agent completion, then test gate result with pass/fail/skip counts and coverage after.
 
 **Agent**(subagent_type="implementer", model="opus") — Pass planner output + acceptance tests (or test-master output if TDD). Must write WORKING code, no stubs.
 
@@ -158,9 +240,13 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 
 ### STEP 5.5: Hook Registration Check — HARD GATE
 
+**Progress**: Output step banner (STEP 9/14 — Hook Registration). Output gate result after.
+
 If hooks were created/modified: verify they appear in `templates/settings.*.json`, `config/global_settings_template.json`, and `config/install_manifest.json`. BLOCK if unregistered.
 
 ### STEP 6: Parallel Validation (3 agents)
+
+**Progress**: Output step banner (STEP 10/14 — Validation, Agents: reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet)). Output each agent completion as they return.
 
 Invoke THREE agents in PARALLEL (single message):
 1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues.
@@ -169,11 +255,13 @@ Invoke THREE agents in PARALLEL (single message):
 
 ### STEP 7: Final Verification
 
+**Progress**: Output step banner (STEP 11/14 — Final Verification). Output result after.
+
 Verify all required agents ran. Default: 7 (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master). TDD-first: 8 (add test-master). If any missing, invoke NOW.
 
 ### STEP 8: Report and Finalize
 
-Report: 1-line per agent, files changed, tests, security PASS/FAIL, docs.
+**Progress**: Output the **Final Summary** table per Pipeline Progress Protocol. Include per-step elapsed times, total pipeline time (from PIPELINE_START), files changed, test counts, and security result. Then proceed with git operations.
 
 ```bash
 # Git push (if AUTO_GIT_PUSH=true)
@@ -185,12 +273,16 @@ gh issue close <number> -c "Implemented in $COMMIT_SHA" 2>/dev/null || echo "War
 
 ### STEP 8.5: Documentation Congruence — HARD GATE
 
+**Progress**: Output step banner (STEP 13/14 — Documentation Congruence). Output gate result after.
+
 ```bash
 pytest tests/unit/test_documentation_congruence.py --tb=short -q
 ```
 If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipping, proceeding with failures, manual edits without re-running tests.
 
 ### STEP 9: Continuous Improvement — HARD GATE
+
+**Progress**: Output step banner (STEP 14/14 — Continuous Improvement). Output agent launch confirmation.
 
 **REQUIRED**: **Agent**(subagent_type="continuous-improvement-analyst", model="sonnet", run_in_background=true) — Examines session logs for bypasses, test drift, pipeline completeness.
 
