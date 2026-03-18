@@ -40,6 +40,7 @@ Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` t
 | `/worktree` | Git worktrees (--list, --status, --merge, --discard) |
 | `/scaffold-genai-uat` | Scaffold LLM-as-judge tests into any repo |
 | `/status` | View PROJECT.md goal progress |
+| `/sweep` | Codebase hygiene (--tests, --docs, --code, --fix) |
 | `/improve` | Automation health analysis — pipeline enforcement, bypasses |
 | `/mem-search` | Search claude-mem persistent memory (optional) |
 
@@ -54,7 +55,7 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 
 ## Component Counts
 
-11 agents, 17 skills, 16 active commands, 165 libraries, 19 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
+11 agents, 17 skills, 17 active commands, 166 libraries, 19 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
 
 ## Detailed Guides
 

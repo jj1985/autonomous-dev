@@ -15,6 +15,7 @@
     "scaffold-genai-uat",
     "setup",
     "status",
+    "sweep",
     "sync",
     "worktree"
   ],
@@ -53,6 +54,7 @@
         "plugins/autonomous-dev/commands/scaffold-genai-uat.md",
         "plugins/autonomous-dev/commands/setup.md",
         "plugins/autonomous-dev/commands/status.md",
+        "plugins/autonomous-dev/commands/sweep.md",
         "plugins/autonomous-dev/commands/sync.md",
         "plugins/autonomous-dev/commands/worktree.md"
       ]
@@ -216,6 +218,7 @@
         "plugins/autonomous-dev/lib/staging_manager.py",
         "plugins/autonomous-dev/lib/status_tracker.py",
         "plugins/autonomous-dev/lib/stuck_detector.py",
+        "plugins/autonomous-dev/lib/sweep_analyzer.py",
         "plugins/autonomous-dev/lib/success_criteria_validator.py",
         "plugins/autonomous-dev/lib/sync_dispatcher.py",
         "plugins/autonomous-dev/lib/sync_mode_detector.py",

@@ -137,6 +137,7 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 | `/scaffold-genai-uat` | Scaffold LLM-as-judge tests into any repo |
 | `/status` | View PROJECT.md goal progress with recommendations |
 | `/mem-search` | Search claude-mem persistent memory (optional) |
+| `/sweep` | Codebase hygiene — detect and fix dead tests, doc drift, code rot (--tests, --docs, --code, --fix) |
 
 ---
 
