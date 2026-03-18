@@ -441,10 +441,39 @@ def _is_exempt_path(file_path: str) -> bool:
     return False
 
 
+def _is_autonomous_dev_repo(file_path: str) -> bool:
+    """Check if file is inside a repo where autonomous-dev is installed.
+
+    Walks up from file_path looking for .claude/commands/implement.md,
+    which only exists in repos with the autonomous-dev plugin installed.
+
+    Args:
+        file_path: Absolute path to check
+
+    Returns:
+        True if file is inside an autonomous-dev-managed repo
+    """
+    try:
+        current = Path(file_path).resolve().parent
+    except (OSError, ValueError):
+        return False
+    # Walk up at most 10 levels to find repo root
+    for _ in range(10):
+        marker = current / ".claude" / "commands" / "implement.md"
+        if marker.exists():
+            return True
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return False
+
+
 def _is_protected_infrastructure(file_path: str) -> bool:
     """Check if file is a protected infrastructure file (agents, commands, hooks, lib, skills).
 
     Protected files require the /implement pipeline for edits.
+    Only applies to repos where autonomous-dev is installed — other repos are unaffected.
 
     Args:
         file_path: Path to the file being edited
@@ -459,6 +488,9 @@ def _is_protected_infrastructure(file_path: str) -> bool:
         resolved = str(Path(file_path).resolve())
     except (OSError, ValueError):
         resolved = file_path
+    # Only protect infrastructure in autonomous-dev repos (not all repos globally)
+    if not _is_autonomous_dev_repo(resolved):
+        return False
     # Normalize separators to forward slashes for consistent matching
     normalized = resolved.replace("\\", "/")
     # Ensure leading slash or check for bare directory name at start
