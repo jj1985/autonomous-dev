@@ -356,7 +356,18 @@ NATIVE_TOOLS = {
     "AskUserQuestion", "Skill", "SlashCommand", "BashOutput", "NotebookEdit",
     "TodoWrite", "EnterPlanMode", "ExitPlanMode", "AgentOutputTool", "KillShell",
     "LSP", "WebFetch", "WebSearch",
-    "Agent", "EnterWorktree", "ToolSearch",
+    "Agent", "EnterWorktree", "ExitWorktree", "ToolSearch",
+    "CronCreate", "CronDelete", "CronList",
+}
+
+# Infrastructure file segments protected from direct edits (Issue #483)
+# Maps directory path segments to allowed file extensions within that segment.
+PROTECTED_INFRA_SEGMENTS = {
+    '/agents/': {'.md'},
+    '/commands/': {'.md'},
+    '/hooks/': {'.py'},
+    '/lib/': {'.py'},
+    '/skills/': {'.md'},
 }
 
 
@@ -427,6 +438,73 @@ def _is_exempt_path(file_path: str) -> bool:
     if any(s in path_str for s in ['.claude/hooks/', 'hooks/', '/lib/', 'lib/', '.claude/agents/',
                                     '.claude/commands/', '.claude/skills/', 'scripts/']):
         return True
+    return False
+
+
+def _is_protected_infrastructure(file_path: str) -> bool:
+    """Check if file is a protected infrastructure file (agents, commands, hooks, lib, skills).
+
+    Protected files require the /implement pipeline for edits.
+
+    Args:
+        file_path: Path to the file being edited
+
+    Returns:
+        True if the file is in a protected directory with matching extension
+    """
+    if not file_path:
+        return False
+    # Resolve symlinks and normalize to absolute path for security (A01)
+    try:
+        resolved = str(Path(file_path).resolve())
+    except (OSError, ValueError):
+        resolved = file_path
+    # Normalize separators to forward slashes for consistent matching
+    normalized = resolved.replace("\\", "/")
+    # Ensure leading slash or check for bare directory name at start
+    for segment, extensions in PROTECTED_INFRA_SEGMENTS.items():
+        # segment is like '/agents/' — check both embedded and path-start forms
+        bare = segment.lstrip("/")  # 'agents/'
+        if segment in normalized or normalized.startswith(bare):
+            ext = Path(file_path).suffix.lower()
+            if ext in extensions:
+                return True
+    return False
+
+
+def _is_pipeline_active() -> bool:
+    """Check if the /implement pipeline is currently active.
+
+    Checks two sources:
+    1. CLAUDE_AGENT_NAME env var against known pipeline agents
+    2. Pipeline state file (valid if < 2 hours old)
+
+    Returns:
+        True if pipeline is active
+    """
+    # Check agent name
+    agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+    if agent_name in PIPELINE_AGENTS:
+        return True
+
+    # Check pipeline state file
+    pipeline_state_file = os.getenv("PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json")
+    try:
+        state_path = Path(pipeline_state_file)
+        if state_path.exists():
+            import json as _json
+            from datetime import datetime as _datetime
+            with open(state_path) as f:
+                state = _json.load(f)
+            session_start = state.get("session_start", "")
+            if session_start:
+                start_time = _datetime.fromisoformat(session_start)
+                elapsed = (_datetime.now() - start_time).total_seconds()
+                if elapsed < 7200:  # 2 hours
+                    return True
+    except Exception:
+        pass
+
     return False
 
 
@@ -533,28 +611,12 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
     if not enabled:
         return ("allow", "Agent authorization disabled")
 
-    # Check if running inside a pipeline agent
-    agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
-    if agent_name in PIPELINE_AGENTS:
-        return ("allow", f"Pipeline agent '{agent_name}' authorized")
-
-    # Fallback: check if /implement pipeline is active via state file
-    pipeline_state_file = os.getenv("PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json")
-    try:
-        state_path = Path(pipeline_state_file)
-        if state_path.exists():
-            import json as _json
-            from datetime import datetime as _datetime
-            with open(state_path) as f:
-                state = _json.load(f)
-            session_start = state.get("session_start", "")
-            if session_start:
-                start_time = _datetime.fromisoformat(session_start)
-                elapsed = (_datetime.now() - start_time).total_seconds()
-                if elapsed < 7200:  # 2 hours
-                    return ("allow", "Active /implement pipeline detected via state file")
-    except Exception:
-        pass  # If state file is unreadable, fall through to normal enforcement
+    # Check if pipeline is active (agent name or state file)
+    if _is_pipeline_active():
+        agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+        if agent_name in PIPELINE_AGENTS:
+            return ("allow", f"Pipeline agent '{agent_name}' authorized")
+        return ("allow", "Active /implement pipeline detected via state file")
 
     # Only check Edit, Write, and Bash tools
     if tool_name not in ("Edit", "Write", "Bash"):
@@ -769,8 +831,14 @@ def _log_pretool_activity(tool_name: str, tool_input: Dict, decision: str, reaso
         pass
 
 
-def output_decision(decision: str, reason: str):
-    """Output the hook decision in required format."""
+def output_decision(decision: str, reason: str, *, system_message: str = ""):
+    """Output the hook decision in required format.
+
+    Args:
+        decision: Permission decision ("allow", "deny", or "ask")
+        reason: Human-readable reason for the decision
+        system_message: Optional message injected into model context (visible to user)
+    """
     output = {
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -778,6 +846,8 @@ def output_decision(decision: str, reason: str):
             "permissionDecisionReason": reason
         }
     }
+    if system_message:
+        output["systemMessage"] = system_message
     print(json.dumps(output))
 
 
@@ -811,6 +881,32 @@ def main():
         # settings.json, not by this hook.
         # =================================================================
         if tool_name in NATIVE_TOOLS:
+            # Infrastructure protection: block direct edits to agents/, commands/,
+            # hooks/, lib/, skills/ unless /implement pipeline is active (Issue #483)
+            # Threat model: accidental direct edits, not malicious local attacker.
+            # CLAUDE_AGENT_NAME is set by Claude Code; env var trust is by design.
+            # Fail-closed: if the check itself errors, block the edit (A04 remediation).
+            if tool_name in ("Write", "Edit"):
+                file_path = tool_input.get("file_path", "")
+                try:
+                    is_protected = _is_protected_infrastructure(file_path)
+                    pipeline_active = _is_pipeline_active() if is_protected else False
+                except Exception:
+                    # Fail closed — if protection check errors, treat as protected
+                    is_protected = True
+                    pipeline_active = False
+                if is_protected and not pipeline_active:
+                    file_name = Path(file_path).name if file_path else "unknown"
+                    block_reason = (
+                        f"BLOCKED: Direct edit to '{file_name}' denied. "
+                        f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
+                        f"require the /implement pipeline. Run: /implement \"description\""
+                    )
+                    _log_deviation(file_name, tool_name, "infrastructure_protection_block")
+                    _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
+                    output_decision("deny", block_reason, system_message=block_reason)
+                    sys.exit(0)
+
             reason = f"Native tool '{tool_name}' - hook bypass (settings.json governs)"
             _log_pretool_activity(tool_name, tool_input, "allow", reason)
             output_decision("allow", reason)

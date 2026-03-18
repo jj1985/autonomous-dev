@@ -20,7 +20,7 @@ Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` t
 ## Critical Rules
 
 - **Direct editing is only for**: user-facing docs (README.md, CHANGELOG.md, docs/*.md), config (.json/.yaml), typos (1-2 lines).
-- **NEVER direct-edit without `/implement`**: `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` — these are functional infrastructure, not documentation.
+- **NEVER direct-edit without `/implement`**: `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` — these are functional infrastructure, not documentation. This rule is **hook-enforced**: `unified_pre_tool.py` blocks Write/Edit to these paths when the `/implement` pipeline is not active (Issue #483).
 - **After plan mode approval → use `/implement`**: The plan IS the input to `/implement`, not a license to bypass it.
 - **Run `/improve` after `/implement` sessions.** Use `--auto-file` to create GitHub issues for findings.
 - **Use `/clear` after each feature.** Prevents context bloat.

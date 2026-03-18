@@ -32,7 +32,8 @@ class TestNativeToolsFastPath:
         "AskUserQuestion", "Skill", "SlashCommand", "BashOutput", "NotebookEdit",
         "TodoWrite", "EnterPlanMode", "ExitPlanMode", "AgentOutputTool", "KillShell",
         "LSP", "WebFetch", "WebSearch",
-        "Agent", "EnterWorktree", "ToolSearch",
+        "Agent", "EnterWorktree", "ExitWorktree", "ToolSearch",
+        "CronCreate", "CronDelete", "CronList",
     }
 
     def test_native_tools_set_exists(self, hook_content: str):
@@ -49,15 +50,24 @@ class TestNativeToolsFastPath:
 
     def test_fast_path_returns_allow(self, hook_content: str):
         """Fast path for native tools must return 'allow', not 'ask'."""
-        # Find the fast path block in main() — the one that calls output_decision and sys.exit
+        # Find the fast path block in main() — from FAST PATH comment through the
+        # final sys.exit(0) that ends the native tools block. Use greedy match to
+        # capture through the allow return, not just the infrastructure deny.
         fast_path_match = re.search(
-            r'# FAST PATH.*?if tool_name in NATIVE_TOOLS:.*?sys\.exit\(0\)',
+            r'# FAST PATH.*?if tool_name in NATIVE_TOOLS:.*output_decision\("allow".*?sys\.exit\(0\)',
             hook_content,
             re.DOTALL,
         )
         assert fast_path_match, "NATIVE_TOOLS fast path not found in main()"
         fast_path = fast_path_match.group(0)
+        # The fast path may include infrastructure protection (deny for Write/Edit
+        # to protected files), but must ALSO include the default allow for all
+        # native tools (Issue #483 added the protection, #401 requires the allow)
         assert 'output_decision("allow"' in fast_path, "Fast path must return 'allow' for native tools"
+        # Infrastructure protection must also be present (Issue #483)
+        assert '_is_protected_infrastructure' in fast_path, (
+            "Fast path must check infrastructure protection before allowing Write/Edit"
+        )
 
 
 class TestDefaultAllowForNonNativeTools:
