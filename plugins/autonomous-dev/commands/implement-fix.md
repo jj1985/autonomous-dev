@@ -22,6 +22,39 @@ Check that the fix is within project scope. If misaligned: BLOCK with reason.
 
 This is the same alignment gate as the full pipeline STEP 1.
 
+### STEP F1.5: Pre-Staged Files Check — HARD GATE
+
+```bash
+STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
+if [ -n "$STAGED_FILES" ]; then
+  echo "BLOCKED: Pre-staged files detected"
+  echo "$STAGED_FILES"
+fi
+```
+
+If `STAGED_FILES` is non-empty: **BLOCK** the pipeline. Display:
+
+```
+BLOCKED — Pre-staged files detected.
+
+The following files are already staged from a previous session:
+[list files]
+
+These would be bundled into this fix's commit, creating misleading git history.
+
+Options:
+A) Unstage: git reset HEAD
+B) Commit first: git commit -m "wip: staged changes from previous session"
+C) Review: git diff --cached
+```
+
+Do NOT proceed to STEP F2 until the staging area is clean.
+
+**FORBIDDEN**:
+- ❌ Proceeding with pre-staged files present
+- ❌ Silently unstaging files without user confirmation
+- ❌ Treating pre-staged files as part of the current fix
+
 ### STEP F2: Gather Test Context
 
 Run the test suite to capture current failures:

@@ -63,6 +63,39 @@ echo '{"session_start":"'$(date +%Y-%m-%dT%H:%M:%S)'","mode":"MODE","run_id":"'$
 
 Execute steps IN ORDER. Default mode uses acceptance-first testing (7 agents). TDD-first mode (`--tdd-first`) adds test-master (8 agents).
 
+### STEP 0.5: Pre-Staged Files Check — HARD GATE
+
+```bash
+STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
+if [ -n "$STAGED_FILES" ]; then
+  echo "BLOCKED: Pre-staged files detected"
+  echo "$STAGED_FILES"
+fi
+```
+
+If `STAGED_FILES` is non-empty: **BLOCK** the pipeline. Display:
+
+```
+BLOCKED — Pre-staged files detected.
+
+The following files are already staged from a previous session:
+[list files]
+
+These would be bundled into this feature's commit, creating misleading git history.
+
+Options:
+A) Unstage: git reset HEAD
+B) Commit first: git commit -m "wip: staged changes from previous session"
+C) Review: git diff --cached
+```
+
+Do NOT proceed to STEP 1 until the staging area is clean.
+
+**FORBIDDEN**:
+- ❌ Proceeding with pre-staged files present
+- ❌ Silently unstaging files without user confirmation
+- ❌ Treating pre-staged files as part of the current feature
+
 ### STEP 1: Validate PROJECT.md Alignment — HARD GATE
 
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`"). Check feature against GOALS, SCOPE, CONSTRAINTS. If misaligned: BLOCK with reason and options.

@@ -40,11 +40,11 @@ def implement_lines(implement_content):
 class TestCoordinatorSize:
     """Verify the coordinator is thin, not monolithic."""
 
-    def test_implement_md_under_180_lines(self, implement_content):
-        """implement.md should be under 180 lines total (was 383, RFC 2119 boilerplate added)."""
+    def test_implement_md_under_215_lines(self, implement_content):
+        """implement.md should be under 215 lines total (was 383, pre-staged gate added in #491)."""
         total_lines = len(implement_content.strip().split("\n"))
-        assert total_lines <= 180, (
-            f"implement.md is {total_lines} lines — should be <= 180 "
+        assert total_lines <= 215, (
+            f"implement.md is {total_lines} lines — should be <= 215 "
             f"(thin coordinator pattern). Was 383 before refactor."
         )
 

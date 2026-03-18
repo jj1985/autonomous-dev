@@ -17,6 +17,39 @@ Invoke the implementer agent to process each feature in the batch file sequentia
 
 Process multiple features from a file with automatic worktree isolation.
 
+**STEP B0: Pre-Staged Files Check — HARD GATE**
+
+```bash
+STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
+if [ -n "$STAGED_FILES" ]; then
+  echo "BLOCKED: Pre-staged files detected"
+  echo "$STAGED_FILES"
+fi
+```
+
+If `STAGED_FILES` is non-empty: **BLOCK** the pipeline. Display:
+
+```
+BLOCKED — Pre-staged files detected.
+
+The following files are already staged from a previous session:
+[list files]
+
+Pre-staged files propagate into worktrees, contaminating batch isolation.
+
+Options:
+A) Unstage: git reset HEAD
+B) Commit first: git commit -m "wip: staged changes from previous session"
+C) Review: git diff --cached
+```
+
+Do NOT proceed to STEP B1 until the staging area is clean.
+
+**FORBIDDEN**:
+- ❌ Proceeding with pre-staged files present
+- ❌ Silently unstaging files without user confirmation
+- ❌ Creating worktrees with pre-staged files in the index
+
 **STEP B1: Create Worktree**
 
 Before processing features, create an isolated worktree and change to it:
