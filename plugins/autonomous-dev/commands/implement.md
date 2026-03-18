@@ -15,6 +15,7 @@ user-invocable: true
 | Mode | Flag | Description |
 |------|------|-------------|
 | **Full Pipeline** | (default) | Acceptance-first: Research → Plan → Acceptance Tests → Implement + Unit Tests → Review → Security → Docs |
+| **Light** | `--light` | Fast pipeline: Align → Plan → Implement → Test → Docs (4 agents, no research/security/CI) |
 | **TDD-First** | `--tdd-first` | Research → Plan → Unit Tests → Implement → Review → Security → Docs |
 | **Fix** | `--fix` | Minimal pipeline: Align → Test Context → Implement Fix → Review + Docs (3 agents) |
 | **Batch File** | `--batch <file>` | Process features from file with auto-worktree |
@@ -105,9 +106,9 @@ ARGUMENTS: {{ARGUMENTS}}
 
 ### STEP 0: Parse Mode and Route
 
-Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--issues` → see [implement-batch.md](implement-batch.md), `--resume` → see [implement-resume.md](implement-resume.md), `--fix` → see [implement-fix.md](implement-fix.md), `--tdd-first` → FULL PIPELINE (TDD variant), `--acceptance-first` → recognized but no-op (same as default), else → FULL PIPELINE (acceptance-first default). Reject `--quick`. Auto-detect batch: 2+ issue refs → BATCH ISSUES MODE. Check `--no-cache` flag.
+Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--issues` → see [implement-batch.md](implement-batch.md), `--resume` → see [implement-resume.md](implement-resume.md), `--fix` → see [implement-fix.md](implement-fix.md), `--light` → LIGHT PIPELINE MODE (below), `--tdd-first` → FULL PIPELINE (TDD variant), `--acceptance-first` → recognized but no-op (same as default), else → FULL PIPELINE (acceptance-first default). Reject `--quick`. Auto-detect batch: 2+ issue refs → BATCH ISSUES MODE. Check `--no-cache` flag.
 
-**Mutual exclusivity**: `--fix` is mutually exclusive with `--batch`, `--issues`, and `--resume`. If combined, BLOCK with error: "Cannot combine --fix with --batch, --issues, or --resume."
+**Mutual exclusivity**: `--fix` and `--light` are each mutually exclusive with `--batch`, `--issues`, and `--resume`. If combined, BLOCK with error. `--light` and `--fix` are also mutually exclusive.
 
 Activate pipeline state:
 ```bash
@@ -216,7 +217,7 @@ If `--tdd-first`: **Agent**(subagent_type="test-master", model="opus") — Pass 
 
 **Progress**: Output step banner (STEP 8/14 — Implementation + Test Gate, Agent: implementer (Opus)). Output agent completion, then test gate result with pass/fail/skip counts and coverage after.
 
-**Agent**(subagent_type="implementer", model="opus") — Pass planner output + acceptance tests (or test-master output if TDD). Must write WORKING code, no stubs.
+**Agent**(subagent_type="implementer", model=PLANNER_RECOMMENDED_MODEL) — Pass planner output + acceptance tests (or test-master output if TDD). Must write WORKING code, no stubs. Use the model recommended by the planner (see STEP 3). Default to "opus" if planner did not specify.
 
 **HARD GATE** (inline — coordinator must verify):
 ```bash
@@ -296,6 +297,82 @@ After launching analyst, cleanup: `rm -f /tmp/implement_pipeline_state.json && p
 
 ---
 
-**Agents**: researcher-local (Haiku), researcher (Sonnet), planner (Opus), test-master (Opus, `--tdd-first` only), implementer (Opus), reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet), continuous-improvement-analyst (Sonnet). Default: 7 agents. TDD-first: 8 agents.
+# LIGHT PIPELINE MODE (`--light`)
+
+Fast pipeline for low-risk changes: markdown, config, docs, simple edits, renames. 5 steps, 4 agents. Skips research, acceptance tests, security audit, reviewer, CI analyst.
+
+**When to use**: `--light` flag, or coordinator MAY suggest it when the feature description clearly involves only markdown/config/docs/typos/renames and no new logic or security-sensitive code.
+
+**When NOT to use**: New features with logic, security-sensitive changes, API changes, hook/agent modifications that need security review.
+
+### STEP L0: Pre-Staged Files Check — HARD GATE
+
+Same as STEP 0.5 in full pipeline.
+
+### STEP L1: Validate PROJECT.md Alignment — HARD GATE
+
+**Progress**: Output step banner (STEP 1/5 — Alignment).
+
+Same as STEP 1 in full pipeline.
+
+### STEP L2: Planner (1 agent)
+
+**Progress**: Output step banner (STEP 2/5 — Planning, Agent: planner (Sonnet)).
+
+**Agent**(subagent_type="planner", model="sonnet") — Pass feature description. No research input (skipped). Output: file-by-file plan, testing strategy, and `Recommended implementer model: sonnet|opus`.
+
+### STEP L3: Implementer + Test Gate — HARD GATE
+
+**Progress**: Output step banner (STEP 3/5 — Implementation + Test Gate, Agent: implementer (PLANNER_RECOMMENDED_MODEL)).
+
+**Agent**(subagent_type="implementer", model=PLANNER_RECOMMENDED_MODEL) — Pass planner output. Default to "sonnet" if planner did not specify. Must write WORKING code, no stubs.
+
+**HARD GATE**: Same test gate as STEP 5 in full pipeline:
+```bash
+pytest --tb=short -q
+```
+Loop until **0 failures, 0 errors**.
+
+Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 | tail -5` — must be >= baseline - 0.5%.
+
+### STEP L4: Doc-master (1 agent)
+
+**Progress**: Output step banner (STEP 4/5 — Documentation, Agent: doc-master (Sonnet)).
+
+**Agent**(subagent_type="doc-master", model="sonnet") — Pass file list + feature description. Update CHANGELOG, docstrings, README if needed.
+
+### STEP L5: Report and Finalize
+
+**Progress**: Output Final Summary table (adapted for 5 steps).
+
+```
+========================================
+LIGHT PIPELINE COMPLETE
+========================================
+Step  Description         Agent(s)              Time    Status
+----  ------------------  --------------------  ------  ------
+L0    Pre-staged check    —                     Xs      PASS
+L1    Alignment           —                     Xs      PASS
+L2    Planning            planner (Sonnet)      Xs      done
+L3    Implementation      implementer (model)   Xs      done
+L3    Test gate           —                     Xs      PASS
+L4    Documentation       doc-master (Sonnet)   Xs      done
+========================================
+Total: Xs | Files changed: N | Tests: N passed, M failed
+========================================
+```
+
+```bash
+# Git push (if AUTO_GIT_PUSH=true)
+git push origin $(git branch --show-current) 2>/dev/null || echo "Warning: Push failed"
+```
+
+Cleanup: `rm -f /tmp/implement_pipeline_state.json`
+
+**Agents (light)**: planner (Sonnet), implementer (Sonnet or Opus per planner), doc-master (Sonnet). 3-4 agents.
+
+---
+
+**Agents (full)**: researcher-local (Haiku), researcher (Sonnet), planner (Opus), test-master (Opus, `--tdd-first` only), implementer (per planner recommendation, default Opus), reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet), continuous-improvement-analyst (Sonnet). Default: 7 agents. TDD-first: 8 agents.
 
 **Issue**: #203, #444 | **Version**: 3.48.0

@@ -29,7 +29,7 @@ Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` t
 
 | Command | Purpose |
 |---------|---------|
-| `/implement` | Code changes (full pipeline, --batch, --issues, --resume, --fix) |
+| `/implement` | Code changes (full pipeline, --light, --batch, --issues, --resume, --fix) |
 | `/create-issue` | GitHub issue with automated research (--quick) |
 | `/plan-to-issues` | Batch-convert plan into GitHub issues (--quick) |
 | `/align` | Alignment check (--project, --docs, --retrofit) |

@@ -40,12 +40,12 @@ def implement_lines(implement_content):
 class TestCoordinatorSize:
     """Verify the coordinator is thin, not monolithic."""
 
-    def test_implement_md_under_310_lines(self, implement_content):
-        """implement.md should be under 310 lines total (was 215 before Pipeline Progress Protocol added)."""
+    def test_implement_md_under_385_lines(self, implement_content):
+        """implement.md should be under 385 lines total (was 310 before Light Pipeline Mode added)."""
         total_lines = len(implement_content.strip().split("\n"))
-        assert total_lines <= 310, (
-            f"implement.md is {total_lines} lines — should be <= 310 "
-            f"(thin coordinator pattern + Pipeline Progress Protocol section)."
+        assert total_lines <= 385, (
+            f"implement.md is {total_lines} lines — should be <= 385 "
+            f"(thin coordinator + Pipeline Progress Protocol + Light Pipeline Mode)."
         )
 
 

@@ -79,7 +79,21 @@ Awaiting user decision before continuing.
 
 ## Output Format
 
-Document your implementation plan with: architecture overview, components to create/modify (with file paths), ordered implementation steps, dependencies & integration points, testing strategy, important considerations, and **acceptance criteria**.
+Document your implementation plan with: architecture overview, components to create/modify (with file paths), ordered implementation steps, dependencies & integration points, testing strategy, important considerations, **acceptance criteria**, and **recommended implementer model**.
+
+### Recommended Implementer Model (REQUIRED)
+
+Every plan MUST include a model recommendation for the implementer agent:
+
+```
+## Recommended Implementer Model: sonnet
+```
+
+Use this decision matrix:
+- **sonnet**: Markdown/docs edits, config changes, simple renames, < 3 files changed, no new test files needed, no complex logic
+- **opus**: New features with logic, multi-file code changes, complex refactoring, architecture changes, security-sensitive code, > 5 files changed
+
+When in doubt, recommend **opus**. The coordinator uses this to set the implementer agent's model.
 
 ### Acceptance Criteria (REQUIRED)
 
