@@ -1,6 +1,14 @@
 ## [Unreleased]
 
+### Fixed
+- Worktree venv symlink support for isolated environments (Issue #320)
+  - `test_runner.py`: Pass PYTHONPATH to subprocess via `_get_subprocess_env()` for library imports
+  - `worktree_manager.py`: Add optional `link_venv` parameter to `create_worktree()` for automatic venv symlink setup
+  - Both changes enable proper Python import resolution in worktrees with shared virtual environments
+
 ### Added
+
+- **`/implement` auto-mode detection: suggests `--fix` or `--light` when no mode flag is given** — When `/implement` is invoked without `--fix`, `--light`, `--batch`, or `--issues`, STEP 0 now scans the feature description for mode-indicative patterns. Descriptions matching test-failure language ("failing test", "broken", "error", "fix") trigger a `--fix` suggestion; descriptions matching low-risk change language ("docs", "config", "rename", "comment") trigger a `--light` suggestion. The suggestion is presented to the user for confirmation before routing — nothing is changed silently. If the user declines, the full pipeline runs as normal. This replaces the previous silent default where every undifferentiated invocation ran the full 8-step pipeline regardless of task weight, adding unnecessary overhead for quick fixes and doc changes.
 
 - **Pre-staged files HARD GATE blocks all `/implement` variants when staged git changes exist** (Issue #491) — All three pipeline entrypoints (`implement.md`, `implement-fix.md`, `implement-batch.md`) now run a pre-flight check (`git diff --cached --name-only`) before any agent work begins. If staged files are found the pipeline blocks immediately and presents three resolution options: unstage (`git reset HEAD`), commit first, or review what is staged. The gate does NOT auto-fix — it never runs `git reset` or `git commit` automatically. This prevents a silent failure mode where pre-staged changes belonging to a prior, unrelated task were silently incorporated into the current feature's commit, corrupting git history and bypassing review. In batch mode the gate runs before worktree creation so staged changes cannot propagate into isolated worktrees. Three acceptance tests in `tests/genai/test_acceptance_pre_staged_gate.py` verify gate presence in each pipeline variant and confirm no auto-fixing behaviour.
 

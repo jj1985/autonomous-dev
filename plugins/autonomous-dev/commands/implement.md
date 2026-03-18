@@ -110,6 +110,28 @@ Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--
 
 **Mutual exclusivity**: `--fix` and `--light` are each mutually exclusive with `--batch`, `--issues`, and `--resume`. If combined, BLOCK with error. `--light` and `--fix` are also mutually exclusive.
 
+**Auto-mode detection** — If no mode flag was explicitly provided (no `--fix`, `--light`, `--batch`, `--issues`, `--resume`, `--tdd-first` in ARGUMENTS), scan the feature description (case-insensitive) for signal patterns:
+
+- **Fix signals**: "fix test", "failing test", "broken test", "test failure", "flaky test", "skip test" → candidate: `--fix`
+- **Light signals**: "update docs", "update readme", "readme", "changelog", "typo", "rename", "config change", "update comment" → candidate: `--light`
+- **Tie-break**: If both fix and light patterns match, suggest `--fix`.
+
+If a candidate is detected, output and STOP — wait for user response before proceeding:
+
+```
+Auto-detected: This looks like a [test fix | docs/config change].
+Recommended: --[fix|light] ([one-line description from mode table])
+Full pipeline: Research → Plan → Acceptance Tests → Implement → Review → Security → Docs
+
+Proceed with --[fix|light]? (reply "yes" to confirm, anything else runs the full pipeline)
+```
+
+- User confirms ("yes", "y", or repeats the mode name) → route to suggested mode
+- Anything else → FULL PIPELINE (default)
+- No pattern match → proceed directly to FULL PIPELINE without prompting
+
+**FORBIDDEN**: ❌ Silently switching mode without user confirmation. ❌ Prompting when a mode flag was explicitly specified. ❌ Blocking pipeline on ambiguous reply — default to FULL PIPELINE.
+
 Activate pipeline state:
 ```bash
 RUN_ID="$(date +%Y%m%d-%H%M%S)"

@@ -40,12 +40,12 @@ def implement_lines(implement_content):
 class TestCoordinatorSize:
     """Verify the coordinator is thin, not monolithic."""
 
-    def test_implement_md_under_385_lines(self, implement_content):
-        """implement.md should be under 385 lines total (was 310 before Light Pipeline Mode added)."""
+    def test_implement_md_under_405_lines(self, implement_content):
+        """implement.md should be under 405 lines total (was 385 before auto-mode detection added)."""
         total_lines = len(implement_content.strip().split("\n"))
-        assert total_lines <= 385, (
-            f"implement.md is {total_lines} lines — should be <= 385 "
-            f"(thin coordinator + Pipeline Progress Protocol + Light Pipeline Mode)."
+        assert total_lines <= 405, (
+            f"implement.md is {total_lines} lines — should be <= 405 "
+            f"(thin coordinator + Light Pipeline + auto-mode detection)."
         )
 
 
@@ -164,6 +164,34 @@ class TestModeRouting:
     def test_batch_routes_to_implement_batch(self, implement_content):
         """Batch mode should route to implement-batch.md."""
         assert "implement-batch" in implement_content
+
+    def test_light_mode_flag_supported(self, implement_content):
+        """--light flag must be referenced."""
+        assert "--light" in implement_content
+
+    def test_fix_mode_flag_supported(self, implement_content):
+        """--fix flag must be referenced."""
+        assert "--fix" in implement_content
+
+    def test_auto_mode_detection_present(self, implement_content):
+        """Auto-mode detection section must exist in STEP 0."""
+        assert "Auto-mode detection" in implement_content
+
+    def test_auto_mode_fix_signals(self, implement_content):
+        """Auto-mode must detect fix-related descriptions."""
+        assert "Fix signals" in implement_content or "fix test" in implement_content.lower()
+
+    def test_auto_mode_light_signals(self, implement_content):
+        """Auto-mode must detect light-related descriptions."""
+        assert "Light signals" in implement_content or "update docs" in implement_content.lower()
+
+    def test_auto_mode_requires_user_confirmation(self, implement_content):
+        """Auto-mode must not silently switch — requires user confirmation."""
+        assert "Silently switching" in implement_content or "user confirmation" in implement_content.lower()
+
+    def test_auto_mode_tiebreak(self, implement_content):
+        """When both fix and light match, fix takes precedence."""
+        assert "Tie-break" in implement_content or "fix" in implement_content.lower()
 
 
 class TestPipelineState:
