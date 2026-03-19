@@ -554,6 +554,9 @@ install_hook_files() {
     find "$hook_target_dir" -name "*.py" -exec chmod 755 {} \; 2>/dev/null || true
     find "$hook_target_dir" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 
+    # Create extensions directory (user-owned, survives updates)
+    mkdir -p "${HOME}/.claude/hooks/extensions" 2>/dev/null || true
+
     log_success "Installed ${installed} hook file(s) to ~/.claude/hooks/"
     return 0
 }
@@ -647,47 +650,121 @@ install_lib_files() {
         return 1
     fi
 
-    # Get list of .py files from lib directory
+    # Phase 1: Copy top-level .py files (exclude __init__.py)
     local lib_files
     lib_files=$(find "$lib_source_dir" -maxdepth 1 -type f -name "*.py" ! -name "__init__.py")
 
-    if [[ -z "$lib_files" ]]; then
+    local total_files=0
+    if [[ -n "$lib_files" ]]; then
+        total_files=$(echo "$lib_files" | wc -l | tr -d ' ')
+    fi
+
+    # Phase 2: Find package directories (directories containing __init__.py)
+    local package_dirs
+    package_dirs=$(find "$lib_source_dir" -maxdepth 1 -type d ! -path "$lib_source_dir" -exec test -f "{}/__init__.py" \; -print)
+
+    local package_files=""
+    if [[ -n "$package_dirs" ]]; then
+        # For each package directory, find all .py files recursively
+        while IFS= read -r pkg_dir; do
+            if [[ -z "$pkg_dir" ]]; then
+                continue
+            fi
+            local pkg_files
+            pkg_files=$(find "$pkg_dir" -type f -name "*.py")
+            if [[ -n "$pkg_files" ]]; then
+                if [[ -z "$package_files" ]]; then
+                    package_files="$pkg_files"
+                else
+                    package_files=$(printf "%s\n%s" "$package_files" "$pkg_files")
+                fi
+            fi
+        done <<< "$package_dirs"
+    fi
+
+    # Count total files (single files + package files)
+    if [[ -n "$package_files" ]]; then
+        local package_count
+        package_count=$(echo "$package_files" | wc -l | tr -d ' ')
+        total_files=$((total_files + package_count))
+    fi
+
+    if [[ $total_files -eq 0 ]]; then
         log_info "No lib files found to install"
         return 0
     fi
 
-    # Count total files
-    local total_files
-    total_files=$(echo "$lib_files" | wc -l | tr -d ' ')
     log_info "Found ${total_files} lib files to install"
 
-    # Copy each lib file
-    while IFS= read -r lib_file; do
-        if [[ -z "$lib_file" ]]; then
-            continue
-        fi
-
-        local file_name
-        file_name=$(basename "$lib_file")
-
-        # Security: Check if file is a symlink
-        if [[ -L "$lib_file" ]]; then
-            log_warning "  Skipping symlink: $file_name"
-            ((failed++))
-            continue
-        fi
-
-        # Copy file to target directory (use -P to not follow symlinks)
-        if cp -P "$lib_file" "$lib_target_dir/$file_name"; then
-            ((installed++))
-            if $VERBOSE; then
-                log_success "  Installed: $file_name"
+    # Copy top-level .py files
+    if [[ -n "$lib_files" ]]; then
+        while IFS= read -r lib_file; do
+            if [[ -z "$lib_file" ]]; then
+                continue
             fi
-        else
-            ((failed++))
-            log_warning "  Failed: $file_name"
-        fi
-    done <<< "$lib_files"
+
+            local file_name
+            file_name=$(basename "$lib_file")
+
+            # Security: Check if file is a symlink
+            if [[ -L "$lib_file" ]]; then
+                log_warning "  Skipping symlink: $file_name"
+                ((failed++))
+                continue
+            fi
+
+            # Copy file to target directory (use -P to not follow symlinks)
+            if cp -P "$lib_file" "$lib_target_dir/$file_name"; then
+                ((installed++))
+                if $VERBOSE; then
+                    log_success "  Installed: $file_name"
+                fi
+            else
+                ((failed++))
+                log_warning "  Failed: $file_name"
+            fi
+        done <<< "$lib_files"
+    fi
+
+    # Copy package directories with structure preservation
+    if [[ -n "$package_files" ]]; then
+        while IFS= read -r pkg_file; do
+            if [[ -z "$pkg_file" ]]; then
+                continue
+            fi
+
+            # Get relative path from lib_source_dir
+            local relative_path="${pkg_file#$lib_source_dir/}"
+            local target_file="$lib_target_dir/$relative_path"
+            local target_dir
+            target_dir=$(dirname "$target_file")
+
+            # Security: Check if file is a symlink
+            if [[ -L "$pkg_file" ]]; then
+                log_warning "  Skipping symlink: $relative_path"
+                ((failed++))
+                continue
+            fi
+
+            # Create target subdirectory if needed
+            if ! mkdir -p "$target_dir" 2>/dev/null; then
+                log_warning "  Failed to create directory: $target_dir"
+                ((failed++))
+                continue
+            fi
+
+            # Copy file to target directory (use -P to not follow symlinks)
+            if cp -P "$pkg_file" "$target_file"; then
+                ((installed++))
+                if $VERBOSE; then
+                    log_success "  Installed: $relative_path"
+                fi
+            else
+                ((failed++))
+                log_warning "  Failed: $relative_path"
+            fi
+        done <<< "$package_files"
+    fi
 
     # Report results
     if [[ $failed -gt 0 ]]; then

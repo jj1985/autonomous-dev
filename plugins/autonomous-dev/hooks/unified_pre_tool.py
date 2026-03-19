@@ -60,6 +60,7 @@ Issue: GitHub #171 (Sandboxing for reduced permission prompts)
 Agent: implementer
 """
 
+import importlib.util
 import json
 import shlex
 import sys
@@ -883,6 +884,90 @@ def output_decision(decision: str, reason: str, *, system_message: str = ""):
     print(json.dumps(output))
 
 
+def _run_extensions(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
+    """Run hook extension scripts that can block tool calls.
+
+    Discovers *.py files in extensions/ directories (both alongside this hook
+    and in the project's .claude/hooks/extensions/), loads each, and calls
+    its ``check(tool_name, tool_input)`` function.
+
+    Extensions survive /sync and /install — they are user-owned files in a
+    directory that is never overwritten.
+
+    Args:
+        tool_name: Name of the tool being called.
+        tool_input: Tool input parameters.
+
+    Returns:
+        Tuple of (decision, reason). ``("deny", reason)`` if any extension
+        blocks; ``("allow", "")`` otherwise.
+    """
+    # Check kill-switch env var
+    if os.getenv("HOOK_EXTENSIONS_ENABLED", "true").lower() == "false":
+        return ("allow", "")
+
+    # Discover extension directories
+    ext_dirs: list[Path] = []
+
+    # 1. Directory alongside this hook file (global ~/.claude/hooks/extensions/)
+    hook_ext_dir = Path(__file__).parent / "extensions"
+    ext_dirs.append(hook_ext_dir)
+
+    # 2. Project-level .claude/hooks/extensions/
+    project_ext_dir = Path.cwd() / ".claude" / "hooks" / "extensions"
+    ext_dirs.append(project_ext_dir)
+
+    # Collect extension files, deduplicated by filename (first occurrence wins)
+    seen_names: set[str] = set()
+    extension_files: list[Path] = []
+
+    for ext_dir in ext_dirs:
+        if not ext_dir.is_dir():
+            continue
+        try:
+            py_files = sorted(ext_dir.glob("*.py"))
+        except OSError:
+            continue
+        for py_file in py_files:
+            # Skip symlinks (security)
+            if py_file.is_symlink():
+                continue
+            if py_file.name in seen_names:
+                continue
+            seen_names.add(py_file.name)
+            extension_files.append(py_file)
+
+    # Execute each extension
+    for ext_file in extension_files:
+        try:
+            module_name = f"_hook_ext_{ext_file.stem}"
+            spec = importlib.util.spec_from_file_location(module_name, str(ext_file))
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            check_fn = getattr(module, "check", None)
+            if check_fn is None:
+                continue
+
+            result = check_fn(tool_name, tool_input)
+
+            # Validate return type
+            if not isinstance(result, (tuple, list)) or len(result) != 2:
+                continue
+
+            decision, reason = result
+            if decision == "deny":
+                return ("deny", f"[ext:{ext_file.name}] {reason}")
+
+        except Exception:
+            # Per-extension isolation — never crash the hook
+            continue
+
+    return ("allow", "")
+
+
 def main():
     """Main entry point - dispatch to all validators and combine decisions."""
     try:
@@ -939,6 +1024,13 @@ def main():
                     output_decision("deny", block_reason, system_message=block_reason)
                     sys.exit(0)
 
+            # Run extensions even for native tools
+            ext_decision, ext_reason = _run_extensions(tool_name, tool_input)
+            if ext_decision == "deny":
+                _log_pretool_activity(tool_name, tool_input, "deny", ext_reason)
+                output_decision("deny", ext_reason)
+                sys.exit(0)
+
             reason = f"Native tool '{tool_name}' - hook bypass (settings.json governs)"
             _log_pretool_activity(tool_name, tool_input, "allow", reason)
             output_decision("allow", reason)
@@ -962,6 +1054,11 @@ def main():
         # 3. Batch Permission Approver (Layer 3)
         decision, reason = validate_batch_permission(tool_name, tool_input)
         validators_results.append(("Batch Permission", decision, reason))
+
+        # Layer 4: Hook extensions
+        ext_decision, ext_reason = _run_extensions(tool_name, tool_input)
+        if ext_decision == "deny":
+            validators_results.append(("Extensions", "deny", ext_reason))
 
         # Combine all decisions
         final_decision, combined_reason = combine_decisions(validators_results)

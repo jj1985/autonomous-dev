@@ -289,6 +289,12 @@ All environment variables with default values:
 | ENFORCE_WORKFLOW_STRICT | false | enforce_implementation_workflow (PreToolUse) | Legacy variable for BLOCK enforcement (deprecated, use ENFORCEMENT_LEVEL) |
 | ALLOW_GIT_BYPASS | false | block_git_bypass (PreCommit) | Allow git commit --no-verify for emergency situations (not recommended) |
 
+### Hook Extensions
+
+| Variable | Default | Controls | Description |
+|----------|---------|----------|-------------|
+| HOOK_EXTENSIONS_ENABLED | true | unified_pre_tool extensions | Set to `false` to skip all hook extension scripts. Extension directories: `~/.claude/hooks/extensions/` (global) and `.claude/hooks/extensions/` (project-level). |
+
 ### Advanced Features (Opt-in)
 
 | Variable | Default | Controls | Description |

@@ -221,6 +221,81 @@ To disable, remove the entry. No environment variable controls activation — pr
 
 ---
 
+## Extension Points
+
+Hook extensions allow project-specific or user-specific tool call validation without modifying the core hook files. Extensions survive `/sync` and `/install` updates.
+
+### Extension API Contract
+
+Each extension is a Python file (`.py`) that implements a `check` function:
+
+```python
+def check(tool_name: str, tool_input: dict) -> tuple[str, str]:
+    """Validate a tool call.
+
+    Args:
+        tool_name: Name of the tool (e.g., "Bash", "Edit", "Write").
+        tool_input: Tool input parameters dict.
+
+    Returns:
+        ("allow", "") to permit the tool call.
+        ("deny", "reason") to block it.
+    """
+    # Example: block raw mlx commands
+    if tool_name == "Bash":
+        cmd = tool_input.get("command", "")
+        if "mlx" in cmd and "realign" not in cmd:
+            return ("deny", "Use 'realign train' CLI instead of raw mlx commands")
+    return ("allow", "")
+```
+
+### Extension Directories
+
+Extensions are discovered from two locations (deduplicated by filename, first occurrence wins):
+
+1. **Global**: `~/.claude/hooks/extensions/*.py` — applies to all projects
+2. **Project-level**: `.claude/hooks/extensions/*.py` — project-specific rules
+
+Extensions are loaded in **alphabetical order** within each directory. The first `("deny", reason)` return short-circuits — remaining extensions are not called.
+
+### How Extensions Survive Updates
+
+The `extensions/` directory is **never overwritten** by `/sync` or `/install`. Both operations explicitly create (or preserve) the directory:
+
+- `install.sh`: `mkdir -p ~/.claude/hooks/extensions`
+- `sync_dispatcher.py`: `(hooks_dst / "extensions").mkdir(exist_ok=True)`
+
+### Environment Variable
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `HOOK_EXTENSIONS_ENABLED` | `true` | Set to `false` to skip all extensions |
+
+### Example Extension
+
+**File**: `~/.claude/hooks/extensions/block_raw_mlx.py`
+
+```python
+"""Block raw mlx-lm commands — use realign train CLI instead."""
+
+def check(tool_name: str, tool_input: dict) -> tuple[str, str]:
+    if tool_name != "Bash":
+        return ("allow", "")
+    cmd = tool_input.get("command", "")
+    if "mlx_lm" in cmd or "mlx-lm" in cmd:
+        if "realign" not in cmd:
+            return ("deny", "Use 'realign train' instead of raw mlx-lm commands")
+    return ("allow", "")
+```
+
+### Security Notes
+
+- **Symlinks are skipped**: Extension files that are symlinks are silently ignored to prevent symlink-based attacks.
+- **Per-extension isolation**: Each extension runs in its own try/except block. A crashing extension never affects other extensions or the main hook.
+- **No arbitrary code injection**: Extensions are only loaded from the two known directories listed above.
+
+---
+
 ## See Also
 
 - [ADR-001-agent-hooks.md](ADR-001-agent-hooks.md) — Architecture Decision Record for agent hooks

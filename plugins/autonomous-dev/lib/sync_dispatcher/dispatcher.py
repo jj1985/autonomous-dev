@@ -810,6 +810,8 @@ class SyncDispatcher:
                 files_updated += self._sync_directory(
                     hooks_src, hooks_dst, pattern="*.py", description="hook files"
                 )
+                # Ensure extensions directory survives sync
+                (hooks_dst / "extensions").mkdir(exist_ok=True)
 
             # Copy agents
             agents_src = Path(plugin_path) / "agents"

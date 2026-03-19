@@ -63,7 +63,8 @@ class TestIsProtectedInfrastructure:
     def test_agents_md_with_claude_prefix(self):
         assert hook._is_protected_infrastructure(".claude/agents/implementer.md") is True
 
-    def test_agents_md_full_path(self):
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_agents_md_full_path(self, _mock):
         assert hook._is_protected_infrastructure(
             "/Users/foo/.claude/agents/implementer.md"
         ) is True
@@ -197,7 +198,8 @@ class TestInfraProtectionInMainFlow:
         lines = [l for l in output_text.split("\n") if l.strip()]
         return json.loads(lines[-1]) if lines else {}
 
-    def test_write_agents_no_pipeline_denied(self, monkeypatch):
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_write_agents_no_pipeline_denied(self, _mock, monkeypatch):
         """Write to agents/foo.md without pipeline should be denied."""
         monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
         monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
@@ -209,7 +211,8 @@ class TestInfraProtectionInMainFlow:
         assert "BLOCKED" in result["hookSpecificOutput"]["permissionDecisionReason"]
         assert "systemMessage" in result
 
-    def test_edit_hooks_no_pipeline_denied(self, monkeypatch):
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_edit_hooks_no_pipeline_denied(self, _mock, monkeypatch):
         """Edit to hooks/bar.py without pipeline should be denied."""
         monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
         monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
