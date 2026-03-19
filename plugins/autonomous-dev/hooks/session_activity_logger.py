@@ -131,14 +131,18 @@ def main():
         tool_input = hook_input.get("tool_input", {})
         tool_output = hook_input.get("tool_output", {})
 
+        # Session ID: prefer env var, fall back to hook stdin JSON
+        session_id = os.environ.get("CLAUDE_SESSION_ID") or hook_input.get("session_id", "unknown")
+
         if log_level == "debug":
             # Debug mode: log full raw stdin (tool_input + tool_output)
             entry = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "hook": "PostToolUse",
                 "tool": tool_name,
                 "tool_input": tool_input,
                 "tool_output": tool_output if isinstance(tool_output, dict) else {"raw": str(tool_output)[:5000]},
-                "session_id": os.environ.get("CLAUDE_SESSION_ID", "unknown"),
+                "session_id": session_id,
                 "agent": os.environ.get("CLAUDE_AGENT_NAME", "main"),
                 "duration_ms": round((time.monotonic() - _start) * 1000),
                 "debug": True,
@@ -150,10 +154,11 @@ def main():
             output_summary = _add_result_word_count(tool_name, tool_output, output_summary)
             entry = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "hook": "PostToolUse",
                 "tool": tool_name,
                 "input_summary": input_summary,
                 "output_summary": output_summary,
-                "session_id": os.environ.get("CLAUDE_SESSION_ID", "unknown"),
+                "session_id": session_id,
                 "agent": os.environ.get("CLAUDE_AGENT_NAME", "main"),
                 "duration_ms": round((time.monotonic() - _start) * 1000),
                 "success": output_summary.get("success", True),
@@ -163,7 +168,6 @@ def main():
         log_dir = _find_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
         date_str = _get_session_date(session_id)
         log_file = log_dir / f"{date_str}.jsonl"
 

@@ -426,6 +426,131 @@ def get_trace(state: PipelineState) -> List[Dict[str, Any]]:
     return trace
 
 
+def get_completion_summary(state: PipelineState) -> Dict[str, Any]:
+    """Build a completion summary from pipeline state.
+
+    Extracts agent count, step count, mode, overall status, and timing.
+
+    Args:
+        state: The completed pipeline state.
+
+    Returns:
+        Dict with keys: agent_count, step_count, mode, status, started_at,
+        completed_at, duration_s.
+    """
+    trace = get_trace(state)
+    step_count = len(trace)
+
+    # Count distinct agents from step names that map to agents
+    agent_step_names = {
+        "alignment", "research_cache", "research", "plan",
+        "acceptance_tests", "tdd_tests", "implement",
+        "validate", "verify", "report",
+    }
+    agent_count = sum(
+        1 for entry in trace
+        if entry.get("step") in agent_step_names
+        and entry.get("status") in ("passed", "skipped")
+    )
+
+    # Determine overall status
+    statuses = [entry.get("status", "pending") for entry in trace]
+    if any(s == "failed" for s in statuses):
+        overall_status = "failed"
+    elif all(s in ("passed", "skipped") for s in statuses) and statuses:
+        overall_status = "completed"
+    else:
+        overall_status = "partial"
+
+    # Timing
+    started_at = state.created_at
+    completed_at = state.updated_at
+    duration_s = None  # type: Optional[float]
+    if started_at and completed_at:
+        try:
+            start_dt = datetime.fromisoformat(started_at)
+            end_dt = datetime.fromisoformat(completed_at)
+            duration_s = round((end_dt - start_dt).total_seconds(), 3)
+        except (ValueError, TypeError):
+            pass
+
+    return {
+        "agent_count": agent_count,
+        "step_count": step_count,
+        "mode": state.mode,
+        "status": overall_status,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "duration_s": duration_s,
+    }
+
+
+def finalize_to_session(run_id: str) -> bool:
+    """Merge pipeline state into session record for post-analysis.
+
+    Loads pipeline state from /tmp/pipeline_state_{run_id}.json, reads the
+    session record from docs/sessions/{run_id}-pipeline.json (if it exists),
+    merges completion data, and writes back atomically.
+
+    Args:
+        run_id: The pipeline run identifier.
+
+    Returns:
+        True if finalization succeeded, False otherwise.
+    """
+    import os
+    import tempfile
+
+    # Load pipeline state
+    state = load_pipeline(run_id)
+    if state is None:
+        return False
+
+    # Build completion summary
+    summary = get_completion_summary(state)
+
+    # Find session record path
+    session_dir = Path(os.getcwd()) / "docs" / "sessions"
+    session_file = session_dir / f"{run_id}-pipeline.json"
+
+    # Load existing session record or create new one
+    session_data = {}  # type: Dict[str, Any]
+    if session_file.exists():
+        try:
+            session_data = json.loads(session_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            session_data = {}
+
+    # Merge pipeline data into session record
+    session_data["pipeline_summary"] = summary
+    session_data["pipeline_steps"] = state.steps
+    session_data["run_id"] = run_id
+    session_data["mode"] = state.mode
+    session_data["feature"] = state.feature
+
+    # Write atomically (temp file + os.replace)
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(session_dir), suffix=".tmp", prefix=".finalize_"
+        )
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(session_data, f, indent=2)
+            os.replace(tmp_path, str(session_file))
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            return False
+    except Exception:
+        return False
+
+    return True
+
+
 def cleanup_pipeline(run_id: str) -> None:
     """Remove the pipeline state file from disk.
 

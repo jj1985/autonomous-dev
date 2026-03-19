@@ -60,9 +60,9 @@ STEP_ORDER = {
     "planner": 3,
     "test-master": 4,
     "implementer": 5,
-    "reviewer": 6,
-    "security-auditor": 6,
-    "doc-master": 6,
+    "reviewer": 6.0,
+    "security-auditor": 6.1,
+    "doc-master": 6.0,
 }
 
 # Agent pairs that MUST be sequential (first must complete before second starts)
@@ -73,6 +73,7 @@ SEQUENTIAL_REQUIRED = [
     ("implementer", "reviewer"),
     ("implementer", "security-auditor"),
     ("implementer", "doc-master"),
+    ("reviewer", "security-auditor"),
 ]
 
 # Agent pairs that SHOULD be parallel (efficiency check)

@@ -12,7 +12,7 @@ Specialized agents with skill integration for autonomous development. See [docs/
 
 **Key Features**:
 - Native skill integration (Issue #143): Agents declare skills via `skills:` frontmatter field - Claude Code 2.0 auto-loads skills when agent spawned
-- Parallel validation: reviewer + security-auditor + doc-master (60% faster)
+- Sequential validation: reviewer → security-auditor (ensures Remediation Gate has full verdict), doc-master in background
 - Pipeline agents used in `/implement`, utility agents for specialized tasks
 
 ---
@@ -110,10 +110,11 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - Default mode: validation-first approach (specification → acceptance tests → implementation)
    - Optional `--tdd-first` flag reverts to legacy TDD-first (failing unit tests first)
 7. **Implementation**: implementer makes tests pass
-8. **Parallel Validation** (3 agents simultaneously):
-   - reviewer checks code quality (structured FINDING-{N} schema, BLOCKING/WARNING severity)
-   - security-auditor scans for vulnerabilities
-   - doc-master updates documentation
+8. **Sequential Validation** (reviewer before security-auditor, then doc-master in background):
+   - reviewer checks code quality first (structured FINDING-{N} schema, BLOCKING/WARNING severity)
+   - security-auditor runs after reviewer verdict is known
+   - doc-master updates documentation (runs in background, non-blocking)
+   - Sequential reviewer→security-auditor ordering ensures STEP 6.5 Remediation Gate has full reviewer verdict before deciding whether to re-invoke implementer
 8.5. **Remediation Gate** (HARD GATE): If reviewer or security-auditor return findings, auto-loop:
    - Re-invokes implementer in Remediation Mode with BLOCKING findings verbatim (max 2 cycles)
    - Re-runs only the failing validators after each cycle

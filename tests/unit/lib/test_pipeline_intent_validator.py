@@ -120,7 +120,7 @@ def _write_clean_pipeline(log_file: Path, session_id: str = "test-session") -> N
         _make_jsonl_line(subagent_type="implementer", timestamp=(base + timedelta(minutes=6)).isoformat(), session_id=session_id),
         _make_jsonl_line(tool="Bash", pipeline_action="test_run", timestamp=(base + timedelta(minutes=8)).isoformat(), session_id=session_id),
         _make_jsonl_line(subagent_type="reviewer", timestamp=(base + timedelta(minutes=10)).isoformat(), session_id=session_id),
-        _make_jsonl_line(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=10, seconds=2)).isoformat(), session_id=session_id),
+        _make_jsonl_line(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=12)).isoformat(), session_id=session_id),
         _make_jsonl_line(subagent_type="doc-master", timestamp=(base + timedelta(minutes=10, seconds=4)).isoformat(), session_id=session_id),
     ]
     log_file.write_text("\n".join(lines) + "\n")
@@ -660,6 +660,49 @@ class TestSubagentStopParsing:
         findings = detect_ghost_invocations(events)
         assert len(findings) == 1
         assert findings[0].finding_type == "ghost_invocation"
+
+
+class TestReviewerBeforeSecurityAuditor:
+    """Tests for STEP 6 ordering: reviewer before security-auditor (#495, #498)."""
+
+    def test_reviewer_before_security_auditor_no_finding(self):
+        """Reviewer completing before security-auditor produces no ordering violation."""
+        base = datetime(2026, 3, 19, 10, 0, 0)
+        events = [
+            _make_event(subagent_type="implementer", timestamp=base.isoformat()),
+            _make_event(subagent_type="reviewer", timestamp=(base + timedelta(minutes=10)).isoformat()),
+            _make_event(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=15)).isoformat()),
+        ]
+        findings = validate_step_ordering(events)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+        assert len(ordering_findings) == 0, "reviewer then security-auditor is correct ordering"
+
+    def test_security_auditor_before_reviewer_flagged(self):
+        """Security-auditor running before reviewer is a CRITICAL step_ordering violation."""
+        base = datetime(2026, 3, 19, 10, 0, 0)
+        events = [
+            _make_event(subagent_type="implementer", timestamp=base.isoformat()),
+            _make_event(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=10)).isoformat()),
+            _make_event(subagent_type="reviewer", timestamp=(base + timedelta(minutes=15)).isoformat()),
+        ]
+        findings = validate_step_ordering(events)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+        assert len(ordering_findings) >= 1, "security-auditor before reviewer should be flagged"
+        assert any(f.severity == "CRITICAL" for f in ordering_findings)
+
+    def test_reviewer_security_auditor_parallelized_flagged(self):
+        """Reviewer and security-auditor launched within 5s is a parallelization violation."""
+        base = datetime(2026, 3, 19, 10, 0, 0)
+        events = [
+            _make_event(subagent_type="reviewer", timestamp=base.isoformat()),
+            _make_event(subagent_type="security-auditor", timestamp=(base + timedelta(seconds=2)).isoformat()),
+        ]
+        findings = detect_parallelization_violations(events)
+        assert len(findings) >= 1, "reviewer+security-auditor within 5s should be flagged"
+        assert any(
+            f.finding_type == "parallelization_violation" and f.severity == "CRITICAL"
+            for f in findings
+        )
 
 
 class TestDataStructures:

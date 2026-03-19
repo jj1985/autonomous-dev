@@ -294,14 +294,14 @@ You MUST invoke the missing agents before proceeding to STEP 6.
 
 **FORBIDDEN**: Proceeding to STEP 6 with fewer than the minimum agents. If an agent was skipped due to a crash, the crash retry rule (forbidden list) applies — retry once, then block.
 
-### STEP 6: Parallel Validation (3 agents)
+### STEP 6: Sequential Validation (3 agents)
 
 **Progress**: Output step banner (STEP 10/15 — Validation, Agents: reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet)). Output each agent completion as they return.
 
-Invoke TWO agents in PARALLEL (single message), plus doc-master in background:
-1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues.
-2. **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list. Output: PASS/FAIL (OWASP Top 10).
-3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline.
+Invoke reviewer FIRST, then security-auditor after reviewer completes. Doc-master runs in background (non-blocking):
+1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues. **MUST complete before security-auditor starts** (STEP 6.5 remediation gate needs reviewer result first).
+2. **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list. Output: PASS/FAIL (OWASP Top 10). Starts AFTER reviewer completes.
+3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline. May run in parallel with reviewer.
 
 ### STEP 6.5: Remediation Gate — HARD GATE
 
@@ -350,9 +350,16 @@ Verify all required agents ran. Default: 7 (researcher-local, researcher, planne
 
 **Precondition**: STEP 6.5 Remediation Gate must have status PASS. If STEP 6.5 is BLOCKED, do NOT proceed with git operations.
 
-**Progress**: Output the **Final Summary** table per Pipeline Progress Protocol. Include per-step elapsed times, total pipeline time (from PIPELINE_START), files changed, test counts, and security result. Then proceed with git operations.
+**Progress**: Output the **Final Summary** table per Pipeline Progress Protocol. Include per-step elapsed times, total pipeline time (from PIPELINE_START), files changed, test counts, and security result. Then finalize pipeline state and proceed with git operations.
 
 ```bash
+# Finalize pipeline state to session record (before cleanup)
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from pipeline_state import finalize_to_session
+finalize_to_session('$RUN_ID')
+" 2>/dev/null || true
+
 # Git push (if AUTO_GIT_PUSH=true)
 git push origin $(git branch --show-current) 2>/dev/null || echo "Warning: Push failed"
 # Close GitHub issue (if feature references #NNN)

@@ -189,7 +189,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Purpose**: Quality gate (code review) — read-only; reports issues, never modifies files
 **Model**: Haiku (Tier 1 - cost optimized for pattern-based code review)
 **Skills**: code-review, python-standards
-**Execution**: Step 5 of /implement workflow (parallel validation - 60% faster with Phase 7 optimization)
+**Execution**: Step 6 of /implement workflow — runs first in the validation phase (sequential before security-auditor), ensuring STEP 6.5 Remediation Gate has the full reviewer verdict before security-auditor begins
 **Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
 **FINDINGS Format**: Each finding uses a structured `FINDING-{N}` schema with mandatory `file:line` reference, severity (`BLOCKING` or `WARNING`), category, issue description, detail, and suggested fix. BLOCKING findings trigger the STEP 6.5 Remediation Gate; WARNING findings are advisory only.
 **Verdict**: `APPROVE` (all findings WARNING or none) or `REQUEST_CHANGES` (any BLOCKING finding present). STEP 6.5 parses this verdict to determine whether to enter the remediation loop.
@@ -199,7 +199,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Purpose**: Security scanning and vulnerability detection
 **Model**: Opus (Tier 3 - maximum depth for critical security analysis)
 **Skills**: security-patterns, python-standards
-**Execution**: Step 5 of /implement workflow (parallel validation - 60% faster with Phase 7 optimization)
+**Execution**: Step 6 of /implement workflow — runs after reviewer verdict is known (sequential), enabling the STEP 6.5 Remediation Gate to have complete information before deciding to re-invoke the implementer
 
 ### doc-master
 

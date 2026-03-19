@@ -1,6 +1,14 @@
 ## [Unreleased]
 
 ### Fixed
+- **PostToolUse activity log now correctly labels hook type and recovers session_id from stdin** — `session_activity_logger.py` was writing `"hook": "UserPromptSubmit"` for all entries regardless of actual event. Now sets `"hook": "PostToolUse"` for tool-call entries. Also adds a stdin fallback for `session_id`: when the `CLAUDE_SESSION_ID` environment variable is absent (a known gap in the PostToolUse lifecycle), the hook parses the hook event JSON from stdin to extract the session identifier. This ensures activity log entries always carry a valid session_id for per-session analysis.
+
+- **Bash commands inspected for file writes to protected infrastructure paths** — `unified_pre_tool.py` now examines the body of Bash tool calls before execution. Commands that write to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, or `skills/*/SKILL.md` via shell file-write patterns (`sed -i`, `cp`/`mv`, output redirects `>` / `>>`, `tee`, `python3 -c` with writes) are blocked with the same enforcement message as direct Write/Edit tool calls. Previously, the infrastructure-protection gate could be bypassed by wrapping a write in a Bash command; this closes that gap.
+
+- **`pipeline_state.py` now writes completion data to `docs/sessions/`** — `PipelineState.finalize_to_session()` creates a permanent `docs/sessions/YYYYMMDD-HHMMSS-pipeline.json` record when a pipeline run completes, capturing the full agent sequence, per-step durations, and final verdict. Previously the state file lived only in `/tmp` and was lost after the session; the new persistent record enables the continuous-improvement-analyst to correlate session activity logs with pipeline execution data across runs.
+
+- **STEP 6 ordering: reviewer runs before security-auditor (sequential, not parallel)** — `implement.md` STEP 6 now invokes the reviewer first, waits for its verdict, then invokes the security-auditor. Previously both were launched in parallel; this caused reviewer BLOCKING findings to be unknown when the security-auditor began, making STEP 6.5 remediation coordination unreliable. Sequential ordering ensures the STEP 6.5 Remediation Gate always has the full reviewer verdict before deciding whether to re-invoke the implementer.
+
 - Worktree venv symlink support for isolated environments (Issue #320)
   - `test_runner.py`: Pass PYTHONPATH to subprocess via `_get_subprocess_env()` for library imports
   - `worktree_manager.py`: Add optional `link_venv` parameter to `create_worktree()` for automatic venv symlink setup

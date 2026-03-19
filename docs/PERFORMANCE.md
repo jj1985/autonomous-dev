@@ -113,8 +113,8 @@ with PerformanceTimer("agent_execution", {"agent": "researcher"}):
 
 **Integration**:
 - **CHECKPOINT 4.1** added to `plugins/autonomous-dev/commands/implement.md`
-- Validates reviewer, security-auditor, doc-master run in parallel
-- Alerts if sequential execution detected (performance regression)
+- Originally validated reviewer, security-auditor, doc-master running in parallel
+- **Updated**: reviewer → security-auditor now run sequentially (see STEP 6 ordering fix) so the STEP 6.5 Remediation Gate has the full reviewer verdict before security-auditor begins; doc-master still runs in background
 
 **Results**:
 - **Test coverage**: 23 unit tests covering success, parallelization detection, incomplete/failed agents

@@ -304,3 +304,113 @@ class TestOutputDecisionSystemMessage:
 
         result = json.loads(captured.getvalue())
         assert "systemMessage" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestBashInfrastructureProtection (#502)
+# ---------------------------------------------------------------------------
+
+class TestBashInfrastructureProtection:
+    """Tests for Bash command inspection blocking writes to protected paths."""
+
+    def _run_hook(self, tool_name: str, tool_input: dict) -> dict:
+        """Run the hook's main() with given input and capture JSON output."""
+        input_data = json.dumps({"tool_name": tool_name, "tool_input": tool_input})
+        captured = StringIO()
+
+        with patch("sys.stdin", StringIO(input_data)), \
+             patch("sys.stdout", captured), \
+             pytest.raises(SystemExit):
+            hook.main()
+
+        output_text = captured.getvalue().strip()
+        lines = [l for l in output_text.split("\n") if l.strip()]
+        return json.loads(lines[-1]) if lines else {}
+
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_sed_inplace_to_protected_path_blocked(self, _mock, monkeypatch):
+        """sed -i to agents/*.md should be blocked when pipeline not active."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "sed -i 's/old/new/g' /home/user/.claude/agents/foo.md"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "deny"
+        assert "BLOCKED" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_redirect_to_protected_path_blocked(self, _mock, monkeypatch):
+        """Shell redirect (>) to hooks/*.py should be blocked."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "echo 'code' > /home/user/.claude/hooks/my_hook.py"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "deny"
+        assert "BLOCKED" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_tee_to_protected_path_blocked(self, _mock, monkeypatch):
+        """tee to lib/*.py should be blocked."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "cat file.py | tee /home/user/.claude/lib/pipeline.py"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "deny"
+        assert "BLOCKED" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_cp_to_protected_path_blocked(self, _mock, monkeypatch):
+        """cp to commands/*.md should be blocked."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "cp /tmp/new.md /home/user/.claude/commands/implement.md"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "deny"
+        assert "BLOCKED" in result["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_bash_read_only_commands_allowed(self, monkeypatch):
+        """Read-only Bash commands (cat, ls, grep) should be allowed."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "cat /home/user/.claude/agents/foo.md"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "allow"
+
+    def test_bash_write_to_non_protected_path_allowed(self, monkeypatch):
+        """Bash writes to non-protected paths (src/, tmp/) should be allowed."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "echo 'test' > /tmp/output.txt"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "allow"
+
+    @patch.object(hook, "_is_autonomous_dev_repo", return_value=True)
+    def test_bash_write_to_protected_path_allowed_when_pipeline_active(self, _mock, monkeypatch):
+        """Bash writes to protected paths should be allowed when pipeline is active."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "implementer")
+
+        result = self._run_hook("Bash", {"command": "sed -i 's/old/new/g' /home/user/.claude/agents/foo.md"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "allow"
+
+    def test_bash_pytest_command_not_blocked(self, monkeypatch):
+        """pytest commands should never be blocked (not writing to protected paths)."""
+        monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_test_state.json")
+
+        result = self._run_hook("Bash", {"command": "python -m pytest tests/ -x -q"})
+
+        decision = result["hookSpecificOutput"]["permissionDecision"]
+        assert decision == "allow"

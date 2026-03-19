@@ -42,7 +42,7 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval) + hook extensions. 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). Blocks direct Write/Edit to infrastructure files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) outside `/implement` pipeline — scoped to autonomous-dev repos only. | SANDBOX_ENABLED, MCP_AUTO_APPROVE, HOOK_EXTENSIONS_ENABLED |
+| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval) + hook extensions. 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). Blocks direct Write/Edit to infrastructure files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) outside `/implement` pipeline — scoped to autonomous-dev repos only. Also inspects Bash command bodies for shell file-write patterns (sed -i, cp/mv, redirects, tee, python3 -c writes) to the same protected paths, closing the bypass gap where wrapping a write in Bash would evade the gate. | SANDBOX_ENABLED, MCP_AUTO_APPROVE, HOOK_EXTENSIONS_ENABLED |
 
 **unified_pre_tool.py Native Tool Fast Path** (v4.1.0+):
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip the 4-layer validation
@@ -89,7 +89,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
 | **plan_mode_exit_detector.py** | Detects `ExitPlanMode` tool calls and writes a marker at `.claude/plan_mode_exit.json`. Marker is consumed by `unified_prompt_validator.py` to enforce `/implement` or `/create-issue` routing before raw edits are allowed. Auto-expires after 30 minutes. Always exits 0. | — |
-| **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Handles PostToolUse (tool calls) and UserPromptSubmit (user prompts). Session date pinned on first activity to prevent midnight log splits. Non-blocking. | ACTIVITY_LOGGING |
+| **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Handles PostToolUse (tool calls) and UserPromptSubmit (user prompts). Sets `"hook": "PostToolUse"` correctly for tool-call entries. Falls back to parsing hook stdin JSON for `session_id` when `CLAUDE_SESSION_ID` env var is absent (common in PostToolUse lifecycle). Session date pinned on first activity to prevent midnight log splits. Non-blocking. | ACTIVITY_LOGGING |
 
 ### PreCompact
 

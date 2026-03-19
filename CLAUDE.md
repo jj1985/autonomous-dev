@@ -74,4 +74,4 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 | claude-mem integration | [docs/CLAUDE-MEM-INTEGRATION.md](docs/CLAUDE-MEM-INTEGRATION.md) |
 | Troubleshooting | [plugins/autonomous-dev/docs/TROUBLESHOOTING.md](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) |
 
-**Last Updated**: 2026-03-18
+**Last Updated**: 2026-03-19

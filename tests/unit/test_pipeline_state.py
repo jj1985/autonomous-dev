@@ -41,6 +41,8 @@ from pipeline_state import (
     cleanup_pipeline,
     complete_step,
     create_pipeline,
+    finalize_to_session,
+    get_completion_summary,
     get_state_path,
     get_trace,
     load_pipeline,
@@ -535,3 +537,86 @@ class TestStructuralValidation:
         required = {"pending", "running", "passed", "failed", "skipped"}
         actual = {s.value for s in StepStatus}
         assert required.issubset(actual), f"Missing statuses: {required - actual}"
+
+
+# =============================================================================
+# 7. COMPLETION SUMMARY AND FINALIZATION
+# =============================================================================
+
+
+class TestGetCompletionSummary:
+    """Tests for get_completion_summary function."""
+
+    def test_summary_of_completed_pipeline(self, pipeline):
+        """Completed pipeline returns correct summary with agent/step counts."""
+        state = pipeline
+        for step in STEP_SEQUENCE:
+            if step in SKIPPABLE_STEPS:
+                state = skip_step(state, step, reason="test setup")
+            else:
+                state = advance(state, step)
+                state = complete_step(state, step, passed=True)
+
+        summary = get_completion_summary(state)
+        assert summary["mode"] == "full"
+        assert summary["status"] == "completed"
+        assert summary["step_count"] >= len(STEP_SEQUENCE)
+        assert summary["agent_count"] > 0
+        assert "started_at" in summary
+        assert "completed_at" in summary
+
+    def test_summary_of_failed_pipeline(self, pipeline):
+        """Failed pipeline returns status='failed'."""
+        state = advance(pipeline, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=False, error="Misaligned")
+
+        summary = get_completion_summary(state)
+        assert summary["status"] == "failed"
+
+    def test_summary_of_empty_pipeline(self, pipeline):
+        """Fresh pipeline with no steps started returns 'partial' status."""
+        summary = get_completion_summary(pipeline)
+        assert summary["status"] == "partial"
+        assert summary["step_count"] == 0
+
+
+class TestFinalizeToSession:
+    """Tests for finalize_to_session function."""
+
+    def test_finalize_creates_session_file(self, run_id, monkeypatch, tmp_path):
+        """finalize_to_session creates a session record with pipeline data."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        # Create and save a pipeline
+        state = create_pipeline(run_id, "Test feature", mode="quick")
+        state = advance(state, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=True)
+        save_pipeline(state)
+
+        # Set cwd to tmp_path so docs/sessions/ is created there
+        monkeypatch.chdir(tmp_path)
+
+        result = finalize_to_session(run_id)
+        assert result is True
+
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        assert session_file.exists()
+
+        data = json.loads(session_file.read_text())
+        assert data["run_id"] == run_id
+        assert data["mode"] == "quick"
+        assert data["feature"] == "Test feature"
+        assert "pipeline_summary" in data
+        assert "pipeline_steps" in data
+        assert data["pipeline_summary"]["mode"] == "quick"
+
+    def test_finalize_nonexistent_pipeline_returns_false(self, monkeypatch, tmp_path):
+        """finalize_to_session returns False for nonexistent pipeline."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        result = finalize_to_session("does-not-exist-99999")
+        assert result is False

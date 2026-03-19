@@ -407,6 +407,83 @@ class TestMainUserPromptSubmit:
                 assert exc_info.value.code == 0
 
 
+class TestPostToolUseHookField:
+    """Tests for PostToolUse entries containing 'hook': 'PostToolUse' field (#484)."""
+
+    def test_normal_mode_has_hook_field(self, tmp_path):
+        """PostToolUse entries in normal mode must contain 'hook': 'PostToolUse'."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/x.py"},
+            "tool_output": {"output": "content"},
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "hook-test"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        assert entry["hook"] == "PostToolUse"
+
+    def test_debug_mode_has_hook_field(self, tmp_path):
+        """PostToolUse entries in debug mode must contain 'hook': 'PostToolUse'."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "tool_output": {"output": "file1"},
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "debug", "CLAUDE_SESSION_ID": "hook-dbg"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        assert entry["hook"] == "PostToolUse"
+
+    def test_session_id_from_hook_input_when_env_absent(self, tmp_path):
+        """Session ID falls back to hook stdin JSON when env var is absent (#500)."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/x.py"},
+            "tool_output": {},
+            "session_id": "from-hook-input",
+        })
+        env = {"ACTIVITY_LOGGING": "true"}
+        # Explicitly remove CLAUDE_SESSION_ID if present
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("CLAUDE_SESSION_ID", None)
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        assert entry["session_id"] == "from-hook-input"
+
+    def test_session_id_env_takes_priority(self, tmp_path):
+        """CLAUDE_SESSION_ID env var takes priority over hook stdin JSON (#501)."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/x.py"},
+            "tool_output": {},
+            "session_id": "from-hook-input",
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "from-env"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        assert entry["session_id"] == "from-env"
+
+
 class TestSessionDatePinning:
     """Test _get_session_date cross-midnight session date pinning."""
 

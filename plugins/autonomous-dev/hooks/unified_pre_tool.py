@@ -887,6 +887,79 @@ def output_decision(decision: str, reason: str, *, system_message: str = ""):
     print(json.dumps(output))
 
 
+def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
+    """Check if a Bash command writes to protected infrastructure paths.
+
+    Conservative detection: false negatives OK, false positives NOT OK.
+    Returns None if allowed, or (file_name, block_reason) if blocked.
+
+    Detects: sed -i, cp/mv to protected paths, shell redirects (>, >>),
+    tee to protected paths, python3 -c with open(..., 'w').
+
+    Args:
+        command: The Bash command string to inspect.
+
+    Returns:
+        None if the command is allowed, or a tuple of (file_name, reason)
+        if it should be blocked.
+    """
+    import re
+
+    # If pipeline is active, allow everything (same as Write/Edit behavior)
+    try:
+        if _is_pipeline_active():
+            return None
+    except Exception:
+        pass  # If check fails, continue with inspection
+
+    # Collect candidate target file paths from various write patterns
+    target_paths = []  # type: list
+
+    # 1. sed -i (in-place edit)
+    sed_pattern = r'\bsed\s+(?:-[^i]*)?-i[^\s]*\s+(?:[\'"][^\'"]*[\'\"]\s+)?([^\s;&|]+)'
+    for match in re.finditer(sed_pattern, command):
+        target_paths.append(match.group(1))
+
+    # 2. cp / mv destination (last argument)
+    # Match: cp [flags] source dest  OR  cp [flags] source1 source2 dest/
+    cp_mv_pattern = r'\b(?:cp|mv)\s+(?:-[^\s]+\s+)*(?:[^\s]+\s+)+([^\s;&|]+)'
+    for match in re.finditer(cp_mv_pattern, command):
+        target_paths.append(match.group(1))
+
+    # 3. Shell redirects (>, >>) — reuse existing helper
+    redirect_targets = _extract_bash_file_writes(command)
+    target_paths.extend(redirect_targets)
+
+    # 4. python3 -c with open() writing — very conservative, only match explicit paths
+    # Only flag if the python -c snippet contains open(...) with a protected path literal
+    py_c_pattern = r'python3?\s+-c\s+[\'"]([^\'"]+)[\'"]'
+    for match in re.finditer(py_c_pattern, command):
+        snippet = match.group(1)
+        # Look for open('path', 'w') patterns with protected paths
+        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
+        for open_match in re.finditer(open_pattern, snippet):
+            target_paths.append(open_match.group(1))
+
+    # Check each target path against protected infrastructure
+    for fp in target_paths:
+        fp = fp.strip().strip("'\"")
+        if not fp:
+            continue
+        try:
+            if _is_protected_infrastructure(fp):
+                file_name = Path(fp).name
+                block_reason = (
+                    f"BLOCKED: Bash command writes to protected file '{file_name}'. "
+                    f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
+                    f"require the /implement pipeline. Run: /implement \"description\""
+                )
+                return (file_name, block_reason)
+        except Exception:
+            continue  # Skip paths that can't be resolved
+
+    return None
+
+
 def _run_extensions(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
     """Run hook extension scripts that can block tool calls.
 
@@ -1026,6 +1099,17 @@ def main():
                     _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
                     output_decision("deny", block_reason, system_message=block_reason)
                     sys.exit(0)
+
+            # Bash command inspection: detect writes to protected paths (#502)
+            if tool_name == "Bash":
+                command = tool_input.get("command", "")
+                if command:
+                    bash_block = _check_bash_infra_writes(command)
+                    if bash_block is not None:
+                        _log_deviation(bash_block[0], tool_name, "bash_infrastructure_protection_block")
+                        _log_pretool_activity(tool_name, tool_input, "deny", bash_block[1])
+                        output_decision("deny", bash_block[1], system_message=bash_block[1])
+                        sys.exit(0)
 
             # Run extensions even for native tools
             ext_decision, ext_reason = _run_extensions(tool_name, tool_input)
