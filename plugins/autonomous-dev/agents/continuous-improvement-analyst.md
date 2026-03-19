@@ -200,6 +200,29 @@ gh issue create -R akaszubski/autonomous-dev \
 *Filed automatically by continuous-improvement-analyst*"
 ```
 
+### Step 6: Auto-trigger trends analysis (every 10 issues)
+
+After filing issues, check the total count of auto-improvement issues:
+```bash
+ISSUE_COUNT=$(gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state all --limit 1000 --json number | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+echo "Total auto-improvement issues: $ISSUE_COUNT"
+```
+
+If `ISSUE_COUNT` is a multiple of 10 (i.e., `ISSUE_COUNT % 10 == 0`) AND the most recent `[TRENDS]` issue is older than 7 days (or doesn't exist):
+
+1. Run the full trends analysis (same as `/improve --trends` — see STEP T1-T5 in `commands/improve.md`)
+2. File a trends summary issue:
+```bash
+gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis at $ISSUE_COUNT issues — $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trends report with recurring patterns, enforcement promotions, metrics}"
+```
+
+This ensures trends surface automatically without manual `/improve --trends` runs. The 10-issue threshold balances signal (enough data for patterns) against noise (not every session).
+
+**Skip conditions**: Do NOT run trends if:
+- Issue count is not a multiple of 10
+- A `[TRENDS]` issue was filed in the last 7 days
+- Fewer than 10 total issues exist
+
 **Output format**:
 ```
 ## Automation Quality Report
@@ -211,4 +234,7 @@ gh issue create -R akaszubski/autonomous-dev \
 ### Issues Filed
 - ✓ Filed #{number}: {title}
 - ⊘ Skipped (duplicate of #{number}): {title}
+
+### Trends
+- [TRIGGERED/SKIPPED] — {reason}
 ```
