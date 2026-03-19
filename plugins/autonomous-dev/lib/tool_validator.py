@@ -134,7 +134,7 @@ INJECTION_PATTERNS = [
     (r'\|\s*bash\b', 'pipe_to_bash'),             # Pipe to bash (dangerous)
     (r'\|\s*sh\b', 'pipe_to_sh'),                 # Pipe to sh (dangerous)
     (r'\|\s*zsh\b', 'pipe_to_zsh'),               # Pipe to zsh (dangerous)
-    # NOTE: Backticks removed - too many false positives with markdown code fences (```)
+    (r'`[^`]+`', 'backticks'),                    # Command substitution (backticks) - legacy syntax
     # NOTE: $(cat <<'EOF') HEREDOC pattern is intentionally NOT blocked - it's safe for git commits
     # NOTE: Newlines are intentionally NOT blocked - multi-line commands are legitimate
     (r'>\s*/etc/', 'output_redirection_etc'),     # Output redirection to /etc
@@ -324,128 +324,55 @@ class ToolValidator:
             "version": "1.0",
             "bash": {
                 "whitelist": [
-                    # Allow all - rely on blacklist for blocking dangerous commands
-                    "*",
+                    "pytest*",
+                    "git status",
+                    "git diff*",
+                    "git log*",
+                    "git show*",
+                    "git branch*",
+                    "ls*",
+                    "cat*",
+                    "head*",
+                    "tail*",
+                    "grep*",
+                    "find*",
+                    "wc*",
+                    "sort*",
+                    "uniq*",
+                    "python --version*",
+                    "python -c*",
+                    "pip list*",
+                    "pip show*",
+                    "npm list*",
+                    "node --version*",
+                    "cd *",
+                    "pwd",
+                    "echo*",
+                    "which*",
+                    "type*",
                 ],
                 "blacklist": [
-                    # Destructive filesystem operations
-                    "rm -rf /*",
-                    "rm -rf ~*",
-                    "rm -rf /Users/*",
-                    "rm -rf /home/*",
-                    "rm -rf .git",
-                    "rm -rf node_modules",
-                    # Privilege escalation
-                    "sudo *",
-                    "su *",
-                    "doas *",
-                    # Dangerous permissions
+                    "rm -rf*",
+                    "sudo*",
                     "chmod 777*",
-                    "chmod -R 777*",
-                    "chown *",
-                    "chgrp *",
-                    # Code execution injection
-                    "eval *",
-                    "exec *",
-                    # Disk/partition operations
-                    "dd *",
-                    "mkfs*",
-                    "fdisk*",
-                    "parted*",
-                    # Process killing
-                    "kill -9 -1",
-                    "killall -9*",
-                    "pkill -9*",
-                    # System control
-                    "shutdown*",
-                    "reboot*",
-                    "halt*",
-                    "poweroff*",
-                    "init 0*",
-                    "init 6*",
-                    # Network listeners (potential backdoors)
-                    "nc -l*",
-                    "netcat -l*",
-                    "ncat -l*",
-                    # Remote code execution via pipe
-                    "curl * | sh",
-                    "curl * | bash",
-                    "wget * | sh",
-                    "wget * | bash",
-                    "| sh",
-                    "| bash",
-                    "| zsh",
-                    # Destructive git operations
-                    "git push --force*",
-                    "git push -f*",
-                    "git reset --hard*",
-                    "git clean -fdx",
-                    # Package publishing
-                    "npm publish*",
-                    "pip upload*",
-                    "twine upload*",
-                    # Dangerous docker operations
-                    "docker rm -f $(docker ps -aq)",
-                    "docker system prune -af",
-                    # Bulk deletion (only block root/home, allow project cleanup)
-                    "xargs rm -rf /*",
-                    "xargs rm -rf ~*",
-                    "find / -delete",
-                    "find ~ -delete",
-                    "find / -exec rm*",
-                    "find ~ -exec rm*",
-                    # Fork bomb
-                    ":(){:|:&};:",
-                    # PATH manipulation
-                    "export PATH=",
-                    "unset PATH",
-                    # Secure delete / file destruction
-                    "shred *",
-                    "truncate --size=0 *",
-                    "truncate -s 0 *",
-                    # Scheduled tasks
-                    "crontab -r",
-                    "crontab -e",
-                    "at *",
-                    # Service control
-                    "systemctl disable *",
-                    "systemctl stop *",
-                    "systemctl mask *",
-                    "launchctl unload *",
-                    "launchctl bootout *",
-                    # Firewall
-                    "iptables -F",
-                    "iptables -X",
-                    "iptables --flush",
-                    "ufw disable",
-                    # Sync with delete
-                    "rsync --delete * /*",
-                    "rsync -a --delete * /*",
-                    # Script execution (arbitrary code)
-                    "source /*",
-                    ". /*",
-                    "bash -c *",
-                    "sh -c *",
-                    "zsh -c *",
+                    "curl*|*bash",
+                    "wget*|*bash",
+                    "eval*",
+                    "exec*",
                 ],
             },
             "file_paths": {
-                "whitelist": ["*"],
+                "whitelist": [
+                    "/Users/*/Documents/GitHub/*",
+                    "/tmp/pytest-*",
+                    "/tmp/tmp*",
+                ],
                 "blacklist": [
                     "/etc/*",
                     "/var/*",
                     "/root/*",
-                    "/System/*",
-                    "/usr/*",
-                    "/bin/*",
-                    "/sbin/*",
                     "*/.env",
-                    "*/.env.*",
                     "*/secrets/*",
-                    "*/credentials/*",
-                    "*/.ssh/*",
-                    "*/.aws/*",
-                    "*/.gnupg/*",
                 ],
             },
             "agents": {
@@ -463,24 +390,9 @@ class ToolValidator:
             },
             "tools": {
                 "always_allowed": [
-                    # Core file operations
-                    "Read",
-                    "Write",
-                    "Edit",
-                    "Grep",
-                    "Glob",
-                    "Bash",
-                    "Search",
-                    # Task/agent tools
-                    "Agent",
                     "AskUserQuestion",
                     "Task",
                     "TaskOutput",
-                    "TaskCreate",
-                    "TaskUpdate",
-                    "TaskList",
-                    "TaskGet",
-                    "TaskStop",
                     "Skill",
                     "SlashCommand",
                     "BashOutput",
@@ -488,30 +400,9 @@ class ToolValidator:
                     "TodoWrite",
                     "EnterPlanMode",
                     "ExitPlanMode",
-                    "EnterWorktree",
                     "AgentOutputTool",
                     "KillShell",
                     "LSP",
-                    "WebFetch",
-                    "WebSearch",
-                    "ToolSearch",
-                ],
-            },
-            "web_tools": {
-                "whitelist": [
-                    "Fetch",
-                    "WebFetch",
-                    "WebSearch",
-                    "mcp__*__search",
-                    "mcp__*__web_search",
-                ],
-                "allow_all_domains": True,
-                "blocked_domains": [
-                    "localhost",
-                    "127.0.0.1",
-                    "0.0.0.0",
-                    "169.254.169.254",
-                    "[::1]",
                 ],
             },
         }
@@ -968,26 +859,7 @@ class ToolValidator:
         Returns:
             ValidationResult with approval decision and reason
         """
-        # Check tools.always_allowed FIRST (before tool-specific validation)
-        always_allowed = self.policy.get("tools", {}).get("always_allowed", [
-            "Read", "Write", "Edit", "Grep", "Glob", "Search",
-            "AskUserQuestion", "Task", "TaskOutput", "TaskCreate", "TaskUpdate",
-            "TaskList", "TaskGet", "TaskStop", "Skill", "SlashCommand",
-            "BashOutput", "NotebookEdit", "TodoWrite", "EnterPlanMode",
-            "ExitPlanMode", "AgentOutputTool", "KillShell", "LSP",
-        ])
-        if tool in always_allowed:
-            return ValidationResult(
-                approved=True,
-                reason=f"{tool} allowed (in always_allowed list)",
-                security_risk=False,
-                tool=tool,
-                agent=agent_name,
-                parameters=parameters,
-                matched_pattern=None,
-            )
-
-        # Validate based on tool type (only for tools NOT in always_allowed)
+        # Validate based on tool type
         if tool == "Bash" and "command" in parameters:
             result = self.validate_bash_command(parameters["command"])
             result.tool = tool
@@ -1023,7 +895,25 @@ class ToolValidator:
             result.agent = agent_name
             return result
 
-        # Deny unknown tools by default (always_allowed already checked at top)
+        # Check tools.always_allowed from config (with fallback for backward compatibility)
+        always_allowed = self.policy.get("tools", {}).get("always_allowed", [
+            "AskUserQuestion", "Task", "TaskOutput", "Skill", "SlashCommand",
+            "BashOutput", "NotebookEdit", "TodoWrite", "EnterPlanMode",
+            "ExitPlanMode", "AgentOutputTool", "KillShell", "LSP",
+        ])
+        if tool in always_allowed:
+            # Always allow these tools - they're interactive, delegating, workflow management, or read-only
+            return ValidationResult(
+                approved=True,
+                reason=f"{tool} allowed (interactive/delegating tool)",
+                security_risk=False,
+                tool=tool,
+                agent=agent_name,
+                parameters=parameters,
+                matched_pattern=None,
+            )
+
+        # Deny unknown tools by default
         return ValidationResult(
             approved=False,
             reason=f"Tool '{tool}' not supported for auto-approval",

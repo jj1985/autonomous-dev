@@ -1344,10 +1344,11 @@ See `docs/SECURITY.md` for comprehensive security guide
 - **Workflow**:
   1. Read installation_manifest.json to verify lib directory should be synced
   2. Create ~/.claude/lib/ if doesn't exist
-  3. Copy each .py file from plugin/lib/ to ~/.claude/lib/
-  4. Validate all paths for security (CWE-22, CWE-59)
-  5. Audit log all operations
-  6. Handle errors gracefully (non-blocking)
+  3. Copy each top-level .py file from plugin/lib/ (excluding `__init__.py`)
+  4. Discover package directories (subdirectories containing `__init__.py`) and copy all .py files recursively — enables packages like `sync_dispatcher/` to deploy correctly
+  5. Validate all paths for security (CWE-22, CWE-59)
+  6. Audit log all operations
+  7. Handle errors gracefully (non-blocking)
 - **Returns**: Number of lib files successfully synced (0 on complete failure)
 - **Security**:
   - Target path validation: Ensures ~/.claude/lib is within user home

@@ -829,9 +829,22 @@ class PluginUpdater:
                 return 0
 
             # Get all .py files from source lib directory
-            lib_files = list(source_dir.glob("*.py"))
+            # Phase 1: Top-level .py files (exclude __init__.py)
+            lib_files = [f for f in source_dir.glob("*.py") if f.name != "__init__.py"]
 
-            if not lib_files:
+            # Phase 2: Package directories (directories containing __init__.py)
+            package_dirs = [d for d in source_dir.iterdir() if d.is_dir() and (d / "__init__.py").exists()]
+
+            # Collect all .py files from package directories recursively
+            package_files = []
+            for pkg_dir in package_dirs:
+                # Get all .py files recursively within this package
+                package_files.extend(pkg_dir.rglob("*.py"))
+
+            # Combine both lists
+            all_files = lib_files + package_files
+
+            if not all_files:
                 # No lib files to sync
                 print("Info: No .py files found in plugin lib directory")
                 return 0
@@ -840,12 +853,8 @@ class PluginUpdater:
             files_synced = 0
             files_failed = 0
 
-            for source_file in lib_files:
+            for source_file in all_files:
                 try:
-                    # Skip __init__.py (not needed in global lib)
-                    if source_file.name == "__init__.py":
-                        continue
-
                     # Security: Validate source path
                     # Use manual validation since validate_path() enforces project-root whitelist
                     # and ~/.claude/lib/ is a global directory
@@ -860,12 +869,20 @@ class PluginUpdater:
                         files_failed += 1
                         continue
 
-                    # Define target path
-                    target_file = target_dir / source_file.name
+                    # Calculate relative path from source_dir
+                    relative_path = source_file.relative_to(source_dir)
+
+                    # Define target path (preserving directory structure)
+                    target_file = target_dir / relative_path
+                    target_file_dir = target_file.parent
+
+                    # Create target subdirectory if needed (for package structures)
+                    if target_file_dir != target_dir:
+                        target_file_dir.mkdir(parents=True, exist_ok=True)
 
                     # Security: Validate target path
-                    if target_file.is_symlink():
-                        print(f"Warning: Skipping existing symlink: {target_file.name}")
+                    if target_file.exists() and target_file.is_symlink():
+                        print(f"Warning: Skipping existing symlink: {relative_path}")
                         files_failed += 1
                         continue
 
@@ -874,7 +891,7 @@ class PluginUpdater:
                     files_synced += 1
 
                     if self.verbose:
-                        print(f"  Synced: {source_file.name} → ~/.claude/lib/")
+                        print(f"  Synced: {relative_path} → ~/.claude/lib/")
 
                 except (PermissionError, OSError) as e:
                     # File copy failed - log and continue with next file

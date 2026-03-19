@@ -42,18 +42,25 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval). 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). | SANDBOX_ENABLED, MCP_AUTO_APPROVE |
+| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval) + hook extensions. 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). Blocks direct Write/Edit to infrastructure files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) outside `/implement` pipeline — scoped to autonomous-dev repos only. | SANDBOX_ENABLED, MCP_AUTO_APPROVE, HOOK_EXTENSIONS_ENABLED |
 
 **unified_pre_tool.py Native Tool Fast Path** (v4.1.0+):
-- Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip all validation layers
+- Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip the 4-layer validation
 - Governed by settings.json permissions instead
 - Eliminates unwanted permission prompts for standard tools
+- Hook extensions still run for native tools (extensions can block any tool)
 
 **unified_pre_tool.py 4-Layer Architecture** (for MCP/external tools):
 - **Layer 0 (Sandbox)**: Command classification (SAFE/BLOCKED/NEEDS_APPROVAL)
 - **Layer 1 (MCP Security)**: Path traversal (CWE-22), injection (CWE-78), SSRF (CWE-918)
 - **Layer 2 (Agent Auth)**: Pipeline agent detection, authorized agent verification
 - **Layer 3 (Batch Approver)**: User consent caching, audit logging (merged into unified_pre_tool.py per Issue #348)
+- **Layer 4 (Extensions)**: Project/user-specific checks from `.claude/hooks/extensions/*.py` and `~/.claude/hooks/extensions/*.py` — survives `/sync` and `/install` (see Extension Points section)
+
+**Infrastructure Protection** (scoped to autonomous-dev repos):
+- Write/Edit to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` are blocked outside the `/implement` pipeline
+- Scoped to autonomous-dev repos (detected via `_is_autonomous_dev_repo()`) — does not affect user projects
+- User-facing docs (`README.md`, `CHANGELOG.md`, `docs/*.md`), config files (`.json`/`.yaml`), and all non-infrastructure paths are unaffected
 
 See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 

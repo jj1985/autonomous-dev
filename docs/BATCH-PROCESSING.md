@@ -2011,6 +2011,49 @@ git worktree remove --force worktree-dir
 # worktree-dir/.claude/batch_state.json is deleted with worktree
 ```
 
+### Virtual Environment Sharing (NEW in v3.47.0 - Issue #320)
+
+**Optional venv symlink for shared Python dependencies across worktrees**
+
+When creating worktrees, you can now optionally create a symlink to the parent repository's virtual environment, allowing worktrees to reuse shared Python packages.
+
+**How It Works**:
+
+```python
+from worktree_manager import create_worktree
+
+# Create worktree with venv symlink
+success, path = create_worktree('feature-auth', 'main', link_venv=True)
+if success:
+    print(f"Created worktree with venv symlink: {path}")
+```
+
+**Behavior**:
+- Detects parent `.venv` (preferred) or `venv` directory
+- Creates relative symlink in worktree: `worktree/.venv -> ../../../.venv`
+- Graceful degradation: If symlink creation fails, worktree is still usable
+- Skips symlink if already exists (idempotent)
+
+**Benefits**:
+- Faster worktree setup (no reinstall of dependencies)
+- Reduced disk space (shared packages)
+- Consistent Python versions across worktrees
+- Compatible with batch processing isolation
+
+**PYTHONPATH Fix (Issue #320)**:
+
+Test runner now properly passes PYTHONPATH to subprocess:
+
+```python
+from test_runner import run_tests
+
+# PYTHONPATH automatically includes sys.path
+result = run_tests()
+# subprocess inherits PYTHONPATH → library imports work
+```
+
+This fix enables tests to find local libraries in isolated environments (worktrees, CI jobs).
+
 ### Security
 
 Worktree path detection includes:
