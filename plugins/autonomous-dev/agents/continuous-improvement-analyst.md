@@ -190,6 +190,9 @@ gh issue create -R akaszubski/autonomous-dev \
   --body "## Problem
 {description with evidence}
 
+**Repo**: $(basename $(git rev-parse --show-toplevel))
+**Session**: $(date +%Y-%m-%dT%H:%M:%S)
+
 ## Evidence
 {relevant log entries or agent output}
 
