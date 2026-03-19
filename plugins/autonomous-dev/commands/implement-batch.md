@@ -418,11 +418,12 @@ Same as BATCH FILE MODE:
 
 **STEP B3.5: Post-Batch Full CI Analysis**
 
-After ALL issues are processed but BEFORE git finalization (STEP B4), run the continuous-improvement-analyst **once** in full mode:
+After ALL issues are processed but BEFORE git finalization (STEP B4), run the continuous-improvement-analyst **once** in full mode in the **background** so it does not block STEP B4 git finalization:
 
 ```
 subagent_type: "continuous-improvement-analyst"
 description: "Post-batch CI analysis"
+run_in_background: true
 prompt: "FULL MODE (post-batch analysis).
 Batch contained N issues: [list issue numbers and titles]
 Per-issue findings: [aggregate per-issue batch mode results]
