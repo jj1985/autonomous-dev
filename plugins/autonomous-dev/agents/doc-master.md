@@ -125,36 +125,57 @@ Apply these updates to PROJECT.md? [Y/n]:
 
 ## Semantic Cross-Reference Sweep
 
-**Before updating any docs, identify ALL docs that reference the changed components.**
+**Before updating any docs, identify ALL docs that reference the changed components and check for inconsistencies.**
 
-This catches stale conceptual docs that the file list alone won't reveal — e.g., changing hook architecture means SANDBOXING.md, TOOL-AUTO-APPROVAL.md, and ARCHITECTURE-OVERVIEW.md may describe the old behavior.
+### Step 0: Classify the change impact
 
-### Process
+Read the changed files and classify the impact level:
 
-1. **Extract concepts from changed files**
-   - Read each changed file and identify key concepts: function names, feature names, architectural patterns
-   - Example: if `unified_pre_tool.py` changed, concepts include: "pre-tool", "hook validation", "infrastructure protection", "extensions"
+| Impact | Signal | Sweep depth |
+|--------|--------|-------------|
+| **Simple** | Bug fix, config tweak, typo, single-file change | Grep with context (5 lines). Update CHANGELOG + any stale counts. Done. |
+| **Feature** | New capability added, new command/hook/agent | Grep with context. Read matching sections. Update CHANGELOG, README feature lists, CLAUDE.md tables. |
+| **Structural** | Architecture change, renamed concepts, changed how things interact, new patterns | Full section reads of all matching docs. Check for cross-doc inconsistencies. Update conceptual explanations, architecture docs, guides. |
 
-2. **Find all referencing docs**
-   ```bash
-   # Search active docs (exclude archived/, sessions/, *.backup)
-   grep -rl -E "CONCEPT1|CONCEPT2|CONCEPT3" README.md CLAUDE.md docs/*.md plugins/autonomous-dev/docs/*.md --include="*.md" 2>/dev/null | grep -v archived/ | grep -v sessions/ | grep -v .backup | sort -u
-   ```
+Use your judgment. When in doubt, go one level deeper.
 
-3. **Read only the relevant sections** (token-efficient)
-   - Do NOT read entire matching docs. Instead, use grep with context to see just the matching paragraphs:
-   ```bash
-   # Show 5 lines of context around each match — enough to evaluate accuracy
-   grep -n -C 5 "CONCEPT" docs/MATCHING_FILE.md
-   ```
-   - For each match, ask: "Is this description still accurate after the change?"
-   - If YES: skip it
-   - If NO: read just that section (use Read with offset/limit), then update it
+### Step 1: Extract concepts from changed files
 
-4. **Update stale docs**
-   - Fix inaccurate descriptions, outdated counts, wrong behavior descriptions
-   - Keep updates minimal — fix what's wrong, don't rewrite what's fine
-   - Log which docs were updated and why
+Identify key concepts: function names, feature names, architectural patterns.
+- Example: if `unified_pre_tool.py` changed to add extensions, concepts = "pre-tool", "hook validation", "extensions", "infrastructure protection"
+
+### Step 2: Find all referencing docs
+
+```bash
+# Search active docs (exclude archived/, sessions/, *.backup)
+grep -rl -E "CONCEPT1|CONCEPT2|CONCEPT3" README.md CLAUDE.md docs/*.md plugins/autonomous-dev/docs/*.md --include="*.md" 2>/dev/null | grep -v archived/ | grep -v sessions/ | grep -v .backup | sort -u
+```
+
+### Step 3: Evaluate matches (depth based on impact)
+
+**Simple/Feature**: Use grep with context — enough to evaluate accuracy without reading full files:
+```bash
+grep -n -C 5 "CONCEPT" docs/MATCHING_FILE.md
+```
+
+**Structural**: Read the full relevant section (use Read with offset/limit around the match). Check whether the explanation still accurately describes how things work after the change.
+
+### Step 4: Check for cross-doc inconsistencies
+
+For **Feature** and **Structural** changes, actively look for contradictions:
+- Does doc A say "4 validation layers" while doc B now says "5 layers"?
+- Does one doc describe a process that the change has modified?
+- Do counts in different files still agree? (agents, hooks, commands)
+- Do architecture descriptions match the actual code flow?
+
+If two docs contradict each other after the change, fix BOTH — not just the one you noticed first.
+
+### Step 5: Update stale docs
+
+- Fix inaccurate descriptions, outdated counts, wrong behavior descriptions
+- Fix cross-doc inconsistencies
+- Keep updates minimal — fix what's wrong, don't rewrite what's fine
+- Log which docs were updated and why
 
 **REQUIRED**: You MUST run the grep search. Do NOT skip this step and only update CHANGELOG/README.
 
