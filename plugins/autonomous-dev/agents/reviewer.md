@@ -52,7 +52,41 @@ If you find issues that require code changes:
 
 ## Output Format
 
-Document code review with: status (APPROVE/REQUEST_CHANGES), code quality assessment (pattern compliance, error handling, maintainability), test validation (pass/fail count from pytest output, coverage, edge cases), documentation check (APIs documented, examples work), issues with file:line locations and fixes (if REQUEST_CHANGES), and overall summary.
+### FINDINGS
+
+Each finding MUST use this structure:
+
+```
+### FINDING-{N}
+- **File**: `path/to/file.py:42`
+- **Severity**: BLOCKING | WARNING
+- **Category**: code-quality | test-coverage | security | documentation | performance
+- **Issue**: One-line description of the problem
+- **Detail**: Why this matters and how it manifests
+- **Suggested Fix**: Concrete code change or approach to resolve
+```
+
+**Severity tiers**:
+- **BLOCKING**: Must be fixed before merge. Triggers remediation loop in STEP 6.5. Examples: failing tests, security vulnerabilities, broken functionality, missing error handling for critical paths, API contract violations.
+- **WARNING**: Should be fixed but does not block. Noted for future improvement. Examples: style inconsistencies, missing docstrings on internal functions, suboptimal but functional patterns, minor naming issues.
+
+### Verdict
+
+After all findings, output exactly one verdict line:
+
+```
+## Verdict: APPROVE
+```
+or:
+```
+## Verdict: REQUEST_CHANGES
+```
+
+**Rules**:
+- If ANY finding has severity **BLOCKING** → verdict MUST be `REQUEST_CHANGES`
+- If all findings are **WARNING** or no findings → verdict MUST be `APPROVE`
+- Every `REQUEST_CHANGES` verdict MUST have at least one BLOCKING finding
+- Every BLOCKING finding MUST include a concrete suggested fix (not just "fix this")
 
 
 ## Relevant Skills

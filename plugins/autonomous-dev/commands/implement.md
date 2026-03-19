@@ -93,6 +93,7 @@ Step   Description                  Agent(s)                     Time     Status
 5      Test gate                    —                            12s      PASS
 5.5    Hook registration            —                            2s       PASS
 6      Validation                   reviewer, security, docs     52s      done
+6.5    Remediation gate             —                            0s       PASS
 7      Verification                 —                            3s       PASS
 8      Git operations               —                            5s       done
 8.5    Doc congruence               —                            8s       PASS
@@ -156,7 +157,7 @@ Execute steps IN ORDER. Default mode uses acceptance-first testing (7 agents). T
 
 ### STEP 0.5: Pre-Staged Files Check — HARD GATE
 
-**Progress**: Output step banner (STEP 1/14 — Pre-Staged Files Check). Output gate result after check.
+**Progress**: Output step banner (STEP 1/15 — Pre-Staged Files Check). Output gate result after check.
 
 ```bash
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
@@ -191,13 +192,13 @@ Do NOT proceed to STEP 1 until the staging area is clean.
 
 ### STEP 1: Validate PROJECT.md Alignment — HARD GATE
 
-**Progress**: Output step banner (STEP 2/14 — Alignment). Output gate result after.
+**Progress**: Output step banner (STEP 2/15 — Alignment). Output gate result after.
 
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`"). Check feature against GOALS, SCOPE, CONSTRAINTS. If misaligned: BLOCK with reason and options.
 
 ### STEP 1.5: Check Research Cache
 
-**Progress**: Output step banner (STEP 3/14 — Research Cache). Output CACHE_HIT or CACHE_MISS after.
+**Progress**: Output step banner (STEP 3/15 — Research Cache). Output CACHE_HIT or CACHE_MISS after.
 
 ```bash
 python3 -c "
@@ -211,7 +212,7 @@ CACHE_HIT → load cached research, skip STEP 2, pass to STEP 3. CACHE_MISS → 
 
 ### STEP 2: Parallel Research (2 agents)
 
-**Progress**: Output step banner (STEP 4/14 — Research, Agents: researcher-local (Haiku), researcher (Sonnet)). Output agent completions after each returns.
+**Progress**: Output step banner (STEP 4/15 — Research, Agents: researcher-local (Haiku), researcher (Sonnet)). Output agent completions after each returns.
 
 Invoke TWO agents in PARALLEL (single message, both Agent tool calls):
 1. **Agent**(subagent_type="researcher-local", model="haiku") — "Search codebase for patterns related to: {feature}. Output JSON with findings and sources."
@@ -221,25 +222,25 @@ Validation: If web researcher shows 0 tool uses, retry. Merge both outputs. Pers
 
 ### STEP 3: Planner (1 agent)
 
-**Progress**: Output step banner (STEP 5/14 — Planning, Agent: planner (Opus)). Output agent completion after.
+**Progress**: Output step banner (STEP 5/15 — Planning, Agent: planner (Opus)). Output agent completion after.
 
 **Agent**(subagent_type="planner", model="opus") — Pass merged research + feature description. Output: file-by-file plan, dependencies, edge cases, testing strategy.
 
 ### STEP 3.5: Generate Acceptance Tests (default mode only)
 
-**Progress**: Output step banner (STEP 6/14 — Acceptance Tests). Output completion after.
+**Progress**: Output step banner (STEP 6/15 — Acceptance Tests). Output completion after.
 
 Skip if `--tdd-first`. Check `tests/genai/conftest.py` exists (if not, fall back to TDD-first). Generate `tests/genai/test_acceptance_{slug}.py` with one `genai.judge()` test per acceptance criterion from planner output.
 
 ### STEP 4: Test-Master (--tdd-first only)
 
-**Progress**: Output step banner (STEP 7/14 — Test-Master, Agent: test-master (Opus)). Skip banner if not --tdd-first. Output agent completion after.
+**Progress**: Output step banner (STEP 7/15 — Test-Master, Agent: test-master (Opus)). Skip banner if not --tdd-first. Output agent completion after.
 
 If `--tdd-first`: **Agent**(subagent_type="test-master", model="opus") — Pass planner output + file list + GenAI infra status (`test -f tests/genai/conftest.py && echo "GENAI_INFRA=EXISTS" || echo "GENAI_INFRA=ABSENT"`). Otherwise: skip (implementer writes unit tests alongside code in default acceptance-first mode).
 
 ### STEP 5: Implementer + Test Gate — HARD GATE
 
-**Progress**: Output step banner (STEP 8/14 — Implementation + Test Gate, Agent: implementer (Opus)). Output agent completion, then test gate result with pass/fail/skip counts and coverage after.
+**Progress**: Output step banner (STEP 8/15 — Implementation + Test Gate, Agent: implementer (Opus)). Output agent completion, then test gate result with pass/fail/skip counts and coverage after.
 
 **Agent**(subagent_type="implementer", model=PLANNER_RECOMMENDED_MODEL) — Pass planner output + acceptance tests (or test-master output if TDD). Must write WORKING code, no stubs. Use the model recommended by the planner (see STEP 3). Default to "opus" if planner did not specify.
 
@@ -265,7 +266,7 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 
 ### STEP 5.5: Hook Registration Check — HARD GATE
 
-**Progress**: Output step banner (STEP 9/14 — Hook Registration). Output gate result after.
+**Progress**: Output step banner (STEP 9/15 — Hook Registration). Output gate result after.
 
 If hooks were created/modified: verify they appear in `templates/settings.*.json`, `config/global_settings_template.json`, and `config/install_manifest.json`. BLOCK if unregistered.
 
@@ -295,20 +296,59 @@ You MUST invoke the missing agents before proceeding to STEP 6.
 
 ### STEP 6: Parallel Validation (3 agents)
 
-**Progress**: Output step banner (STEP 10/14 — Validation, Agents: reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet)). Output each agent completion as they return.
+**Progress**: Output step banner (STEP 10/15 — Validation, Agents: reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet)). Output each agent completion as they return.
 
 Invoke TWO agents in PARALLEL (single message), plus doc-master in background:
 1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues.
 2. **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list. Output: PASS/FAIL (OWASP Top 10).
 3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline.
 
+### STEP 6.5: Remediation Gate — HARD GATE
+
+**Progress**: Output step banner (STEP 11/15 — Remediation Gate). Output gate result after.
+
+Parse the reviewer verdict (`APPROVE` or `REQUEST_CHANGES`) and security-auditor verdict (`PASS` or `FAIL`).
+
+**If both pass** (reviewer: APPROVE, security-auditor: PASS) → proceed to STEP 7. Output:
+```
+  GATE: remediation-gate — PASS                Xs
+```
+
+**If either fails** → enter remediation loop (max 2 cycles):
+
+For each cycle:
+1. **Collect BLOCKING findings** — Extract ALL findings with severity BLOCKING from the failing validator(s). Pass them VERBATIM to the implementer (do not summarize, paraphrase, or reorder).
+2. **Re-invoke implementer in REMEDIATION MODE** — **Agent**(subagent_type="implementer", model="opus") with prompt: "REMEDIATION MODE — Fix the following BLOCKING findings. Critique history: {full validator output verbatim}. BLOCKING findings: {findings verbatim}."
+3. **Run pytest** — Verify 0 failures after remediation fixes.
+4. **Re-run ONLY failing validators** — If reviewer failed, re-run reviewer. If security-auditor failed, re-run security-auditor. Do NOT re-run validators that already passed. Do NOT invoke doc-master during remediation.
+5. **Check verdicts** — If all pass → proceed to STEP 7. If any fail → next cycle.
+
+**After 2 cycles still failing**:
+- File GitHub issues for each remaining BLOCKING finding:
+  ```bash
+  gh issue create --title "Remediation: {finding summary}" --body "BLOCKING finding from pipeline run $RUN_ID that could not be auto-resolved after 2 remediation cycles.\n\nFinding:\n{finding verbatim}\n\nValidator: {reviewer|security-auditor}" --label "remediation"
+  ```
+- **BLOCK** the pipeline. Do NOT proceed to STEP 7. Output:
+  ```
+    GATE: remediation-gate — BLOCKED (2 cycles exhausted, N issues filed)
+  ```
+
+**FORBIDDEN** — You MUST NOT do any of the following:
+- You MUST NOT skip the remediation loop when a validator fails
+- You MUST NOT summarize or paraphrase BLOCKING findings when passing to implementer (pass VERBATIM)
+- You MUST NOT exceed 2 remediation cycles (file issues and block after 2)
+- You MUST NOT re-run validators that already passed (only re-run the failing ones)
+- You MUST NOT invoke doc-master during remediation (doc-master is excluded from the remediation loop)
+
 ### STEP 7: Final Verification
 
-**Progress**: Output step banner (STEP 11/14 — Final Verification). Output result after.
+**Progress**: Output step banner (STEP 12/15 — Final Verification). Output result after.
 
 Verify all required agents ran. Default: 7 (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master). TDD-first: 8 (add test-master). If any missing, invoke NOW.
 
 ### STEP 8: Report and Finalize
+
+**Precondition**: STEP 6.5 Remediation Gate must have status PASS. If STEP 6.5 is BLOCKED, do NOT proceed with git operations.
 
 **Progress**: Output the **Final Summary** table per Pipeline Progress Protocol. Include per-step elapsed times, total pipeline time (from PIPELINE_START), files changed, test counts, and security result. Then proceed with git operations.
 
@@ -322,7 +362,7 @@ gh issue close <number> -c "Implemented in $COMMIT_SHA" 2>/dev/null || echo "War
 
 ### STEP 8.5: Documentation Congruence — HARD GATE
 
-**Progress**: Output step banner (STEP 13/14 — Documentation Congruence). Output gate result after.
+**Progress**: Output step banner (STEP 13/15 — Documentation Congruence). Output gate result after.
 
 ```bash
 pytest tests/unit/test_documentation_congruence.py --tb=short -q
@@ -331,7 +371,7 @@ If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipp
 
 ### STEP 9: Continuous Improvement — HARD GATE
 
-**Progress**: Output step banner (STEP 14/14 — Continuous Improvement). Output agent launch confirmation.
+**Progress**: Output step banner (STEP 14/15 — Continuous Improvement). Output agent launch confirmation.
 
 **REQUIRED**: **Agent**(subagent_type="continuous-improvement-analyst", model="sonnet", run_in_background=true) — Examines session logs for bypasses, test drift, pipeline completeness.
 

@@ -110,6 +110,32 @@ If you created or modified ANY hook file (`hooks/*.py`):
 - ❌ You MUST NOT register in only some templates (ALL MUST be updated)
 - ❌ You MUST NOT skip the manifest entry
 
+## Remediation Mode
+
+When re-invoked with "REMEDIATION MODE" in the prompt, you are fixing BLOCKING findings from the reviewer or security-auditor. This is NOT a normal implementation pass.
+
+### Remediation Workflow
+
+1. **Read full critique history** — Read ALL findings passed to you before making any changes. Understand the full scope of what needs fixing.
+2. **Fix ONLY BLOCKING findings** — Each BLOCKING finding is your spec. Fix it exactly as described or with an equivalent solution that resolves the underlying issue.
+3. **Run pytest after fixes** — Verify 0 failures, 0 errors after your changes.
+4. **Report what you fixed** — For each BLOCKING finding, state what you changed and where.
+
+### Remediation Scope
+
+- Findings are the spec. Do not interpret beyond them.
+- Fix the minimum code necessary to resolve each BLOCKING finding.
+- Do not add features, refactor unrelated code, or "improve" things not cited in findings.
+
+### HARD GATE: Remediation Discipline
+
+**FORBIDDEN** — You MUST NOT do any of the following during remediation:
+- You MUST NOT fix WARNING findings (they do not block and are out of scope for remediation)
+- You MUST NOT refactor code not cited in a BLOCKING finding
+- You MUST NOT add new features or enhancements beyond the finding scope
+- You MUST NOT modify test expectations to hide a BLOCKING finding instead of fixing the underlying code
+- You MUST NOT skip any BLOCKING finding without documenting why it cannot be fixed
+
 ## Relevant Skills
 
 You have access to these specialized skills when implementing features:
