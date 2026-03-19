@@ -1,7 +1,7 @@
 ---
 name: improve
 description: "Analyze recent sessions for improvement opportunities"
-argument-hint: "[--auto-file] [--session <id>] [--date YYYY-MM-DD]"
+argument-hint: "[--auto-file] [--session <id>] [--date YYYY-MM-DD] [--trends]"
 allowed-tools: [Task, Read, Bash, Glob, Grep]
 user-invocable: true
 ---
@@ -24,6 +24,9 @@ Analyze session activity logs to test whether autonomous-dev's automation is wor
 
 # Analyze specific date
 /improve --date 2026-02-15
+
+# Trend analysis across all sessions and CI issues
+/improve --trends
 ```
 
 ## Arguments
@@ -31,6 +34,7 @@ Analyze session activity logs to test whether autonomous-dev's automation is wor
 - `--auto-file`: Create GitHub issues in `akaszubski/autonomous-dev` for detected problems (default: report only)
 - `--session <id>`: Analyze a specific session ID
 - `--date YYYY-MM-DD`: Analyze a specific date (default: today)
+- `--trends`: Aggregate analysis across all auto-improvement issues and recent sessions. Identifies recurring patterns, worsening metrics, and systemic gaps.
 
 ## Implementation
 
@@ -114,3 +118,84 @@ If `--auto-file` flag is set:
 | Suspicious agent | Agent completed in <10s with zero file reads | Warning |
 | Hook health | Missing hook layer, silent failures | Critical |
 | Rule bypass | Raw edits instead of /implement, nudges ignored | Warning |
+
+---
+
+## Trends Mode (`--trends`)
+
+If `--trends` is specified, skip the single-session analysis and do aggregate analysis instead.
+
+### STEP T1: Gather all CI data
+
+```bash
+# All open auto-improvement issues
+gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state all --limit 100 --json number,title,state,createdAt,closedAt,labels
+
+# Recent pipeline records
+ls -t docs/sessions/*-pipeline.json | head -20
+```
+
+### STEP T2: Categorize issues by pattern
+
+Group issues by their tag prefix (from CI analyst check types):
+- `[INCOMPLETE]` — pipeline completeness failures
+- `[GATE]` — gate violations
+- `[GAMING]` — test gaming
+- `[BYPASS]` / `[NEW-BYPASS]` — bypass patterns
+- `[HOOK-REGRESSION]` — hook bugs
+- `[DENY-WORKAROUND]` — enforcement holes
+- `[DOC-SWEEP-*]` — doc-master sweep quality
+- `[CIRCUMVENTION]` — constraint circumvention
+- Other — uncategorized
+
+### STEP T3: Identify trends
+
+For each category, answer:
+1. **Frequency**: How many times has this occurred? Is it increasing?
+2. **Recurrence**: Same issue appearing after being closed? (fix didn't stick)
+3. **Severity escalation**: Are findings getting worse over time?
+4. **Batch vs single**: Does the pattern only appear in batch mode?
+5. **Resolution rate**: What % of filed issues got closed (fixed)?
+
+### STEP T4: Identify systemic gaps
+
+Look for patterns that span categories:
+- **Progressive degradation**: Later pipeline steps consistently weaker (context pressure)
+- **Enforcement holes**: Same workaround pattern appearing repeatedly
+- **Agent quality drift**: Specific agents consistently flagged (ghost invocations, shallow output)
+- **Hook blind spots**: Types of violations that hooks never catch
+
+### STEP T5: Report
+
+```
+TREND ANALYSIS
+━━━━━━━━━━━━━━
+Period: [date range of data analyzed]
+Sessions analyzed: [N]
+CI issues analyzed: [N open / N closed / N total]
+
+TOP RECURRING PATTERNS:
+1. [pattern] — [N occurrences] — [trend: improving/stable/worsening]
+   Last seen: [date]. Resolution: [fixed/open/recurring]
+
+2. [pattern] — [N occurrences] — [trend]
+   ...
+
+SYSTEMIC GAPS:
+- [gap description] — [evidence across N sessions]
+
+ENFORCEMENT PROMOTION CANDIDATES:
+Rules that are currently nudges but should be hooks (recurring violations):
+- [rule] — violated [N] times, suggest promoting to [hook type]
+
+METRICS:
+- Issue resolution rate: [N]%
+- Mean time to close: [N] days
+- Most common finding type: [type]
+- Pipeline completion rate: [N]% (across recent sessions)
+```
+
+If `--auto-file` is also set, create a single summary issue:
+```bash
+gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report}"
+```
