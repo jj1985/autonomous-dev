@@ -1,6 +1,8 @@
 ## [Unreleased]
 
 ### Fixed
+- **`unified_pre_tool.py` PreToolUse logs no longer record `"unknown"` as session_id** — Logging functions inside the hook now fall back to parsing the hook event JSON from stdin when `CLAUDE_SESSION_ID` is absent. Five regression tests added to `tests/unit/hooks/test_infrastructure_protection.py` verify the fallback path and confirm session_id is populated correctly in all PreToolUse log entries. (Issue #504)
+
 - **PostToolUse activity log now correctly labels hook type and recovers session_id from stdin** — `session_activity_logger.py` was writing `"hook": "UserPromptSubmit"` for all entries regardless of actual event. Now sets `"hook": "PostToolUse"` for tool-call entries. Also adds a stdin fallback for `session_id`: when the `CLAUDE_SESSION_ID` environment variable is absent (a known gap in the PostToolUse lifecycle), the hook parses the hook event JSON from stdin to extract the session identifier. This ensures activity log entries always carry a valid session_id for per-session analysis.
 
 - **Bash commands inspected for file writes to protected infrastructure paths** — `unified_pre_tool.py` now examines the body of Bash tool calls before execution. Commands that write to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, or `skills/*/SKILL.md` via shell file-write patterns (`sed -i`, `cp`/`mv`, output redirects `>` / `>>`, `tee`, `python3 -c` with writes) are blocked with the same enforcement message as direct Write/Edit tool calls. Previously, the infrastructure-protection gate could be bypassed by wrapping a write in a Bash command; this closes that gap.

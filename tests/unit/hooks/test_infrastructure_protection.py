@@ -414,3 +414,91 @@ class TestBashInfrastructureProtection:
 
         decision = result["hookSpecificOutput"]["permissionDecision"]
         assert decision == "allow"
+
+
+# ---------------------------------------------------------------------------
+# Regression: Issue #504 — session_id "unknown" in PreToolUse log entries
+# ---------------------------------------------------------------------------
+
+class TestSessionIdFromStdin:
+    """Regression tests for Issue #504: session_id extracted from hook stdin.
+
+    Before the fix, _log_deviation() and _log_pretool_activity() only used
+    os.getenv("CLAUDE_SESSION_ID", "unknown"), which is absent in most hook
+    contexts. The fix stores the session_id from stdin input_data at module
+    level so logging functions can fall back to it.
+    """
+
+    def test_session_id_from_stdin_when_env_absent(self, monkeypatch, tmp_path):
+        """When CLAUDE_SESSION_ID env var is absent, log entries use session_id from stdin."""
+        monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+
+        # Set module-level _session_id as main() would after parsing stdin
+        hook._session_id = "session-from-stdin-abc123"
+
+        log_dir = tmp_path / ".claude" / "logs"
+        log_dir.mkdir(parents=True)
+
+        # Patch os.getcwd so _log_deviation writes to our temp dir
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
+        hook._log_deviation("test_file.py", "Write", "test reason")
+
+        log_file = log_dir / "deviations.jsonl"
+        assert log_file.exists(), "deviations.jsonl should have been created"
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["session_id"] == "session-from-stdin-abc123"
+
+    def test_session_id_env_var_takes_precedence(self, monkeypatch, tmp_path):
+        """When CLAUDE_SESSION_ID env var IS set, it takes precedence over stdin value."""
+        monkeypatch.setenv("CLAUDE_SESSION_ID", "env-session-xyz")
+        hook._session_id = "session-from-stdin-abc123"
+
+        log_dir = tmp_path / ".claude" / "logs"
+        log_dir.mkdir(parents=True)
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
+        hook._log_deviation("test_file.py", "Write", "test reason")
+
+        log_file = log_dir / "deviations.jsonl"
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["session_id"] == "env-session-xyz"
+
+    def test_pretool_activity_uses_stdin_session_id(self, monkeypatch, tmp_path):
+        """_log_pretool_activity also uses the stdin session_id fallback."""
+        monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+        hook._session_id = "pretool-session-456"
+
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        log_dir.mkdir(parents=True)
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
+        hook._log_pretool_activity("Bash", {"command": "ls"}, "allow", "test")
+
+        # Find the log file (named by date)
+        log_files = list(log_dir.glob("*.jsonl"))
+        assert len(log_files) == 1, f"Expected 1 activity log file, got {len(log_files)}"
+        entry = json.loads(log_files[0].read_text().strip())
+        assert entry["session_id"] == "pretool-session-456"
+
+    def test_pretool_activity_env_takes_precedence(self, monkeypatch, tmp_path):
+        """_log_pretool_activity prefers env var over stdin value."""
+        monkeypatch.setenv("CLAUDE_SESSION_ID", "env-pretool-789")
+        hook._session_id = "pretool-session-456"
+
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        log_dir.mkdir(parents=True)
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
+        hook._log_pretool_activity("Bash", {"command": "ls"}, "allow", "test")
+
+        log_files = list(log_dir.glob("*.jsonl"))
+        assert len(log_files) == 1
+        entry = json.loads(log_files[0].read_text().strip())
+        assert entry["session_id"] == "env-pretool-789"
+
+    def test_module_default_is_unknown(self):
+        """Module-level _session_id defaults to 'unknown' before main() runs."""
+        # Reset to default
+        hook._session_id = "unknown"
+        assert hook._session_id == "unknown"

@@ -68,6 +68,10 @@ import os
 from pathlib import Path
 from typing import Dict, Tuple, List
 
+# Module-level session_id extracted from hook stdin (set in main()).
+# Logging functions fall back to this when CLAUDE_SESSION_ID env var is absent.
+_session_id: str = "unknown"
+
 
 def is_running_under_uv() -> bool:
     """Detect if script is running under UV."""
@@ -616,7 +620,7 @@ def _log_deviation(file_name: str, tool_name: str, reason: str) -> None:
             "file": file_name,
             "tool": tool_name,
             "reason": reason,
-            "session_id": os.getenv("CLAUDE_SESSION_ID", "unknown"),
+            "session_id": os.getenv("CLAUDE_SESSION_ID") or _session_id,
         }
         with open(log_dir / "deviations.jsonl", "a") as f:
             f.write(_json.dumps(entry) + "\n")
@@ -857,7 +861,7 @@ def _log_pretool_activity(tool_name: str, tool_input: Dict, decision: str, reaso
             "hook": "PreToolUse",
             "decision": decision,
             "reason": reason[:300],
-            "session_id": os.environ.get("CLAUDE_SESSION_ID", "unknown"),
+            "session_id": os.getenv("CLAUDE_SESSION_ID") or _session_id,
             "agent": os.environ.get("CLAUDE_AGENT_NAME", "main"),
             **summary,
         }
@@ -1057,6 +1061,12 @@ def main():
             # Invalid JSON - ask user (don't block on invalid input)
             output_decision("ask", f"Invalid input JSON: {e}")
             sys.exit(0)
+
+        # Extract session_id from hook stdin for logging functions (Issue #504).
+        # The env var CLAUDE_SESSION_ID is absent in most hook contexts, so we
+        # store the stdin value at module level as a fallback.
+        global _session_id
+        _session_id = input_data.get("session_id", "unknown")
 
         # Extract tool information
         tool_name = input_data.get("tool_name", "")
