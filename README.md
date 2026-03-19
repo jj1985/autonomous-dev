@@ -202,14 +202,14 @@ Hooks run automatically at key moments to enforce quality without manual interve
 
 | Hook Type | What It Does |
 |-----------|--------------|
-| **PreToolUse** | 4-layer security validation (sandboxing → MCP → agent auth → batch permissions) |
+| **PreToolUse** | 4-layer security validation (sandboxing → MCP → agent auth → batch permissions) + hook extensions. Blocks direct edits to pipeline infrastructure files outside `/implement` (autonomous-dev repos only). |
 | **PreCommit** | Blocks commits with failing tests, missing docs, or security issues |
 | **SubagentStop** | Triggers git automation after pipeline completion |
 | **UserPromptSubmit** | Enforces workflow discipline and command validation |
 | **SessionStart** | Restores session state after `/clear` for continuity |
 
 **Key Hooks**:
-- **unified_pre_tool.py**: 4-layer security (84% reduction in permission prompts)
+- **unified_pre_tool.py**: 4-layer security + hook extensions (84% reduction in permission prompts). Infrastructure file protection scoped to autonomous-dev repos — prevents direct edits to agents, commands, hooks, libs, and skills outside the `/implement` pipeline.
 - **stop_quality_gate.py**: End-of-turn quality checks (pytest, ruff, mypy)
 - **enforce_tdd.py**: Test-first workflow enforcement (specification/acceptance tests before implementation)
 - **enforce_orchestrator.py**: PROJECT.md alignment validation
@@ -267,6 +267,7 @@ autonomous-dev enforces its own quality standards. When the plugin detects it's 
 - **Coverage Threshold**: 80% (vs 70% for user projects)
 - **No Bypass**: Cannot override quality gates with `--no-verify`
 - **Automatic Enforcement**: Enabled without configuration needed
+- **Infrastructure Protection**: Direct edits to pipeline files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) are blocked outside `/implement` — scoped to this repo only, does not affect user projects
 
 **Quality Gates Enforced**:
 | Gate | Standard | autonomous-dev |
@@ -433,6 +434,32 @@ Session state survives `/clear` operations:
 - Recent context (files modified, workflows completed)
 
 **Read at SessionStart**: Automatic continuity across sessions
+
+### Hook Extension Points
+
+Add project-specific or user-specific pre-tool checks that survive `/sync` and install updates:
+
+**Extension directories** (discovered in alphabetical order, first-occurrence-wins deduplication):
+- `~/.claude/hooks/extensions/*.py` — global, applies to all projects
+- `.claude/hooks/extensions/*.py` — project-specific
+
+Each extension exports a `check(tool_name, tool_input) -> ("allow"|"deny", reason)` function. The first `"deny"` short-circuits all remaining extensions.
+
+```python
+# .claude/hooks/extensions/my_check.py
+def check(tool_name: str, tool_input: dict) -> tuple[str, str]:
+    if tool_name == "Bash":
+        cmd = tool_input.get("command", "")
+        if "dangerous_command" in cmd:
+            return ("deny", "blocked by project policy")
+    return ("allow", "")
+```
+
+**Survives updates**: `install.sh` and `sync_dispatcher.py` create the `extensions/` directory but never overwrite its contents.
+
+Set `HOOK_EXTENSIONS_ENABLED=false` to disable all extensions.
+
+See [docs/HOOKS.md](docs/HOOKS.md#extension-points) for full API contract and security notes.
 
 ### UV Script Execution
 

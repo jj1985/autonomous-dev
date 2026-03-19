@@ -34,6 +34,8 @@ user-invocable: true
 - ❌ You MUST NOT clean up pipeline state before STEP 9 launches
 - ❌ You MUST NOT write implementation code yourself instead of delegating to agents
 - ❌ You MUST NOT contain detailed agent instructions inline — those belong in agents/*.md
+- ❌ You MUST NOT do an agent's work yourself when the agent crashes — RETRY the agent once with the same prompt. If retry also crashes, BLOCK and report to user. This applies to ALL specialist agents (implementer, test-master, researcher, planner, reviewer, security-auditor, doc-master). The coordinator is a dispatcher, never a substitute.
+- ❌ You MUST NOT paraphrase, summarize, or condense agent output when passing it to the next stage. Pass the FULL agent output text verbatim. If output exceeds context limits, pass the first 2000 words plus the final summary/conclusion section — never your own restatement. The anti-pattern: "The implementer changed X, Y, Z" instead of the implementer's actual output. STEP 6 agents (reviewer, security-auditor) need the real output to do real reviews.
 
 ### Pipeline Progress Protocol
 
@@ -266,6 +268,30 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 **Progress**: Output step banner (STEP 9/14 — Hook Registration). Output gate result after.
 
 If hooks were created/modified: verify they appear in `templates/settings.*.json`, `config/global_settings_template.json`, and `config/install_manifest.json`. BLOCK if unregistered.
+
+### STEP 5.75: Agent Count Gate — HARD GATE
+
+Before proceeding to validation, verify that the minimum required specialist agents have actually run. This prevents the coordinator from skipping agents under context pressure and going straight to STEP 6.
+
+**Required agents before STEP 6** (full pipeline):
+- researcher-local (STEP 2) — unless research cache hit
+- researcher (STEP 2) — unless research cache hit
+- planner (STEP 3)
+- implementer (STEP 5)
+
+**Minimum count**: 4 agents (or 2 if research was cached). Count the distinct `subagent_type` values you have invoked so far in this pipeline run.
+
+**HARD GATE**: If agent count < minimum:
+```
+BLOCKED: Agent count gate failed.
+Required: researcher-local, researcher, planner, implementer
+Actually ran: [list agents that ran]
+Missing: [list agents that didn't run]
+
+You MUST invoke the missing agents before proceeding to STEP 6.
+```
+
+**FORBIDDEN**: Proceeding to STEP 6 with fewer than the minimum agents. If an agent was skipped due to a crash, the crash retry rule (forbidden list) applies — retry once, then block.
 
 ### STEP 6: Parallel Validation (3 agents)
 
