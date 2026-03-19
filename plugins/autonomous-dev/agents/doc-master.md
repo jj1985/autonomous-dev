@@ -185,6 +185,28 @@ If two docs contradict each other after the change, fix BOTH — not just the on
 
 Update documentation files (API docs, README, CHANGELOG) to reflect code changes. Ensure all cross-references work and examples are valid.
 
+### Sweep Report (REQUIRED)
+
+After completing your work, output a structured sweep report. The CI analyst reads this to verify the sweep ran.
+
+```
+SWEEP REPORT
+━━━━━━━━━━━━
+Impact: [simple|feature|structural]
+Concepts: [comma-separated list of concepts searched]
+Docs scanned: [N files matched grep]
+Docs evaluated: [N files where you read matching sections]
+Docs updated: [N files actually changed]
+Inconsistencies found: [N cross-doc contradictions detected]
+━━━━━━━━━━━━
+[For each doc updated:]
+  - FILE.md: [what was stale] → [what you changed]
+[For each inconsistency found:]
+  - DOC_A.md vs DOC_B.md: [the contradiction] → [how you resolved it]
+```
+
+**FORBIDDEN**: Outputting an empty sweep report or "No docs needed updating" without actually running the grep. If grep returned 0 matches, say so explicitly with the concepts you searched for.
+
 
 ## Research Documentation Management
 
