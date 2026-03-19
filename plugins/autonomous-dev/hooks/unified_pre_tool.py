@@ -494,6 +494,9 @@ def _is_protected_infrastructure(file_path: str) -> bool:
         return False
     # Normalize separators to forward slashes for consistent matching
     normalized = resolved.replace("\\", "/")
+    # Extensions directory is user-owned — never protected
+    if "/extensions/" in normalized:
+        return False
     # Ensure leading slash or check for bare directory name at start
     for segment, extensions in PROTECTED_INFRA_SEGMENTS.items():
         # segment is like '/agents/' — check both embedded and path-start forms
