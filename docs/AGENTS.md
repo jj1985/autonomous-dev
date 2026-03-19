@@ -182,6 +182,7 @@ These agents execute the main autonomous development workflow and provide specia
   - Uses design_patterns, performance_tips, library_integration_tips from web research
   - Falls back to Grep/Glob pattern discovery if research context not provided
 **Context Isolation**: Runs in separate context. Reads only test files from disk, not test-master's reasoning. See testing-guide skill for context isolation patterns.
+**Remediation Mode**: Re-invoked by the STEP 6.5 Remediation Gate when the reviewer or security-auditor return BLOCKING findings. In this mode the implementer fixes only the cited BLOCKING findings (verbatim from the gate), runs pytest to confirm 0 failures, and reports what changed. WARNING findings are out of scope during remediation.
 
 ### reviewer
 
@@ -190,6 +191,8 @@ These agents execute the main autonomous development workflow and provide specia
 **Skills**: code-review, python-standards
 **Execution**: Step 5 of /implement workflow (parallel validation - 60% faster with Phase 7 optimization)
 **Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
+**FINDINGS Format**: Each finding uses a structured `FINDING-{N}` schema with mandatory `file:line` reference, severity (`BLOCKING` or `WARNING`), category, issue description, detail, and suggested fix. BLOCKING findings trigger the STEP 6.5 Remediation Gate; WARNING findings are advisory only.
+**Verdict**: `APPROVE` (all findings WARNING or none) or `REQUEST_CHANGES` (any BLOCKING finding present). STEP 6.5 parses this verdict to determine whether to enter the remediation loop.
 
 ### security-auditor
 

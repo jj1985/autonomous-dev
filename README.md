@@ -108,6 +108,7 @@ STEP 6: Parallel Validation (3 agents simultaneously):
         ├── Code Review    → Checks quality and patterns
         ├── Security Audit → Scans for OWASP vulnerabilities
         └── Documentation  → Keeps docs in sync
+STEP 6.5: Remediation Gate → Auto-fixes BLOCKING findings (up to 2 cycles)
 STEP 7: Git Automation → Commit, push, PR, close issue
 ```
 

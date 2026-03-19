@@ -111,9 +111,13 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - Optional `--tdd-first` flag reverts to legacy TDD-first (failing unit tests first)
 7. **Implementation**: implementer makes tests pass
 8. **Parallel Validation** (3 agents simultaneously):
-   - reviewer checks code quality
+   - reviewer checks code quality (structured FINDING-{N} schema, BLOCKING/WARNING severity)
    - security-auditor scans for vulnerabilities
    - doc-master updates documentation
+8.5. **Remediation Gate** (HARD GATE): If reviewer or security-auditor return findings, auto-loop:
+   - Re-invokes implementer in Remediation Mode with BLOCKING findings verbatim (max 2 cycles)
+   - Re-runs only the failing validators after each cycle
+   - Files GitHub issues and blocks pipeline if findings persist after 2 cycles
 9. **Memory Recording** (v3.45.0): Cross-session context after validation
 10. **Automated Git Operations**: SubagentStop hook handles commit/push/PR
 11. **Context Clear** (Optional): `/clear` for next feature
