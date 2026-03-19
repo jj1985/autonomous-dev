@@ -138,14 +138,18 @@ This catches stale conceptual docs that the file list alone won't reveal — e.g
 2. **Find all referencing docs**
    ```bash
    # Search active docs (exclude archived/, sessions/, *.backup)
-   grep -rl -E "CONCEPT1|CONCEPT2|CONCEPT3" docs/*.md CLAUDE.md --include="*.md" 2>/dev/null | grep -v archived/ | grep -v sessions/ | grep -v .backup | sort -u
+   grep -rl -E "CONCEPT1|CONCEPT2|CONCEPT3" README.md CLAUDE.md docs/*.md plugins/autonomous-dev/docs/*.md --include="*.md" 2>/dev/null | grep -v archived/ | grep -v sessions/ | grep -v .backup | sort -u
    ```
 
-3. **Read and evaluate each match**
-   - For each doc that references a changed concept, read the relevant section
-   - Ask: "Is this description still accurate after the change?"
+3. **Read only the relevant sections** (token-efficient)
+   - Do NOT read entire matching docs. Instead, use grep with context to see just the matching paragraphs:
+   ```bash
+   # Show 5 lines of context around each match — enough to evaluate accuracy
+   grep -n -C 5 "CONCEPT" docs/MATCHING_FILE.md
+   ```
+   - For each match, ask: "Is this description still accurate after the change?"
    - If YES: skip it
-   - If NO: update the stale section
+   - If NO: read just that section (use Read with offset/limit), then update it
 
 4. **Update stale docs**
    - Fix inaccurate descriptions, outdated counts, wrong behavior descriptions
@@ -154,7 +158,7 @@ This catches stale conceptual docs that the file list alone won't reveal — e.g
 
 **REQUIRED**: You MUST run the grep search. Do NOT skip this step and only update CHANGELOG/README.
 
-**Scope**: Only check `docs/*.md` and `CLAUDE.md`. Ignore `docs/archived/`, `docs/sessions/`, and backup files.
+**Scope**: Check `README.md`, `CLAUDE.md`, `docs/*.md`, and `plugins/autonomous-dev/docs/*.md`. Ignore `docs/archived/`, `docs/sessions/`, and backup files.
 
 ## Output Format
 
