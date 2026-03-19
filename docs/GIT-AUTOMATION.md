@@ -112,7 +112,7 @@ AUTO_GIT_PR=false
 The git automation workflow integrates seamlessly with `/implement`:
 
 ```
-1. /implement completes STEP 6 (parallel validation)
+1. /implement completes STEP 6 (sequential validation: reviewer → security-auditor) and STEP 6.5 (Remediation Gate)
    ↓
 2. quality-validator agent completes (last validation agent)
    ↓
