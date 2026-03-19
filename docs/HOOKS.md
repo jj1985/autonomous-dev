@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/
+  - plugins/autonomous-dev/lib/hook_exit_codes.py
+---
+
 # Automation Hooks Reference
 
 **Last Updated**: 2026-03-17

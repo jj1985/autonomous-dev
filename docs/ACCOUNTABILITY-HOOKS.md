@@ -1,3 +1,10 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/validate_project_alignment.py
+  - plugins/autonomous-dev/hooks/auto_format.py
+  - plugins/autonomous-dev/hooks/security_scan.py
+---
+
 # Accountability Hooks - Catching Missed Steps
 
 **Purpose**: Use hooks to ensure you don't skip important SDLC steps

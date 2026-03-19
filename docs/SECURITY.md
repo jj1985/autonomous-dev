@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/lib/security_utils.py
+---
+
 # Security Guide
 
 **Last Updated**: 2025-12-09

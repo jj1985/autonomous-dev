@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/commands/implement.md
+  - plugins/autonomous-dev/agents/implementer.md
+---
+
 # Workflow Discipline
 
 **REQUIRED**: Use `/implement` for all code changes. This is not optional.

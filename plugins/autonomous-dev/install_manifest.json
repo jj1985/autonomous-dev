@@ -233,8 +233,6 @@
         "plugins/autonomous-dev/lib/uninstall_orchestrator.py",
         "plugins/autonomous-dev/lib/update_plugin.py",
         "plugins/autonomous-dev/lib/user_state_manager.py",
-        "plugins/autonomous-dev/lib/validate_documentation_parity.py",
-        "plugins/autonomous-dev/lib/validate_manifest_doc_alignment.py",
         "plugins/autonomous-dev/lib/validate_marketplace_version.py",
         "plugins/autonomous-dev/lib/validation.py",
         "plugins/autonomous-dev/lib/version_detector.py",

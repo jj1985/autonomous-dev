@@ -301,7 +301,7 @@ You MUST invoke the missing agents before proceeding to STEP 6.
 Invoke reviewer FIRST, then security-auditor after reviewer completes. Doc-master runs in background (non-blocking):
 1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues. **MUST complete before security-auditor starts** (STEP 6.5 remediation gate needs reviewer result first).
 2. **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list. Output: PASS/FAIL (OWASP Top 10). Starts AFTER reviewer completes.
-3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline. May run in parallel with reviewer.
+3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. Launches in parallel with reviewer for efficiency — collected at STEP 7.
 
 ### STEP 6.5: Remediation Gate — HARD GATE
 
@@ -340,11 +340,23 @@ For each cycle:
 - You MUST NOT re-run validators that already passed (only re-run the failing ones)
 - You MUST NOT invoke doc-master during remediation (doc-master is excluded from the remediation loop)
 
-### STEP 7: Final Verification
+### STEP 7: Final Verification + Doc-Drift Gate — HARD GATE
 
-**Progress**: Output step banner (STEP 12/15 — Final Verification). Output result after.
+**Progress**: Output step banner (STEP 12/15 — Final Verification + Doc-Drift Gate). Output result after.
 
 Verify all required agents ran. Default: 7 (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master). TDD-first: 8 (add test-master). If any missing, invoke NOW.
+
+**Doc-Drift Collection Point** — Collect doc-master background result:
+1. Wait for doc-master to complete (it was launched in STEP 6 background)
+2. Parse output for `DOC-DRIFT-VERDICT: PASS` or `DOC-DRIFT-VERDICT: FAIL`
+3. If **PASS**: proceed to STEP 8
+4. If **FAIL with unfixed findings**: BLOCK pipeline. Output:
+   ```
+   GATE: doc-drift — BLOCKED (N unfixed findings)
+   ```
+   Display each finding. User must address before proceeding.
+5. If doc-master made fixes: stage them with `git add`
+6. If doc-master crashed or no verdict found: retry once (existing crash policy). If retry also fails, log `[DOC-VERDICT-MISSING]` as warning and proceed.
 
 ### STEP 8: Report and Finalize
 
@@ -434,9 +446,17 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 
 **Progress**: Output step banner (STEP 4/5 — Documentation, Agent: doc-master (Sonnet)).
 
-**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline.
+**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT.
 
 ### STEP L5: Report and Finalize
+
+**Doc-Drift Collection Point** — Collect doc-master background result:
+1. Wait for doc-master to complete
+2. Parse output for `DOC-DRIFT-VERDICT`
+3. If **PASS**: proceed with git operations
+4. If **FAIL**: BLOCK. Display findings.
+5. If doc-master made fixes: stage them with `git add`
+6. If no verdict: log warning and proceed
 
 **Progress**: Output Final Summary table (adapted for 5 steps).
 

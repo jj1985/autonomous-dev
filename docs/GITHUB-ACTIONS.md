@@ -1,3 +1,8 @@
+---
+covers:
+  - .github/workflows/
+---
+
 # GitHub Actions Integration
 
 Automated PR review and issue implementation using Claude via `anthropics/claude-code-action`.

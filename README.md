@@ -176,10 +176,10 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 5. **implementer** (Opus) - Writes production-quality code with acceptance + regression tests
 6. **reviewer** (Sonnet) - Reviews code quality, patterns, and coverage
 7. **security-auditor** (Opus) - Scans for OWASP vulnerabilities
-8. **doc-master** (Haiku) - Updates documentation to match code changes
+8. **doc-master** (Sonnet) - Detects and fixes semantic documentation drift
 
-**Utility Agents** (7 more):
-- commit-message-generator, continuous-improvement-analyst, issue-creator, pr-description-generator, project-progress-tracker, quality-validator, test-coverage-auditor
+**Utility Agents** (3 more):
+- continuous-improvement-analyst, issue-creator, test-coverage-auditor
 
 **How Agents Work**:
 - Agents are markdown prompts (not Python files)
@@ -191,8 +191,8 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 
 | Tier | Model | Agents |
 |------|-------|--------|
-| **Tier 1** | Haiku | researcher-local, doc-master |
-| **Tier 2** | Sonnet | reviewer, researcher (web), continuous-improvement-analyst |
+| **Tier 1** | Haiku | researcher-local, test-coverage-auditor |
+| **Tier 2** | Sonnet | reviewer, researcher (web), doc-master, continuous-improvement-analyst |
 | **Tier 3** | Opus | planner, test-master, implementer, security-auditor |
 
 ---

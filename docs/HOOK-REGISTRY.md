@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/
+---
+
 # Hook Registry
 
 **Last Updated: 2026-02-16**

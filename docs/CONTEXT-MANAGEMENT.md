@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/lib/session_state_manager.py
+  - plugins/autonomous-dev/lib/session_tracker.py
+---
+
 # Context Management
 
 **CRITICAL**: Proper context management is essential for scaling to 100+ features without system failure.

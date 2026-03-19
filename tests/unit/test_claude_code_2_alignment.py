@@ -120,7 +120,7 @@ class TestPhase1AgentSkillsFrontmatter:
         ("test-master", ["testing-guide", "python-standards"]),
         ("reviewer", ["code-review", "python-standards"]),
         ("security-auditor", ["security-patterns", "error-handling-patterns"]),
-        ("doc-master", ["documentation-guide", "git-workflow"]),
+        ("doc-master", ["documentation-guide"]),
         ("planner", ["architecture-patterns", "project-management"]),
     ])
     def test_core_agent_skills_match_map(self, agent_name, expected_skills):

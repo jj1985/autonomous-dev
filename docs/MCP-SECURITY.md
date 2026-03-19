@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/unified_pre_tool.py
+---
+
 # MCP Server Security - Permission Whitelist System
 
 **Last Updated**: 2025-12-07

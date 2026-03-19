@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/commands/mem-search.md
+---
+
 # claude-mem Integration Guide
 
 This guide explains how to use [claude-mem](https://github.com/thedotmack/claude-mem) with autonomous-dev for persistent memory across Claude Code sessions.

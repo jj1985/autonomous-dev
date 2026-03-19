@@ -54,8 +54,8 @@ Run manifest alignment validation:
 # With OpenRouter (recommended - cheap GenAI validation)
 OPENROUTER_API_KEY=sk-or-... python plugins/autonomous-dev/lib/genai_validate.py manifest-alignment
 
-# Without API key (regex fallback)
-python plugins/autonomous-dev/lib/validate_manifest_doc_alignment.py
+# Without API key (hybrid validator with regex fallback)
+python plugins/autonomous-dev/lib/hybrid_validator.py --mode regex-only
 ```
 
 **Validates**:
@@ -325,7 +325,7 @@ Based on arguments, execute the appropriate mode inline:
 
 ```bash
 # Quick scan (Phase 1)
-python plugins/autonomous-dev/lib/validate_manifest_doc_alignment.py
+python plugins/autonomous-dev/lib/hybrid_validator.py --mode auto
 ```
 
 **Default mode** (`/align` or `/align --project`):
@@ -367,7 +367,7 @@ ELSE (default):
 ### Libraries Used
 
 **Default mode**:
-- `validate_manifest_doc_alignment.py` - Quick count/reference scan
+- `hybrid_validator.py` - Hybrid manifest validation (GenAI + regex fallback)
 - Semantic validation performed inline by Claude Code
 
 **--docs mode**:

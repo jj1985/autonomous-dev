@@ -55,12 +55,11 @@ Models predictably game evaluations. Detect these patterns:
    grep -A 5 '"permissionDecision": "deny"' .claude/logs/activity/*.jsonl 2>/dev/null | grep -B 1 "Bash" | head -20
    ```
    This is important because it means enforcement has a hole — the model found a way around it.
-9. **Doc-master sweep quality** (severity: warning): Did doc-master output a SWEEP REPORT? Check for signs of a shallow sweep:
-   - "No docs needed updating" without listing concepts searched → `[DOC-SWEEP-SKIP]`
-   - "Docs scanned: 0" on a feature/structural change → `[DOC-SWEEP-SKIP]`
-   - Only CHANGELOG updated on a structural change (no cross-reference check) → `[DOC-SWEEP-SHALLOW]`
-   - No sweep report at all → `[DOC-SWEEP-MISSING]`
-   Note: doc-master runs in background. Check its task output file or the agent's final message in the session log.
+9. **Doc-master verdict quality** (severity: warning): Did doc-master output a `DOC-DRIFT-VERDICT`? Check for signs of incomplete checking:
+   - No verdict output at all → `[DOC-VERDICT-MISSING]`
+   - PASS with `docs-checked: 0` when changed files overlap with `covers:` mappings → `[DOC-DRIFT-UNCHECKED]`
+   - Only CHANGELOG updated when `covers:` mappings indicate affected docs → `[DOC-DRIFT-SHALLOW]`
+   Note: doc-master launches in background at STEP 6 and is collected at STEP 7 before git operations.
 10. **Extension health** (severity: info): If `.claude/hooks/extensions/` exists and contains .py files, check for stderr output from extensions that may indicate silent crashes:
     ```bash
     ls .claude/hooks/extensions/*.py 2>/dev/null && echo "Extensions present" || echo "No extensions"

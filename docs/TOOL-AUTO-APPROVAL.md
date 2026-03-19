@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/unified_pre_tool.py
+  - plugins/autonomous-dev/config/auto_approve_policy.json
+---
+
 # MCP Auto-Approval for Tool Calls
 
 **Version**: v3.40.0 (Permissive Mode with Blacklist-First Security)

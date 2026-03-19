@@ -1,3 +1,11 @@
+---
+covers:
+  - plugins/autonomous-dev/commands/implement.md
+  - plugins/autonomous-dev/lib/batch_state_manager.py
+  - plugins/autonomous-dev/lib/batch_retry_manager.py
+  - plugins/autonomous-dev/lib/worktree_manager.py
+---
+
 # Batch Feature Processing
 
 **Last Updated**: 2026-02-26

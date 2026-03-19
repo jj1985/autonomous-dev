@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/
+  - plugins/autonomous-dev/lib/hook_exit_codes.py
+---
+
 # ADR-001: Agent Hooks for Quality Verification
 
 **Status**: Accepted

@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/lib/sandbox_enforcer.py
+  - plugins/autonomous-dev/hooks/unified_pre_tool.py
+---
+
 # Sandboxing Guide (Issue #171)
 
 **Last Updated**: 2026-01-02

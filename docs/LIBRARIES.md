@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/lib/
+---
+
 # Shared Libraries Reference
 
 **Last Updated**: 2026-03-08 (Issue #402 - Added pipeline_state.py)
@@ -8549,7 +8554,6 @@ Uses Claude Sonnet 4.5 for semantic validation:
 
 **Used By**:
 - hybrid_validator.py - Orchestrator that wraps this validator
-- validate_documentation_parity.py - Complements parity validation
 
 ### Fallback Mechanism
 
@@ -8716,7 +8720,6 @@ All modes return HybridValidationReport with:
 - /health-check command - Manifest alignment validation
 - CI/CD validation pipelines - Automated alignment checks
 - genai_manifest_validator.py - Wrapped by this orchestrator
-- validate_documentation_parity.py - Complementary validation
 
 ### Related Issues
 
@@ -8728,8 +8731,6 @@ All modes return HybridValidationReport with:
 
 **Dependencies**:
 - genai_manifest_validator.py - LLM-powered validation
-- validate_manifest_doc_alignment.py - Regex-based validation
-- validate_documentation_parity.py - Parity validation (shared models)
 - security_utils.py - Path validation
 
 **Used By**:

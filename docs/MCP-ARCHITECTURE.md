@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/hooks/unified_pre_tool.py
+---
+
 # MCP Architecture - Autonomous Development
 
 **Version**: v3.37.0

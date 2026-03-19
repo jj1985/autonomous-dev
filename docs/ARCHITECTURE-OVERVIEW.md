@@ -1,8 +1,17 @@
+---
+covers:
+  - plugins/autonomous-dev/agents/
+  - plugins/autonomous-dev/skills/
+  - plugins/autonomous-dev/lib/
+  - plugins/autonomous-dev/hooks/
+  - plugins/autonomous-dev/commands/
+---
+
 # Architecture Overview
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 11 agents (18 archived), 17 skills, 18 active commands, 171 libraries, 25 active hooks (62 archived).
+**Component Counts**: 11 agents (18 archived), 17 skills, 18 active commands, 169 libraries, 25 active hooks (62 archived).
 
 ---
 
@@ -30,7 +39,7 @@ Agent model assignments optimized for cost-performance balance (11 active agents
 - researcher - Web research and synthesis
 - reviewer - Code quality gate (10-point checklist)
 - security-auditor - OWASP security scanning
-- doc-master - Documentation sync
+- doc-master - Semantic documentation drift detection
 - continuous-improvement-analyst - Pipeline QA and gaming detection
 
 **Tier 3 (Opus)** - Deep reasoning for complex synthesis

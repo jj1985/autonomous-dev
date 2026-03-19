@@ -1,3 +1,10 @@
+---
+covers:
+  - .claude/PROJECT.md
+  - plugins/autonomous-dev/commands/
+  - plugins/autonomous-dev/hooks/
+---
+
 # Maintaining the Core Philosophy
 
 **Last Updated**: 2025-11-03

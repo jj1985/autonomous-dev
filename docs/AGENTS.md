@@ -1,3 +1,8 @@
+---
+covers:
+  - plugins/autonomous-dev/agents/
+---
+
 # Agent Architecture
 
 **Last Updated**: 2026-03-17
@@ -9,47 +14,49 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-13 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+11 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: commit-message-generator, continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, quality-validator, researcher, researcher-local, reviewer, security-auditor, test-coverage-auditor, test-master
+**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, researcher, researcher-local, reviewer, security-auditor, test-coverage-auditor, test-master
 
-**Archived Agents** (16, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, setup-wizard, sync-validator
+**Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
 
 ---
 
 ## Model Tier Strategy (Issue #108, Updated #147)
 
-Agent model assignments optimized for cost-performance balance (9 active agents):
+Agent model assignments optimized for cost-performance balance (11 active agents):
 
-### Tier 1: Haiku (4 agents)
+### Tier 1: Haiku (2 agents)
 
 Fast, cost-effective for pattern matching:
 
 - **researcher-local**: Search codebase patterns
-- **reviewer**: Code quality checks
-- **doc-master**: Documentation sync
-- **data-curator**: A-grade data pipeline orchestration
+- **test-coverage-auditor**: AST-based coverage analysis
 
-### Tier 2: Sonnet (4 agents)
+### Tier 2: Sonnet (6 agents)
 
-Balanced reasoning for implementation:
+Balanced reasoning for judgment tasks:
+
+- **researcher**: Web research and synthesis
+- **reviewer**: Code quality gate
+- **doc-master**: Semantic documentation drift detection
+- **continuous-improvement-analyst**: Pipeline QA and gaming detection
+- **issue-creator**: GitHub issue creation
+- **planner**: Architecture planning
+
+### Tier 3: Opus (3 agents)
+
+Deep reasoning for complex synthesis:
 
 - **implementer**: Code implementation
-- **test-master**: TDD test generation
-- **planner**: Architecture planning
-- **issue-creator**: GitHub issue creation
-
-### Tier 3: Opus (1 agent)
-
-Maximum depth for security and complex analysis:
-
+- **test-master**: Quality Diamond test generation
 - **security-auditor**: OWASP security scanning
 
 ### Rationale
 
-- **Tier 1 (Haiku)**: Cost optimization for well-defined tasks (40-60% cost reduction vs Opus) - pattern matching, code review, documentation, data pipeline orchestration
-- **Tier 2 (Sonnet)**: Sweet spot for development work requiring both speed and reasoning
-- **Tier 3 (Opus)**: Reserved for high-risk security decisions
+- **Tier 1 (Haiku)**: Cost optimization for well-defined tasks (40-60% cost reduction vs Opus) - pattern matching, coverage analysis
+- **Tier 2 (Sonnet)**: Balanced reasoning for tasks requiring judgment — code review, documentation drift detection, research synthesis
+- **Tier 3 (Opus)**: Reserved for complex synthesis and high-risk decisions
 
 **Performance Impact**: Optimized tier assignments reduce costs by 40-60% while maintaining quality.
 
@@ -60,7 +67,7 @@ Maximum depth for security and complex analysis:
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
 **Total Active Agents**: 13
-**Note**: 13 active agents, all under 3,000 token target
+**Note**: 11 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
@@ -77,36 +84,36 @@ Maximum depth for security and complex analysis:
 | ✅ | reviewer | 623 | OK |
 | ✅ | continuous-improvement-analyst | 580 | OK |
 | ✅ | test-coverage-auditor | 450 | OK |
-| ✅ | commit-message-generator | 444 | OK |
-| ✅ | quality-validator | 418 | OK |
 
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 13 active agents under 3,000 token target
+- All 11 active agents under 3,000 token target
 
 ---
 
 ## Archived Agents (Issue #331, #411, #471)
 
-16 agents have been archived and moved to `plugins/autonomous-dev/agents/archived/`:
+18 agents have been archived and moved to `plugins/autonomous-dev/agents/archived/`:
 
 - **orchestrator**: Meta-agent for workflow coordination (consolidated into unified /implement command)
 - **advisor**: Critical thinking and validation (consolidated, Issue #331)
 - **alignment-analyzer**: Detailed alignment analysis (consolidated, Issue #331)
 - **alignment-validator**: PROJECT.md alignment checking (ghost registration removed, Issue #411)
 - **brownfield-analyzer**: Brownfield project analysis (consolidated, Issue #331)
+- **commit-message-generator**: Conventional commit generation (archived)
 - **data-curator**: A-grade data pipeline orchestration (consolidated, Issue #331)
 - **data-quality-validator**: LLM training data quality assessment (ghost registration removed, Issue #411)
 - **distributed-training-coordinator**: Distributed LLM training orchestration (ghost registration removed, Issue #411)
 - **experiment-critic**: Experiment evaluation (consolidated, Issue #331)
 - **postmortem-analyst**: Pipeline session log analysis (consolidated, Issue #331)
 - **project-bootstrapper**: Tech stack detection and setup (consolidated, Issue #331)
+- **project-progress-tracker**: Goal progress tracking (archived, Issue #471)
 - **project-status-analyzer**: Real-time project health analysis (consolidated, Issue #331)
+- **quality-validator**: GenAI-powered feature validation (archived)
+- **pr-description-generator**: Pull request description generation (archived, Issue #471)
 - **setup-wizard**: Intelligent interactive setup (consolidated, Issue #331)
 - **sync-validator**: Smart dev sync validation (consolidated, Issue #331)
-- **pr-description-generator**: Pull request description generation (archived, Issue #471)
-- **project-progress-tracker**: Goal progress tracking (archived, Issue #471)
 
 ---
 
@@ -203,11 +210,11 @@ These agents execute the main autonomous development workflow and provide specia
 
 ### doc-master
 
-**Purpose**: Documentation synchronization and research management
-**Model**: Haiku (Tier 1 - cost optimized for structured documentation updates)
-**Skills**: documentation-guide, consistency-enforcement, git-workflow, cross-reference-validation, documentation-currency
-**Execution**: Step 5 of /implement workflow (parallel validation - 60% faster with Phase 7 optimization)
-**Research Documentation** (Issue #151): Validates and maintains research documentation in `docs/research/` - enforces naming conventions, format standards, README sync, and parity validation
+**Purpose**: Semantic documentation drift detection — reads changed source files and compares prose descriptions against actual code behavior to find and fix factual drift
+**Model**: Sonnet (Tier 2 - judgment required for comparing prose against code semantics)
+**Skills**: documentation-guide
+**Execution**: Step 6 of /implement workflow — runs in background (non-blocking) after reviewer and security-auditor complete
+**Drift Detection**: Uses `covers:` YAML frontmatter in `docs/*.md` files to map source paths to docs, then applies LLM judgment to detect factual drift, behavioral drift, structural drift, and missing coverage
 
 ### data-curator
 

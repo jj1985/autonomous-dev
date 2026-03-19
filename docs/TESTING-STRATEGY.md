@@ -1,3 +1,10 @@
+---
+covers:
+  - plugins/autonomous-dev/skills/testing-guide/
+  - plugins/autonomous-dev/lib/test_coverage_analyzer.py
+  - plugins/autonomous-dev/lib/test_runner.py
+---
+
 # Testing Strategy: The Diamond Model
 
 **Last Updated**: 2026-02-17

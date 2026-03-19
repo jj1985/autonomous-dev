@@ -36,27 +36,120 @@ Agent: implementer
 
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Dict, Any, List
 
-# Import validators
+
+class ValidationLevel(Enum):
+    """Validation issue severity levels."""
+
+    ERROR = "ERROR"
+    WARNING = "WARNING"
+    INFO = "INFO"
+
+
+@dataclass
+class ParityIssue:
+    """Represents a single documentation parity issue."""
+
+    level: ValidationLevel
+    message: str
+    details: str = ""
+
+    def __str__(self) -> str:
+        """Human-readable string representation."""
+        if self.details:
+            return f"[{self.level.value}] {self.message}\n  Details: {self.details}"
+        return f"[{self.level.value}] {self.message}"
+
+
+@dataclass
+class ParityReport:
+    """Comprehensive documentation parity validation report."""
+
+    version_issues: List[ParityIssue] = field(default_factory=list)
+    count_issues: List[ParityIssue] = field(default_factory=list)
+    cross_reference_issues: List[ParityIssue] = field(default_factory=list)
+    changelog_issues: List[ParityIssue] = field(default_factory=list)
+    security_issues: List[ParityIssue] = field(default_factory=list)
+
+    @property
+    def total_issues(self) -> int:
+        """Total number of issues across all categories."""
+        return (
+            len(self.version_issues)
+            + len(self.count_issues)
+            + len(self.cross_reference_issues)
+            + len(self.changelog_issues)
+            + len(self.security_issues)
+        )
+
+    @property
+    def error_count(self) -> int:
+        """Count of ERROR level issues."""
+        all_issues = (
+            self.version_issues
+            + self.count_issues
+            + self.cross_reference_issues
+            + self.changelog_issues
+            + self.security_issues
+        )
+        return sum(1 for issue in all_issues if issue.level == ValidationLevel.ERROR)
+
+    @property
+    def warning_count(self) -> int:
+        """Count of WARNING level issues."""
+        all_issues = (
+            self.version_issues
+            + self.count_issues
+            + self.cross_reference_issues
+            + self.changelog_issues
+            + self.security_issues
+        )
+        return sum(1 for issue in all_issues if issue.level == ValidationLevel.WARNING)
+
+    @property
+    def info_count(self) -> int:
+        """Count of INFO level issues."""
+        all_issues = (
+            self.version_issues
+            + self.count_issues
+            + self.cross_reference_issues
+            + self.changelog_issues
+            + self.security_issues
+        )
+        return sum(1 for issue in all_issues if issue.level == ValidationLevel.INFO)
+
+    @property
+    def has_errors(self) -> bool:
+        """True if any ERROR level issues exist."""
+        return self.error_count > 0
+
+    @property
+    def has_warnings(self) -> bool:
+        """True if any WARNING level issues exist."""
+        return self.warning_count > 0
+
+    @property
+    def exit_code(self) -> int:
+        """Exit code for CLI integration (0=success, 1=errors)."""
+        return 1 if self.has_errors else 0
+
+    def generate_report(self) -> str:
+        """Generate human-readable markdown report."""
+        lines = ["# Documentation Parity Validation Report", ""]
+        lines.append(f"**Total Issues**: {self.total_issues}")
+        lines.append(f"- Errors: {self.error_count}")
+        lines.append(f"- Warnings: {self.warning_count}")
+        lines.append(f"- Info: {self.info_count}")
+        lines.append("")
+        return "\n".join(lines)
+
+
+# Import security utilities
 try:
-    from plugins.autonomous_dev.lib.genai_manifest_validator import (
-        GenAIManifestValidator,
-        ManifestValidationResult as GenAIResult,
-        ManifestIssue as GenAIIssue,
-        IssueLevel as GenAILevel,
-    )
-    from plugins.autonomous_dev.lib.validate_manifest_doc_alignment import (
-        validate_alignment as regex_validate_alignment,
-    )
-    from plugins.autonomous_dev.lib.validate_documentation_parity import (
-        ParityReport,
-        ParityIssue,
-        ValidationLevel,
-    )
     from plugins.autonomous_dev.lib.security_utils import (
         validate_path,
         audit_log,
@@ -66,7 +159,7 @@ except ImportError:
     # Fallback for testing
     PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
 
-    def validate_path(path: Path, context: str) -> Path:
+    def validate_path(path: Path, context: str, **kwargs) -> Path:
         """Fallback path validation."""
         if not path.exists():
             raise ValueError(f"Path does not exist: {path}")
@@ -75,6 +168,14 @@ except ImportError:
     def audit_log(event_type: str, status: str, context: Dict[str, Any]) -> None:
         """Fallback audit logging."""
         pass
+
+# Import GenAI validator (optional — may not be available)
+try:
+    from plugins.autonomous_dev.lib.genai_manifest_validator import (
+        GenAIManifestValidator,
+    )
+except ImportError:
+    GenAIManifestValidator = None  # type: ignore[assignment, misc]
 
 
 @dataclass
@@ -168,6 +269,8 @@ class HybridManifestValidator:
     def _validate_auto(self) -> HybridValidationReport:
         """Validate with GenAI, fall back to regex if no API key."""
         try:
+            if GenAIManifestValidator is None:
+                raise ImportError("GenAI manifest validator not available")
             genai_validator = GenAIManifestValidator(self.repo_root)
             result = genai_validator.validate()
 
@@ -198,6 +301,15 @@ class HybridManifestValidator:
 
     def _validate_genai_only(self) -> HybridValidationReport:
         """Validate with GenAI only (fail if no API key)."""
+        if GenAIManifestValidator is None:
+            report = HybridValidationReport(validator_used="genai")
+            error_issue = ParityIssue(
+                level=ValidationLevel.ERROR,
+                message="GenAI validation requires genai_manifest_validator module",
+                details="Module not available. Install dependencies or use --mode=regex-only",
+            )
+            report.count_issues.append(error_issue)
+            return report
         genai_validator = GenAIManifestValidator(self.repo_root)
         result = genai_validator.validate()
 
@@ -215,61 +327,21 @@ class HybridManifestValidator:
         return self._convert_genai_result(result)
 
     def _validate_regex(self) -> HybridValidationReport:
-        """Validate with regex only."""
-        from plugins.autonomous_dev.lib.validate_manifest_doc_alignment import (
-            validate_alignment,
-        )
-
-        # Build paths
-        manifest_path = (
-            self.repo_root
-            / "plugins"
-            / "autonomous-dev"
-            / "config"
-            / "install_manifest.json"
-        )
-        claude_md_path = self.repo_root / "CLAUDE.md"
-        project_md_path = self.repo_root / "PROJECT.md"
-
-        # Call regex validator
-        result_dict = validate_alignment(
-            manifest_path=manifest_path,
-            claude_md_path=claude_md_path if claude_md_path.exists() else None,
-            project_md_path=project_md_path if project_md_path.exists() else None,
-        )
-
-        # Convert to HybridValidationReport format
-        report = HybridValidationReport(validator_used="regex")
-
-        # Process mismatches
-        for key, mismatch in result_dict.get("mismatches", {}).items():
-            if "error" in mismatch:
-                # Format error
-                level = ValidationLevel.ERROR
-                message = mismatch["error"]
-                details = f"File: {mismatch.get('file', 'unknown')}"
-            else:
-                # Format count mismatch
-                level = ValidationLevel.ERROR
-                component = key.replace("claude_md_", "").replace("project_md_", "")
-                message = f"{component}: expected {mismatch['expected']}, found {mismatch['actual']}"
-                details = f"File: {mismatch.get('file', 'unknown')}"
-
-            parity_issue = ParityIssue(level=level, message=message, details=details)
-            report.count_issues.append(parity_issue)
-
+        """Validate with regex only (deprecated — returns empty report)."""
+        # The regex validators (validate_manifest_doc_alignment,
+        # validate_documentation_parity) have been removed as of v3.49.0.
+        # Return an empty report since regex validation is no longer available.
         audit_log(
             "hybrid_validation",
-            "regex_complete",
+            "regex_unavailable",
             {
                 "repo_root": str(self.repo_root),
-                "issue_count": len(report.count_issues),
+                "reason": "regex_validators_removed",
             },
         )
+        return HybridValidationReport(validator_used="regex")
 
-        return report
-
-    def _convert_genai_result(self, result: "GenAIResult") -> HybridValidationReport:
+    def _convert_genai_result(self, result) -> HybridValidationReport:
         """
         Convert GenAI result to HybridValidationReport format.
 
@@ -367,16 +439,16 @@ def main():
             print(json.dumps(output, indent=2))
         else:
             if result.error_count == 0:
-                print("✅ Manifest alignment validated successfully")
+                print("Manifest alignment validated successfully")
             else:
-                print(f"❌ Found {result.error_count} error(s)")
+                print(f"Found {result.error_count} error(s)")
                 for issue in result.count_issues:
                     print(f"  {issue}")
 
         sys.exit(0 if result.error_count == 0 else 1)
 
     except Exception as e:
-        print(f"❌ Validation failed: {e}")
+        print(f"Validation failed: {e}")
         sys.exit(2)
 
 

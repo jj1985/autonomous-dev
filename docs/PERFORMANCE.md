@@ -1,3 +1,10 @@
+---
+covers:
+  - plugins/autonomous-dev/agents/researcher.md
+  - plugins/autonomous-dev/agents/planner.md
+  - plugins/autonomous-dev/agents/implementer.md
+---
+
 # Performance Optimization
 
 **Last Updated**: 2025-11-14

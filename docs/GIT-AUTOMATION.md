@@ -1,3 +1,9 @@
+---
+covers:
+  - plugins/autonomous-dev/lib/auto_implement_git_integration.py
+  - plugins/autonomous-dev/lib/github_issue_closer.py
+---
+
 # Git Automation Control
 
 **Last Updated**: 2026-01-09

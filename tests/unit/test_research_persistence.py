@@ -286,8 +286,8 @@ class TestResearcherBackwardCompatibility:
         ), "Output Format should reference persisted documentation when created"
 
 
-class TestDocMasterResearchDocManagement:
-    """Test suite for doc-master research documentation management."""
+class TestDocMasterSemanticDriftDetection:
+    """Test suite for doc-master semantic drift detection (refactored v3.50+)."""
 
     AGENT_FILE = (
         Path(__file__).parent.parent.parent
@@ -298,225 +298,47 @@ class TestDocMasterResearchDocManagement:
     )
 
     def test_doc_master_file_exists(self):
-        """
-        GIVEN: Plugin directory structure
-        WHEN: Checking for doc-master agent file
-        THEN: File exists
-        """
+        """doc-master agent file must exist."""
         assert self.AGENT_FILE.exists(), f"doc-master.md not found: {self.AGENT_FILE}"
 
-    def test_has_research_doc_in_core_responsibilities(self):
-        """
-        GIVEN: doc-master agent file
-        WHEN: Checking Core Responsibilities section
-        THEN: Section mentions research documentation management
-        """
+    def test_uses_covers_frontmatter(self):
+        """doc-master must reference covers: frontmatter for doc-to-source mapping."""
         content = self.AGENT_FILE.read_text()
+        assert "covers:" in content, "doc-master should reference covers: frontmatter"
 
-        # Extract Core Responsibilities section
-        match = re.search(
-            r"## Core Responsibilities(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Core Responsibilities section"
-
-        responsibilities = match.group(1)
-        assert (
-            "research" in responsibilities.lower()
-            or "docs/research" in responsibilities
-        ), "Core Responsibilities should mention research documentation"
-
-    def test_auto_updates_includes_research_docs(self):
-        """
-        GIVEN: doc-master Documentation Update Rules section
-        WHEN: Checking Auto-Updates list
-        THEN: Includes docs/research/*.md files
-        """
+    def test_has_semantic_comparison_instructions(self):
+        """doc-master must instruct LLM-as-judge semantic comparison."""
         content = self.AGENT_FILE.read_text()
+        assert "semantic" in content.lower(), "doc-master should mention semantic comparison"
 
-        # Extract Documentation Update Rules section
-        match = re.search(
-            r"## Documentation Update Rules(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Documentation Update Rules section"
-
-        rules_section = match.group(1)
-
-        # Check Auto-Updates subsection
-        assert "Auto-Updates" in rules_section, "Missing Auto-Updates subsection"
-
-        # Check for research docs mention
-        assert (
-            "docs/research" in rules_section or "research/*.md" in rules_section
-        ), "Auto-Updates should include docs/research/*.md"
-
-    def test_has_research_documentation_management_section(self):
-        """
-        GIVEN: doc-master agent file
-        WHEN: Checking for Research Documentation Management section
-        THEN: Section exists with proper header
-        """
+    def test_outputs_structured_verdict(self):
+        """doc-master must output DOC-DRIFT-VERDICT."""
         content = self.AGENT_FILE.read_text()
-        assert (
-            "## Research Documentation Management" in content
-            or "## Research Documentation" in content
-        ), "doc-master missing Research Documentation Management section"
+        assert "DOC-DRIFT-VERDICT" in content, "doc-master should output DOC-DRIFT-VERDICT"
 
-    def test_research_doc_management_has_validation_checklist(self):
-        """
-        GIVEN: Research Documentation Management section
-        WHEN: Checking section content
-        THEN: Section includes validation checklist
-        """
+    def test_does_not_update_claude_md(self):
+        """doc-master must NOT have CLAUDE.md in its update scope."""
         content = self.AGENT_FILE.read_text()
+        # CLAUDE.md should appear in OUT of scope, not in IN scope
+        scope_match = re.search(r"\*\*IN scope\*\*(.*?)\*\*OUT of scope\*\*", content, re.DOTALL)
+        if scope_match:
+            in_scope = scope_match.group(1)
+            assert "CLAUDE.md" not in in_scope, "CLAUDE.md should not be in doc-master's IN scope"
 
-        # Extract Research Documentation section (flexible header)
-        match = re.search(
-            r"## Research Documentation[^\n]*(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Research Documentation section"
-
-        research_section = match.group(1)
-
-        # Check for checklist indicators
-        checklist_indicators = [
-            "checklist",
-            "validate",
-            "verify",
-            "- [ ]",  # Markdown checkbox
-            "✓",
-            "check",
-        ]
-        has_checklist = any(
-            indicator in research_section.lower()
-            for indicator in checklist_indicators
-        )
-        assert (
-            has_checklist
-        ), "Research Documentation section should include validation checklist"
-
-    def test_research_doc_management_mentions_screaming_snake_case(self):
-        """
-        GIVEN: Research Documentation Management section
-        WHEN: Checking for naming convention reference
-        THEN: Section mentions or enforces SCREAMING_SNAKE_CASE
-        """
+    def test_readme_in_scope(self):
+        """doc-master must have README.md in scope."""
         content = self.AGENT_FILE.read_text()
+        assert "README.md" in content, "doc-master should have README.md in scope"
 
-        # Extract Research Documentation section
-        match = re.search(
-            r"## Research Documentation[^\n]*(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Research Documentation section"
-
-        research_section = match.group(1)
-
-        # Check for naming convention
-        assert (
-            "SCREAMING_SNAKE_CASE" in research_section
-            or "SCREAMING SNAKE CASE" in research_section
-            or "ALL_CAPS" in research_section
-            or "naming" in research_section.lower()
-        ), "Research Documentation section should reference naming convention"
-
-
-class TestDocMasterReadmeSync:
-    """Test suite for doc-master README.md sync validation."""
-
-    AGENT_FILE = (
-        Path(__file__).parent.parent.parent
-        / "plugins"
-        / "autonomous-dev"
-        / "agents"
-        / "doc-master.md"
-    )
-
-    def test_readme_sync_in_validation_section(self):
-        """
-        GIVEN: doc-master agent file
-        WHEN: Checking Validate section in Process
-        THEN: Section includes README.md sync validation
-        """
+    def test_changelog_in_scope(self):
+        """doc-master must have CHANGELOG.md in scope."""
         content = self.AGENT_FILE.read_text()
+        assert "CHANGELOG.md" in content, "doc-master should have CHANGELOG.md in scope"
 
-        # Extract Process section
-        match = re.search(r"## Process(.*?)(?=\n##|\Z)", content, re.DOTALL)
-        assert match, "doc-master missing Process section"
-
-        process_section = match.group(1)
-
-        # Find Validate step
-        validate_match = re.search(
-            r"3\.\s+\*\*Validate\*\*(.*?)(?=\d+\.\s+\*\*|\Z)", process_section, re.DOTALL
-        )
-        assert validate_match, "doc-master Process should have Validate step"
-
-        validate_step = validate_match.group(1)
-
-        # Check for README.md sync validation
-        assert (
-            "README" in validate_step or "readme" in validate_step.lower()
-        ), "Validate step should include README.md sync checks"
-
-    def test_readme_in_auto_updates_list(self):
-        """
-        GIVEN: doc-master Documentation Update Rules
-        WHEN: Checking Auto-Updates list
-        THEN: README.md is listed as auto-update target
-        """
+    def test_docs_in_scope(self):
+        """doc-master must have docs/*.md in scope."""
         content = self.AGENT_FILE.read_text()
-
-        # Extract Documentation Update Rules section
-        match = re.search(
-            r"## Documentation Update Rules(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Documentation Update Rules section"
-
-        rules_section = match.group(1)
-
-        # Check Auto-Updates section
-        auto_updates_match = re.search(
-            r"\*\*Auto-Updates[^\*]*\*\*:(.*?)(?=\*\*[A-Z]|\Z)", rules_section, re.DOTALL
-        )
-        assert auto_updates_match, "Missing Auto-Updates section"
-
-        auto_updates = auto_updates_match.group(1)
-
-        assert (
-            "README.md" in auto_updates
-        ), "Auto-Updates should include README.md explicitly"
-
-    def test_readme_update_criteria_documented(self):
-        """
-        GIVEN: doc-master Documentation Update Rules
-        WHEN: Checking README.md entry
-        THEN: Entry specifies what triggers README updates
-        """
-        content = self.AGENT_FILE.read_text()
-
-        # Extract Documentation Update Rules section
-        match = re.search(
-            r"## Documentation Update Rules(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Documentation Update Rules section"
-
-        rules_section = match.group(1)
-
-        # Find README.md line
-        readme_match = re.search(
-            r"README\.md\s*-\s*(.+)", rules_section, re.IGNORECASE
-        )
-        assert readme_match, "README.md should have description of update triggers"
-
-        readme_description = readme_match.group(1)
-
-        # Check for meaningful criteria
-        criteria_keywords = ["feature", "installation", "example", "API", "usage"]
-        has_criteria = any(
-            keyword in readme_description.lower() for keyword in criteria_keywords
-        )
-        assert (
-            has_criteria
-        ), "README.md update description should specify update criteria (features, API, examples, etc.)"
+        assert "docs/*.md" in content, "doc-master should have docs/*.md in scope"
 
 
 class TestResearchDocStandardsSkill:
@@ -816,22 +638,17 @@ class TestEdgeCasesResearchPersistence:
         """
         GIVEN: doc-master agent
         WHEN: Research docs don't exist yet
-        THEN: Agent can handle case gracefully (no errors expected)
+        THEN: Agent can handle case gracefully via covers: frontmatter approach
         """
         content = self.DOC_MASTER.read_text()
 
-        # Check that research docs are in auto-updates (not required/mandatory)
-        # This implies graceful handling if they don't exist
-        match = re.search(
-            r"## Documentation Update Rules(.*?)(?=\n##|\Z)", content, re.DOTALL
-        )
-        assert match, "doc-master missing Documentation Update Rules"
-
-        rules = match.group(1)
-        # Research docs should be in auto-updates, not in "Never Touches" or "Requires Approval"
-        assert (
-            "docs/research" in rules
-        ), "Research docs should be manageable by doc-master"
+        # The refactored doc-master uses covers: frontmatter for doc mapping.
+        # Research docs that aren't in any covers: mapping are simply not checked,
+        # which is graceful handling by design.
+        # Verify the agent has the covers: frontmatter scan mechanism
+        assert "covers:" in content, "doc-master should reference covers: frontmatter"
+        # Verify docs/*.md is in scope
+        assert "docs/*.md" in content, "doc-master should have docs/*.md in scope"
 
     def test_invalid_filename_detection(self):
         """
