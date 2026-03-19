@@ -271,10 +271,10 @@ If hooks were created/modified: verify they appear in `templates/settings.*.json
 
 **Progress**: Output step banner (STEP 10/14 — Validation, Agents: reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet)). Output each agent completion as they return.
 
-Invoke THREE agents in PARALLEL (single message):
+Invoke TWO agents in PARALLEL (single message), plus doc-master in background:
 1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues.
 2. **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list. Output: PASS/FAIL (OWASP Top 10).
-3. **Agent**(subagent_type="doc-master", model="sonnet") — Pass file list + feature description. Update README, CHANGELOG, docstrings.
+3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline.
 
 ### STEP 7: Final Verification
 
@@ -361,7 +361,7 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 
 **Progress**: Output step banner (STEP 4/5 — Documentation, Agent: doc-master (Sonnet)).
 
-**Agent**(subagent_type="doc-master", model="sonnet") — Pass file list + feature description. Update CHANGELOG, docstrings, README if needed.
+**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Runs semantic cross-reference sweep, updates CHANGELOG, README, and any stale conceptual docs. Does NOT block the pipeline.
 
 ### STEP L5: Report and Finalize
 

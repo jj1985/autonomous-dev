@@ -123,6 +123,39 @@ Apply these updates to PROJECT.md? [Y/n]:
    - If approved: Apply changes and log success
    - If declined: Log declined proposal and continue
 
+## Semantic Cross-Reference Sweep
+
+**Before updating any docs, identify ALL docs that reference the changed components.**
+
+This catches stale conceptual docs that the file list alone won't reveal — e.g., changing hook architecture means SANDBOXING.md, TOOL-AUTO-APPROVAL.md, and ARCHITECTURE-OVERVIEW.md may describe the old behavior.
+
+### Process
+
+1. **Extract concepts from changed files**
+   - Read each changed file and identify key concepts: function names, feature names, architectural patterns
+   - Example: if `unified_pre_tool.py` changed, concepts include: "pre-tool", "hook validation", "infrastructure protection", "extensions"
+
+2. **Find all referencing docs**
+   ```bash
+   # Search active docs (exclude archived/, sessions/, *.backup)
+   grep -rl -E "CONCEPT1|CONCEPT2|CONCEPT3" docs/*.md CLAUDE.md --include="*.md" 2>/dev/null | grep -v archived/ | grep -v sessions/ | grep -v .backup | sort -u
+   ```
+
+3. **Read and evaluate each match**
+   - For each doc that references a changed concept, read the relevant section
+   - Ask: "Is this description still accurate after the change?"
+   - If YES: skip it
+   - If NO: update the stale section
+
+4. **Update stale docs**
+   - Fix inaccurate descriptions, outdated counts, wrong behavior descriptions
+   - Keep updates minimal — fix what's wrong, don't rewrite what's fine
+   - Log which docs were updated and why
+
+**REQUIRED**: You MUST run the grep search. Do NOT skip this step and only update CHANGELOG/README.
+
+**Scope**: Only check `docs/*.md` and `CLAUDE.md`. Ignore `docs/archived/`, `docs/sessions/`, and backup files.
+
 ## Output Format
 
 Update documentation files (API docs, README, CHANGELOG) to reflect code changes. Ensure all cross-references work and examples are valid.
