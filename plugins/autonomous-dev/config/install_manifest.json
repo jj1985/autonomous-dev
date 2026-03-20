@@ -158,6 +158,7 @@
         "plugins/autonomous-dev/lib/file_discovery.py",
         "plugins/autonomous-dev/lib/first_run_warning.py",
         "plugins/autonomous-dev/lib/genai_manifest_validator.py",
+        "plugins/autonomous-dev/lib/genai_refactor_analyzer.py",
         "plugins/autonomous-dev/lib/genai_validate.py",
         "plugins/autonomous-dev/lib/git_hooks.py",
         "plugins/autonomous-dev/lib/git_operations.py",

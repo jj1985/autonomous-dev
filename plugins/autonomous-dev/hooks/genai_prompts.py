@@ -429,6 +429,136 @@ Benefits:
 """
 
 # ============================================================================
+# Refactor Semantic Analysis - genai_refactor_analyzer.py
+# ============================================================================
+
+DOC_CODE_DRIFT_PROMPT = """Analyze this documentation file and its covered source file for contradictions.
+
+Documentation file: {doc_path}
+Documentation content:
+{doc_content}
+
+Source file: {source_path}
+Source content:
+{source_content}
+
+Task: Identify any contradictions between the documentation and actual source code behavior.
+A contradiction is when the documentation claims something that the code does NOT do, or vice versa.
+Minor style differences or omissions are NOT contradictions.
+
+Return ONLY valid JSON. If no contradictions found, return exactly: "ALIGNED"
+
+If contradictions found, return:
+{{"contradictions": [{{"doc_claim": "what the doc says", "code_behavior": "what the code actually does", "severity": "HIGH|MEDIUM|LOW"}}]}}
+
+Severity guide:
+- HIGH: Doc claims a feature/behavior that does not exist in code, or code does something dangerous the doc says is safe
+- MEDIUM: Doc describes parameters/return values incorrectly
+- LOW: Doc is outdated but not misleading (e.g., old example)"""
+
+"""
+Purpose: Detect semantic contradictions between documentation and source code
+Used by: genai_refactor_analyzer.py (_analyze_doc_code_drift)
+Expected output: "ALIGNED" or JSON with contradictions array
+Variables: {doc_path}, {doc_content}, {source_path}, {source_content}
+"""
+
+HOLLOW_TEST_PROMPT = """Analyze this test file and determine if the tests are meaningful or hollow.
+
+Test file: {test_path}
+Test source:
+{test_source}
+
+Source under test:
+{source_under_test}
+
+A HOLLOW test is one that:
+- Only tests trivial getters/setters without business logic
+- Mocks everything including the unit under test
+- Has assertions that can never fail (assert True, assert x == x)
+- Tests implementation details rather than behavior
+
+A MEANINGFUL test is one that:
+- Verifies actual business logic or important behavior
+- Has assertions that could realistically fail
+- Tests behavior, not implementation
+
+UNTESTED_SOURCE means the source file has significant public functions/classes with NO corresponding test coverage.
+
+Return ONLY valid JSON:
+{{"classification": "HOLLOW|MEANINGFUL|UNTESTED_SOURCE", "reason": "brief explanation", "confidence": 0.0}}
+
+The confidence field should be a float between 0.0 and 1.0."""
+
+"""
+Purpose: Classify test quality as HOLLOW, MEANINGFUL, or UNTESTED_SOURCE
+Used by: genai_refactor_analyzer.py (_analyze_hollow_tests)
+Expected output: JSON with classification, reason, confidence
+Variables: {test_path}, {test_source}, {source_under_test}
+"""
+
+DEAD_CODE_VERIFY_PROMPT = """Verify whether this function is truly dead code (unreachable/unused).
+
+File: {file_path}
+Function name: {function_name}
+Function source:
+{function_source}
+
+References found in codebase:
+{references_summary}
+
+Consider:
+1. Could this function be called dynamically (getattr, importlib, plugin systems)?
+2. Is it a callback, hook, or handler registered by name?
+3. Is it part of a public API that external code might use?
+4. Is it a dunder method (__init__, __str__, etc.) that Python calls implicitly?
+
+Return ONLY valid JSON:
+{{"verdict": "DEAD|ALIVE", "reason": "brief explanation", "confidence": 0.0}}
+
+The confidence field should be a float between 0.0 and 1.0.
+Only return DEAD if you are confident the function is truly unused."""
+
+"""
+Purpose: Verify AST-detected dead code candidates with semantic analysis
+Used by: genai_refactor_analyzer.py (_verify_dead_code)
+Expected output: JSON with verdict, reason, confidence
+Variables: {file_path}, {function_name}, {function_source}, {references_summary}
+"""
+
+REFACTOR_ESCALATION_PROMPT = """Provide detailed analysis for this refactoring finding that needs deeper review.
+
+File: {file_path}
+Category: {category}
+Original analysis:
+{original_analysis}
+
+Provide a detailed explanation of:
+1. What the specific issue is
+2. Why it matters
+3. Recommended fix with concrete steps
+
+Return a concise but detailed analysis (3-5 sentences)."""
+
+"""
+Purpose: Sonnet escalation for low-confidence or HIGH-severity findings
+Used by: genai_refactor_analyzer.py (escalation path)
+Expected output: Detailed analysis text (3-5 sentences)
+Variables: {file_path}, {category}, {original_analysis}
+"""
+
+REFACTOR_BATCH_SYSTEM_PROMPT = """You are a code quality analyzer performing refactoring analysis.
+You analyze documentation-code alignment, test quality, and dead code detection.
+Always respond with valid JSON as specified in each request.
+Be conservative: only flag issues you are confident about."""
+
+"""
+Purpose: System prompt for batch API submissions
+Used by: genai_refactor_analyzer.py (_submit_batch)
+Expected output: N/A (system prompt)
+"""
+
+# ============================================================================
 # Prompt Management & Configuration
 # ============================================================================
 
@@ -494,6 +624,7 @@ GENAI_FEATURES = {
     "scope": "GENAI_SCOPE",
     "alignment": "GENAI_ALIGNMENT",
     "completion": "GENAI_COMPLETION",
+    "refactor": "GENAI_REFACTOR",
 }
 
 
@@ -518,6 +649,11 @@ def get_all_prompts():
         "twelve_factor_assessment": TWELVE_FACTOR_ASSESSMENT_PROMPT,
         "goals_extraction": GOALS_EXTRACTION_PROMPT,
         "feature_completion": FEATURE_COMPLETION_PROMPT,
+        "doc_code_drift": DOC_CODE_DRIFT_PROMPT,
+        "hollow_test": HOLLOW_TEST_PROMPT,
+        "dead_code_verify": DEAD_CODE_VERIFY_PROMPT,
+        "refactor_escalation": REFACTOR_ESCALATION_PROMPT,
+        "refactor_batch_system": REFACTOR_BATCH_SYSTEM_PROMPT,
     }
 
 

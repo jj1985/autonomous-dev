@@ -138,7 +138,7 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 | `/scaffold-genai-uat` | Scaffold LLM-as-judge tests into any repo |
 | `/status` | View PROJECT.md goal progress with recommendations |
 | `/mem-search` | Search claude-mem persistent memory (optional) |
-| `/refactor` | Unified code, docs, and test optimization — shape analysis, waste detection, dead code, doc redundancy (--tests, --docs, --code, --fix, --quick) |
+| `/refactor` | Unified code, docs, and test optimization — shape analysis, waste detection, dead code, doc redundancy (--tests, --docs, --code, --fix, --quick, --deep, --issues, --batch). `--deep` enables GenAI semantic analysis (doc-code drift, hollow test detection, dead code verification). `--issues` creates GitHub issues from findings. `--batch` uses Anthropic Batch API for 50% cost reduction. |
 | `/sweep` | Alias for `/refactor --quick` — quick codebase hygiene sweep |
 | `/plan-to-issues` | Convert an approved plan into a GitHub issue backlog, ready for `/implement --issues` |
 

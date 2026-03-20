@@ -257,14 +257,20 @@ vim plugins/autonomous-dev/agents/agent-name.md
 - Better prompt engineering discovered
 - Accuracy metrics below target
 
-**Current prompts (6):**
+**Current prompts (11):**
 ```python
-SECRET_ANALYSIS_PROMPT        # Lines 24-39  (Real vs test secrets)
-INTENT_CLASSIFICATION_PROMPT  # Lines 51-64  (Feature vs refactor vs docs)
-COMPLEXITY_ASSESSMENT_PROMPT  # Lines 78-94  (Simple vs complex changes)
-DESCRIPTION_VALIDATION_PROMPT # Lines 109-122 (Accurate vs misleading docs)
-DOC_GENERATION_PROMPT         # Lines 136-146 (Auto-generate descriptions)
-FILE_ORGANIZATION_PROMPT      # Lines 161-202 (Semantic file placement)
+SECRET_ANALYSIS_PROMPT        # (Real vs test secrets)
+INTENT_CLASSIFICATION_PROMPT  # (Feature vs refactor vs docs)
+COMPLEXITY_ASSESSMENT_PROMPT  # (Simple vs complex changes)
+DESCRIPTION_VALIDATION_PROMPT # (Accurate vs misleading docs)
+DOC_GENERATION_PROMPT         # (Auto-generate descriptions)
+FILE_ORGANIZATION_PROMPT      # (Semantic file placement)
+# Refactor semantic analysis prompts (Issue #515):
+DOC_CODE_DRIFT_PROMPT         # (Doc-code contradiction detection via covers: frontmatter)
+HOLLOW_TEST_PROMPT            # (Meaningful vs hollow test detection)
+DEAD_CODE_VERIFY_PROMPT       # (Dead code verification with dynamic dispatch context)
+REFACTOR_ESCALATION_PROMPT    # (Deeper analysis for HIGH findings needing escalation)
+REFACTOR_BATCH_SYSTEM_PROMPT  # (System prompt for Batch API refactor analysis)
 ```
 
 **Version control pattern:**

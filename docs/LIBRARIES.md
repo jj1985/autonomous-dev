@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (60)
+### Core Libraries (64)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -78,6 +78,8 @@ The autonomous-dev plugin includes shared libraries organized into the following
 60. **pipeline_state.py** - Pipeline state tracker with gate enforcement (stdlib only, zero dependencies) (Issue #402)
 61. **step5_quality_gate.py** - STEP 5 quality gate: runs tests with smart routing or full suite, checks coverage regression, enforces skip baseline (Issue #508)
 62. **test_routing.py** - Smart test routing: classifies changed files into categories and computes minimal pytest marker expression to skip irrelevant test tiers; `--full-tests` override runs complete suite (Issue #508)
+63. **refactor_analyzer.py** - `RefactorAnalyzer` class: deep analysis of test shape (Quality Diamond), test waste, doc redundancy, dead code, and unused libraries; composes `SweepAnalyzer` for quick-sweep mode; `ConfidenceLevel` enum for findings; word-boundary regex to reduce false positives (Issue #513)
+64. **genai_refactor_analyzer.py** - `GenAIRefactorAnalyzer`: hybrid static-candidate + LLM-semantic analysis wrapper around `RefactorAnalyzer`; three-pass analysis (doc-code drift via `covers:` frontmatter, hollow test detection, dead code verification with dynamic dispatch context); Haiku for first-pass classification, Sonnet escalation for HIGH findings; SHA-256 content hash caching; Anthropic Batch API support for 50% cost reduction (Issue #515)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 

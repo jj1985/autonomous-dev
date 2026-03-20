@@ -24,6 +24,7 @@ sys.path.insert(
 )
 
 from refactor_analyzer import (
+    ConfidenceLevel,
     OptimizationType,
     RefactorAnalyzer,
     RefactorCategory,
@@ -55,6 +56,7 @@ class TestRefactorFinding:
         assert finding.severity == SweepSeverity.HIGH
         assert finding.optimization_type == OptimizationType.OPTIMIZATION
         assert finding.line is None
+        assert finding.confidence == ConfidenceLevel.HIGH
 
     def test_creation_with_all_fields(self):
         """Test RefactorFinding creation with all fields."""
@@ -869,3 +871,214 @@ class TestRefactorAnalyzerExcludeDirs:
         assert len(findings) == 0, (
             f"Expected no findings but got {len(findings)} for excluded dir '{excluded_dir}'"
         )
+
+
+# =============================================================================
+# ConfidenceLevel Tests
+# =============================================================================
+
+
+class TestRefactorFindingConfidence:
+    """Tests for ConfidenceLevel enum and confidence field on RefactorFinding."""
+
+    def test_default_confidence_is_high(self):
+        """Test that default confidence is HIGH."""
+        finding = RefactorFinding(
+            category=RefactorCategory.DEAD_CODE,
+            severity=SweepSeverity.MEDIUM,
+            file_path="x.py",
+            description="test",
+            suggestion="fix",
+        )
+        assert finding.confidence == ConfidenceLevel.HIGH
+
+    def test_confidence_in_format_medium(self):
+        """Test that format includes [confidence:medium] for MEDIUM confidence."""
+        finding = RefactorFinding(
+            category=RefactorCategory.DEAD_CODE,
+            severity=SweepSeverity.MEDIUM,
+            file_path="x.py",
+            description="dead func",
+            suggestion="remove",
+            confidence=ConfidenceLevel.MEDIUM,
+        )
+        formatted = finding.format()
+        assert "[confidence:medium]" in formatted
+
+    def test_confidence_not_in_format_high(self):
+        """Test that format does NOT include confidence tag for HIGH confidence."""
+        finding = RefactorFinding(
+            category=RefactorCategory.DEAD_CODE,
+            severity=SweepSeverity.MEDIUM,
+            file_path="x.py",
+            description="dead func",
+            suggestion="remove",
+            confidence=ConfidenceLevel.HIGH,
+        )
+        formatted = finding.format()
+        assert "[confidence:" not in formatted
+
+    def test_confidence_in_to_dict(self):
+        """Test that to_dict() includes 'confidence' key."""
+        report = RefactorReport(
+            findings=[
+                RefactorFinding(
+                    RefactorCategory.DEAD_CODE,
+                    SweepSeverity.MEDIUM,
+                    "x.py",
+                    "dead",
+                    "remove",
+                    confidence=ConfidenceLevel.MEDIUM,
+                ),
+            ],
+            modes_run=["code"],
+        )
+        d = report.to_dict()
+        assert d["findings"][0]["confidence"] == "medium"
+
+    def test_confidence_level_enum_values(self):
+        """Test ConfidenceLevel enum values."""
+        assert ConfidenceLevel.HIGH.value == "high"
+        assert ConfidenceLevel.MEDIUM.value == "medium"
+        assert ConfidenceLevel.LOW.value == "low"
+
+
+# =============================================================================
+# Dead Code Word Boundary Tests
+# =============================================================================
+
+
+class TestDeadCodeWordBoundary:
+    """Tests for word-boundary matching in dead code detection."""
+
+    def test_does_not_match_substring(self, tmp_path):
+        """Function create_manager should be flagged when only create_manager_factory exists."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        lib_file = lib_dir / "utils.py"
+        lib_file.write_text(
+            "def create_manager():\n    return 1\n"
+        )
+
+        # Consumer only has create_manager_factory (substring, not exact match)
+        cmd_dir = tmp_path / "plugins" / "autonomous-dev" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "runner.py").write_text(
+            "def create_manager_factory():\n    return 2\n"
+        )
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_dead_code_cross_file()
+        dead = [f for f in findings if "create_manager" in f.description]
+        # create_manager IS dead because create_manager_factory is not an exact match
+        assert len(dead) == 1
+
+    def test_matches_exact_word(self, tmp_path):
+        """Function process_data should NOT be flagged when consumer has process_data()."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        lib_file = lib_dir / "utils.py"
+        lib_file.write_text(
+            "def process_data():\n    return 1\n"
+        )
+
+        cmd_dir = tmp_path / "plugins" / "autonomous-dev" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "runner.py").write_text(
+            "from utils import process_data\nprocess_data()\n"
+        )
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_dead_code_cross_file()
+        dead = [f for f in findings if "process_data" in f.description]
+        assert len(dead) == 0
+
+    def test_dead_code_findings_have_medium_confidence(self, tmp_path):
+        """Dead code findings should have MEDIUM confidence."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        lib_file = lib_dir / "utils.py"
+        lib_file.write_text(
+            "def orphan_func_xyz():\n    return 1\n"
+        )
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_dead_code_cross_file()
+        dead = [f for f in findings if "orphan_func_xyz" in f.description]
+        assert len(dead) == 1
+        assert dead[0].confidence == ConfidenceLevel.MEDIUM
+
+
+# =============================================================================
+# Unused Lib Extended Scan Tests
+# =============================================================================
+
+
+class TestUnusedLibExtendedScan:
+    """Tests for extended .md/.sh scanning in unused lib detection."""
+
+    def test_detects_lib_used_in_md_file(self, tmp_path):
+        """Lib referenced in .md file should NOT be flagged as unused."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        (lib_dir / "my_special_lib.py").write_text("def helper(): pass\n")
+
+        # No .py file references it, but a .md file does
+        cmd_dir = tmp_path / "plugins" / "autonomous-dev" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "implement.md").write_text(
+            "# Implement\n\nUses my_special_lib for processing.\n"
+        )
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_unused_libs()
+        unused = [f for f in findings if "my_special_lib" in f.description]
+        assert len(unused) == 0
+
+    def test_detects_lib_used_in_sh_file(self, tmp_path):
+        """Lib referenced in .sh file should NOT be flagged as unused."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        (lib_dir / "deploy_helper.py").write_text("def run(): pass\n")
+
+        # Only referenced in a .sh file
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir(parents=True)
+        (scripts_dir / "deploy.sh").write_text(
+            "#!/bin/bash\npython3 -c 'from deploy_helper import run; run()'\n"
+        )
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_unused_libs()
+        unused = [f for f in findings if "deploy_helper" in f.description]
+        assert len(unused) == 0
+
+    def test_not_confused_by_partial_match_in_md(self, tmp_path):
+        """agent_tracker appearing only as old_agent_tracker_backup should still be flagged."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        (lib_dir / "agent_tracker.py").write_text("def track(): pass\n")
+
+        # .md file has only a partial match (substring, not word boundary)
+        cmd_dir = tmp_path / "plugins" / "autonomous-dev" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "notes.md").write_text(
+            "# Notes\n\nRefer to old_agent_tracker_backup for history.\n"
+        )
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_unused_libs()
+        unused = [f for f in findings if "agent_tracker" in f.description]
+        assert len(unused) == 1
+
+    def test_unused_lib_findings_have_medium_confidence(self, tmp_path):
+        """Unused lib findings should have MEDIUM confidence."""
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        (lib_dir / "orphan_lib_xyz.py").write_text("def dead(): pass\n")
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_unused_libs()
+        unused = [f for f in findings if "orphan_lib_xyz" in f.description]
+        assert len(unused) == 1
+        assert unused[0].confidence == ConfidenceLevel.MEDIUM

@@ -18,6 +18,7 @@ Date: 2026-03-20
 
 import ast
 import difflib
+import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -65,6 +66,14 @@ class OptimizationType(str, Enum):
     OPTIMIZATION = "optimization"
 
 
+class ConfidenceLevel(str, Enum):
+    """Confidence level of a refactor finding."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 @dataclass
 class RefactorFinding:
     """A single refactoring finding.
@@ -86,15 +95,20 @@ class RefactorFinding:
     suggestion: str
     optimization_type: OptimizationType = OptimizationType.OPTIMIZATION
     line: Optional[int] = None
+    confidence: ConfidenceLevel = ConfidenceLevel.HIGH
 
     def format(self) -> str:
         """Format the finding as a single-line summary.
 
         Returns:
             Formatted string like '[HIGH] path/to/file.py:42: description'.
+            Appends confidence tag for non-HIGH confidence levels.
         """
         loc = f":{self.line}" if self.line else ""
-        return f"[{self.severity.value.upper()}] {self.file_path}{loc}: {self.description}"
+        base = f"[{self.severity.value.upper()}] {self.file_path}{loc}: {self.description}"
+        if self.confidence != ConfidenceLevel.HIGH:
+            base += f" [confidence:{self.confidence.value}]"
+        return base
 
 
 @dataclass
@@ -225,6 +239,7 @@ class RefactorReport:
                     "description": f.description,
                     "suggestion": f.suggestion,
                     "optimization_type": f.optimization_type.value,
+                    "confidence": f.confidence.value,
                 }
                 for f in self.findings
             ],
@@ -905,14 +920,16 @@ class RefactorAnalyzer:
 
             for name in definitions:
                 # Check if name appears in source (beyond its definition file)
+                # Use word-boundary regex to avoid substring false positives
                 def_file = definitions[name][0]
                 rel_file = str(py_file.relative_to(self.project_root))
+                pattern = r"\b" + re.escape(name) + r"\b"
                 if rel_file == def_file:
                     # In definition file: need 2+ occurrences (definition + usage)
-                    if source.count(name) >= 2:
+                    if len(re.findall(pattern, source)) >= 2:
                         referenced_names.add(name)
                 else:
-                    if name in source:
+                    if re.search(pattern, source):
                         referenced_names.add(name)
 
         # Report unreferenced definitions
@@ -927,6 +944,7 @@ class RefactorAnalyzer:
                         suggestion=f"Remove {def_type} '{name}' if no longer needed",
                         optimization_type=OptimizationType.HYGIENE,
                         line=lineno,
+                        confidence=ConfidenceLevel.MEDIUM,
                     )
                 )
 
@@ -992,7 +1010,37 @@ class RefactorAnalyzer:
                 continue
 
             for module_name in lib_modules:
-                if module_name in source:
+                if re.search(r"\b" + re.escape(module_name) + r"\b", source):
+                    imported_modules.add(module_name)
+
+        # Scan .md files (command/agent markdown files may reference libs)
+        for md_file in self.project_root.rglob("*.md"):
+            if self._should_skip_path(md_file):
+                continue
+            if any(part in test_dirs for part in md_file.parts):
+                continue
+            try:
+                source = md_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            for module_name in lib_modules:
+                if re.search(r"\b" + re.escape(module_name) + r"\b", source):
+                    imported_modules.add(module_name)
+
+        # Scan .sh files (shell scripts may reference libs)
+        for sh_file in self.project_root.rglob("*.sh"):
+            if self._should_skip_path(sh_file):
+                continue
+            if any(part in test_dirs for part in sh_file.parts):
+                continue
+            try:
+                source = sh_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            for module_name in lib_modules:
+                if re.search(r"\b" + re.escape(module_name) + r"\b", source):
                     imported_modules.add(module_name)
 
         # Report modules never referenced
@@ -1007,6 +1055,7 @@ class RefactorAnalyzer:
                         description=f"Lib module '{module_name}' not imported outside tests",
                         suggestion=f"Archive or remove '{module_name}.py' if no longer needed",
                         optimization_type=OptimizationType.HYGIENE,
+                        confidence=ConfidenceLevel.MEDIUM,
                     )
                 )
 
