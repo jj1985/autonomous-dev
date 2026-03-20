@@ -220,7 +220,7 @@ class TestBashValidation:
             'invalid character',
             'validation',
             'sanitize',
-            'grep.*[\[\]].*\;',  # grep checking for metacharacters
+            r'grep.*[\[\]].*\;',  # grep checking for metacharacters
         ]
 
         has_validation = any(

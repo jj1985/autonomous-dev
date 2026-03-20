@@ -1102,7 +1102,7 @@ class TestSecurityValidation:
         REQUIREMENT: Module validation has multiple layers of protection.
         Expected: Both regex and explicit validation protect against attacks.
 
-        Note: The import regex r'from\s+([a-zA-Z0-9_.]+)\s+import' provides
+        Note: The import regex r'from\\s+([a-zA-Z0-9_.]+)\\s+import' provides
         first line of defense by only allowing alphanumeric, underscore, and dot.
         The security validation adds a second layer by checking each module part.
         """

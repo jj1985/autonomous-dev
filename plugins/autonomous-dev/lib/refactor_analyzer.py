@@ -299,8 +299,8 @@ class RefactorAnalyzer:
         "archived",                               # Archived files
     }
 
-    def __init__(self, project_root: Path, *, exclude_dirs: Optional[Set[str]] = None):
-        self.project_root = project_root.resolve()
+    def __init__(self, project_root: "str | Path", *, exclude_dirs: Optional[Set[str]] = None):
+        self.project_root = Path(project_root).resolve()
         self.exclude_dirs = exclude_dirs if exclude_dirs is not None else self.DEFAULT_EXCLUDE_DIRS
         self._sweep_analyzer = SweepAnalyzer(self.project_root)
 
