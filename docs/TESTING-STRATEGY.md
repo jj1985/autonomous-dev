@@ -7,7 +7,7 @@ covers:
 
 # Testing Strategy: The Diamond Model
 
-**Last Updated**: 2026-02-17
+**Last Updated**: 2026-03-20
 
 ## Overview
 
@@ -63,20 +63,26 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 ### Layer 3: Property-Based Invariants
 
 **What**: Universal properties that hold across all inputs
-**Speed**: < 10 seconds
-**Determinism**: 100% (properties are deterministic, input generation is exhaustive)
-**Runs**: Every commit (CI gate)
+**Speed**: < 60 seconds (Hypothesis runs many examples; faster than integration but slower than unit)
+**Determinism**: 100% (properties are deterministic, input generation is reproducible via database)
+**Runs**: Every commit (CI gate, marked `property` + `slow`)
 
 **Examples**:
-- "Output must never contain PII"
-- "JSON serialization round-trips to identity"
-- "Tool calls must follow preconditions"
+- "Paths with '..' always raise ValueError from validate_path()"
+- "If security_risk=True then approved must be False (tool_validator invariant)"
+- "create_pipeline() always produces state with all steps PENDING"
+- "PASSED steps cannot be re-entered — advance() raises ValueError"
 - "Hook must always exit (never hang)"
 
 **autonomous-dev components**:
+- `tests/property/test_security_utils_properties.py` — path traversal, system path rejection, agent name validation invariants (Issue #509)
+- `tests/property/test_pipeline_state_properties.py` — state machine invariants: creation, re-entry prevention, skippable/non-skippable step enforcement, round-trip persistence (Issue #509)
+- `tests/property/test_tool_validator_properties.py` — blacklist, injection, always-allowed, unknown-tool classification invariants (Issue #509)
 - Hook exit code enforcement (hooks always exit 0 or 1, never hang)
 - Structure invariants (every hook in settings must exist on disk)
 - Manifest sync (install_manifest.json matches source files)
+
+**pytest integration**: `tests/property/` is auto-marked `property` + `slow` via `tests/conftest.py` directory markers. The `property` marker is registered in `pytest.ini`. Tests use `hypothesis` library with per-class `@settings(max_examples=200)`.
 
 **Research data**: Property-Generated Solver (PGS) framework shows +23-37% improvement in pass@1 over traditional TDD (arXiv 2506.18315). LLMs excel at discovering properties from function names, docstrings, and call patterns.
 
@@ -146,7 +152,7 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 |-------|-----------|-------------|----------|
 | Type/Lint | `auto_format.py`, `security_scan.py` | 100% | Yes |
 | Unit Tests | `tests/unit/`, `tests/regression/smoke/` | 100% | Yes |
-| Properties | Hook invariants, manifest sync, structure checks | 100% | Yes |
+| Properties | `tests/property/` (Hypothesis), hook invariants, manifest sync, structure checks | 100% | Yes |
 | Integration | `tests/integration/`, hook wiring tests | 100% | Yes |
 | LLM-as-Judge | `tests/genai/` (16+ files) | ~85% | Optional |
 | Acceptance | PROJECT.md, issue criteria, GenAI UAT | Human-defined | Per feature |
@@ -215,7 +221,7 @@ Define acceptance criteria → Implement + generate unit tests → Validate all 
 2. **Add soft-failure thresholds** — Issue #351 ✅
 3. **Add acceptance-first pipeline mode** — Issue #350 ✅
 4. **Make acceptance-first the default mode** — Issue #404 ✅
-5. **Codify property-based invariants** — future issue
+5. **Codify property-based invariants** — Issue #509 ✅
 6. **Retire brittle hardcoded tests** — ongoing
 
 ---

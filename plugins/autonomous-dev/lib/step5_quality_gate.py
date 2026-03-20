@@ -18,6 +18,14 @@ from typing import Optional
 
 import coverage_baseline
 
+try:
+    from plugins.autonomous_dev.lib.test_routing import route_tests as _route_tests
+except ImportError:
+    try:
+        from test_routing import route_tests as _route_tests
+    except ImportError:
+        _route_tests = None  # type: ignore[assignment]
+
 
 COVERAGE_BASELINE_PATH = Path(".claude/local/coverage_baseline.json")
 COVERAGE_REGRESSION_THRESHOLD = 0.5  # percent
@@ -281,15 +289,107 @@ def check_coverage_regression(
     )
 
 
-def run_quality_gate() -> dict:
-    """Run the full STEP 5 quality gate.
+def run_tests_routed(*, full_tests: bool = False) -> dict:
+    """Run tests with smart routing or full suite.
 
-    Runs tests and coverage checks, returning a combined result.
+    If full_tests is True or routing is unavailable, delegates to run_tests().
+    Otherwise uses test_routing to determine which markers to run.
+
+    Args:
+        full_tests: Force full test suite (bypass smart routing).
 
     Returns:
-        Dict with 'passed' (bool), 'test_result', 'coverage_result', and 'summary'.
+        Dict with 'test_result' (TestResult as dict) and 'routing' metadata.
     """
+    routing_meta = None
+
+    if not full_tests and _route_tests is not None:
+        try:
+            routing_decision = _route_tests()
+        except Exception:
+            routing_decision = None
+
+        if routing_decision and not routing_decision.get("full_suite") and not routing_decision.get("skip_all"):
+            marker_expr = routing_decision.get("marker_expression", "")
+            if marker_expr:
+                try:
+                    result = subprocess.run(
+                        ["python", "-m", "pytest", "--tb=short", "-q", "-m", marker_expr],
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                    )
+                    output = result.stdout + "\n" + result.stderr
+                    test_result = parse_pytest_output(output)
+                    routing_meta = {
+                        "routed": True,
+                        "marker_expression": marker_expr,
+                        "categories": routing_decision.get("categories", []),
+                        "skipped_tiers": routing_decision.get("skipped_tiers", []),
+                    }
+                    return {
+                        "test_result": test_result,
+                        "routing": routing_meta,
+                    }
+                except (subprocess.TimeoutExpired, FileNotFoundError):
+                    pass  # Fall through to full suite
+
+        if routing_decision and routing_decision.get("skip_all"):
+            routing_meta = {
+                "routed": True,
+                "marker_expression": "",
+                "categories": routing_decision.get("categories", []),
+                "skipped_tiers": routing_decision.get("skipped_tiers", []),
+                "skip_all": True,
+            }
+            return {
+                "test_result": TestResult(
+                    passed=True,
+                    test_count=0,
+                    failures=0,
+                    errors=0,
+                    skipped=0,
+                    skip_rate=0.0,
+                    message="SKIP: docs-only change, no tests needed",
+                ),
+                "routing": routing_meta,
+            }
+
+    # Full suite fallback
     test_result = run_tests()
+    return {
+        "test_result": test_result,
+        "routing": {
+            "routed": False,
+            "full_suite": True,
+            "reason": "full_tests flag" if full_tests else "fallback",
+        },
+    }
+
+
+def run_quality_gate(*, full_tests: bool = False) -> dict:
+    """Run the full STEP 5 quality gate.
+
+    Runs tests (with optional smart routing) and coverage checks,
+    returning a combined result.
+
+    Args:
+        full_tests: If True, bypass smart test routing and run all tests.
+
+    Returns:
+        Dict with 'passed' (bool), 'test_result', 'coverage_result',
+        'summary', and optionally 'routing' metadata.
+    """
+    routed_result = run_tests_routed(full_tests=full_tests)
+    test_result = routed_result["test_result"]
+    routing_meta = routed_result.get("routing")
+
+    # If test_result came back as a dataclass, use it directly;
+    # if it's already a dict (shouldn't happen), wrap it
+    if isinstance(test_result, dict):
+        # Reconstruct TestResult from dict
+        test_result = TestResult(**test_result)
+
     coverage_result = check_coverage_regression()
 
     # Check skip regression against baseline
@@ -313,13 +413,18 @@ def run_quality_gate() -> dict:
             total_tests=test_result.test_count,
         )
 
-    return {
+    result = {
         "passed": overall_passed,
         "test_result": asdict(test_result),
         "coverage_result": asdict(coverage_result),
         "skip_regression": {"passed": skip_passed, "message": skip_message},
         "summary": " | ".join(summary_parts),
     }
+
+    if routing_meta:
+        result["routing"] = routing_meta
+
+    return result
 
 
 if __name__ == "__main__":

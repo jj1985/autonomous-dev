@@ -138,7 +138,8 @@ STEP 7: Git Automation → Commit, push, PR, close issue
 | `/scaffold-genai-uat` | Scaffold LLM-as-judge tests into any repo |
 | `/status` | View PROJECT.md goal progress with recommendations |
 | `/mem-search` | Search claude-mem persistent memory (optional) |
-| `/sweep` | Codebase hygiene — detect and fix dead tests, doc drift, code rot (--tests, --docs, --code, --fix) |
+| `/refactor` | Unified code, docs, and test optimization — shape analysis, waste detection, dead code, doc redundancy (--tests, --docs, --code, --fix, --quick) |
+| `/sweep` | Alias for `/refactor --quick` — quick codebase hygiene sweep |
 | `/plan-to-issues` | Convert an approved plan into a GitHub issue backlog, ready for `/implement --issues` |
 
 ---
