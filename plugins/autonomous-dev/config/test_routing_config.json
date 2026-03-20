@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "routing_rules": {
+    "hook":          {"smoke": true, "unit_hooks": true, "regression": true, "genai": false, "property": false},
+    "agent_prompt":  {"smoke": true, "unit": false, "regression": false, "genai": true, "property": false},
+    "command":       {"smoke": true, "unit_commands": true, "regression": false, "genai": true, "property": false},
+    "lib":           {"smoke": true, "unit_libs": true, "regression": true, "genai": false, "property": true},
+    "config":        {"smoke": true, "unit": false, "regression": true, "genai": false, "property": false},
+    "skill":         {"smoke": true, "unit_skills": true, "regression": false, "genai": true, "property": false},
+    "docs_only":     {"smoke": false, "unit": false, "regression": false, "genai": false, "property": false},
+    "install_sync":  {"smoke": true, "unit": true, "regression": true, "genai": false, "property": false}
+  },
+  "tier_to_marker": {
+    "smoke": "smoke",
+    "unit": "unit",
+    "unit_hooks": "hooks",
+    "unit_commands": "unit",
+    "unit_libs": "unit",
+    "unit_skills": "unit",
+    "regression": "regression",
+    "genai": "genai",
+    "property": "property"
+  },
+  "always_smoke": true,
+  "docs_only_skip_all": true
+}

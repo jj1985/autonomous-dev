@@ -142,3 +142,4 @@ DOCUMENTATION_*.md
 # Malformed test artifacts (pytest temp path bugs - files with backslashes)
 \private*
 *\private*
+.hypothesis/

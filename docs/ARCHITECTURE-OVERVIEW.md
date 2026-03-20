@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 11 agents (18 archived), 17 skills, 18 active commands, 169 libraries, 25 active hooks (62 archived).
+**Component Counts**: 11 agents (18 archived), 17 skills, 19 active commands, 170 libraries, 25 active hooks (62 archived).
 
 ---
 
@@ -195,6 +195,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 - `.env` - Environment variables and feature flags
 - `plugins/autonomous-dev/config/sandbox_policy.json` - Sandboxing rules
 - `plugins/autonomous-dev/config/auto_approve_policy.json` - Auto-approval rules
+- `plugins/autonomous-dev/config/test_routing_config.json` - Smart test routing rules: per-category tier enable/disable, marker mappings, always_smoke and docs_only_skip_all flags
 - `~/.autonomous-dev/user_state.json` - User consent persistence
 
 **Feature Flags**:

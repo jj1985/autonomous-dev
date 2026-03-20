@@ -109,7 +109,7 @@ ARGUMENTS: {{ARGUMENTS}}
 
 ### STEP 0: Parse Mode and Route
 
-Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--issues` → see [implement-batch.md](implement-batch.md), `--resume` → see [implement-resume.md](implement-resume.md), `--fix` → see [implement-fix.md](implement-fix.md), `--light` → LIGHT PIPELINE MODE (below), `--tdd-first` → FULL PIPELINE (TDD variant), `--acceptance-first` → recognized but no-op (same as default), else → FULL PIPELINE (acceptance-first default). Reject `--quick`. Auto-detect batch: 2+ issue refs → BATCH ISSUES MODE. Check `--no-cache` flag.
+Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--issues` → see [implement-batch.md](implement-batch.md), `--resume` → see [implement-resume.md](implement-resume.md), `--fix` → see [implement-fix.md](implement-fix.md), `--light` → LIGHT PIPELINE MODE (below), `--tdd-first` → FULL PIPELINE (TDD variant), `--acceptance-first` → recognized but no-op (same as default), `--full-tests` → disable smart test routing (run complete test suite in STEP 5), else → FULL PIPELINE (acceptance-first default). Reject `--quick`. Auto-detect batch: 2+ issue refs → BATCH ISSUES MODE. Check `--no-cache` flag.
 
 **Mutual exclusivity**: `--fix` and `--light` are each mutually exclusive with `--batch`, `--issues`, and `--resume`. If combined, BLOCK with error. `--light` and `--fix` are also mutually exclusive.
 
@@ -261,6 +261,14 @@ For EACH failure, you MUST choose one:
 - ❌ You MUST NOT proceed to STEP 6 when `step5_quality_gate.run_quality_gate()` returns `passed=False`
 
 Loop until **0 failures, 0 errors**. Do NOT proceed to STEP 6 with any failures.
+
+**Smart Test Routing** (unless `--full-tests` flag was passed): The quality gate uses `test_routing.route_tests()` to classify changed files and run only relevant test tiers. When routing is active, report which tiers ran and which were skipped:
+```
+Test Routing: hook, lib changes detected
+  Running: smoke, hooks, unit, regression, property
+  Skipped: genai
+```
+If `--full-tests` was passed, report "Full test suite (--full-tests override)".
 
 Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 | tail -5` — must be >= baseline - 0.5%. On success, baseline is automatically updated via `coverage_baseline.save_baseline()`.
 
