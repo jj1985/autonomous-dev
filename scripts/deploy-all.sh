@@ -13,8 +13,8 @@
 #
 # Configuration (override via env vars):
 #   REMOTE_HOST  - SSH host (default: andrewkaszubski@10.55.0.2)
-#   LOCAL_REPOS  - Space-separated local repo names (default: anyclaude realign spektiv)
-#   REMOTE_REPOS - Space-separated remote repo names (default: anyclaude realign spektiv)
+#   LOCAL_REPOS  - Space-separated local repo names (default: autonomous-dev anyclaude realign spektiv)
+#   REMOTE_REPOS - Space-separated remote repo names (default: autonomous-dev anyclaude realign spektiv)
 #
 # What gets deployed:
 #   Global (~/.claude/): hooks, lib, config (shared across all repos)
@@ -28,8 +28,8 @@ PLUGIN_SRC="$REPO_DIR/plugins/autonomous-dev"
 GLOBAL_DEST="$HOME/.claude"
 
 REMOTE_HOST="${REMOTE_HOST:-andrewkaszubski@10.55.0.2}"
-LOCAL_REPOS="${LOCAL_REPOS:-anyclaude realign spektiv}"
-REMOTE_REPOS="${REMOTE_REPOS:-anyclaude realign spektiv}"
+LOCAL_REPOS="${LOCAL_REPOS:-autonomous-dev anyclaude realign spektiv}"
+REMOTE_REPOS="${REMOTE_REPOS:-autonomous-dev anyclaude realign spektiv}"
 SUBDIRS="hooks commands agents lib templates config skills scripts"
 GLOBAL_SUBDIRS="hooks lib config"
 
