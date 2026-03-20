@@ -742,3 +742,130 @@ class TestRefactorAnalyzerErrorHandling:
         from sweep_analyzer import SweepAnalyzer
 
         assert isinstance(analyzer._sweep_analyzer, SweepAnalyzer)
+
+
+# =============================================================================
+# Exclude Dirs Tests (Issue #514)
+# =============================================================================
+
+
+class TestRefactorAnalyzerExcludeDirs:
+    """Tests for DEFAULT_EXCLUDE_DIRS constant, custom override, and _should_skip_path."""
+
+    def test_default_exclude_dirs_constant(self):
+        """Verify the class constant exists and contains required directories."""
+        assert hasattr(RefactorAnalyzer, "DEFAULT_EXCLUDE_DIRS")
+        required = {".git", ".worktrees", ".claude", "sessions", "archived", "node_modules"}
+        for d in required:
+            assert d in RefactorAnalyzer.DEFAULT_EXCLUDE_DIRS, (
+                f"Expected '{d}' in DEFAULT_EXCLUDE_DIRS"
+            )
+
+    def test_custom_exclude_dirs_override(self, tmp_path):
+        """Verify __init__ exclude_dirs parameter overrides the class default."""
+        custom = {"custom_excluded_dir", ".git"}
+        analyzer = RefactorAnalyzer(tmp_path, exclude_dirs=custom)
+        assert analyzer.exclude_dirs == custom
+        assert "node_modules" not in analyzer.exclude_dirs  # Not in custom set
+
+    def test_default_exclude_dirs_used_when_none(self, tmp_path):
+        """Verify DEFAULT_EXCLUDE_DIRS is used when exclude_dirs is not provided."""
+        analyzer = RefactorAnalyzer(tmp_path)
+        assert analyzer.exclude_dirs is RefactorAnalyzer.DEFAULT_EXCLUDE_DIRS
+
+    def test_should_skip_path_excluded_dir(self, tmp_path):
+        """Verify _should_skip_path returns True for paths with excluded dir components."""
+        analyzer = RefactorAnalyzer(tmp_path)
+        worktrees_path = tmp_path / ".worktrees" / "feature-branch" / "lib" / "foo.py"
+        assert analyzer._should_skip_path(worktrees_path) is True
+
+    def test_should_skip_path_non_excluded(self, tmp_path):
+        """Verify _should_skip_path returns False for normal paths."""
+        analyzer = RefactorAnalyzer(tmp_path)
+        normal_path = tmp_path / "plugins" / "autonomous-dev" / "lib" / "foo.py"
+        assert analyzer._should_skip_path(normal_path) is False
+
+    def test_should_skip_path_nested_excluded(self, tmp_path):
+        """Verify _should_skip_path works for deeply nested excluded dirs."""
+        analyzer = RefactorAnalyzer(tmp_path)
+        nested = tmp_path / "a" / "b" / ".claude" / "c" / "file.md"
+        assert analyzer._should_skip_path(nested) is True
+
+    def test_skips_worktrees_dir_in_doc_redundancy(self, tmp_path):
+        """Files under .worktrees/ are excluded from doc redundancy scanning."""
+        content = "# Same content\n\nThis is identical text.\n" * 20
+        (tmp_path / "README.md").write_text(content)
+        worktree_dir = tmp_path / ".worktrees" / "some-branch"
+        worktree_dir.mkdir(parents=True)
+        (worktree_dir / "README.md").write_text(content)
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_doc_redundancy()
+        # No pair should be found because .worktrees/ doc is excluded
+        assert len(findings) == 0
+
+    def test_skips_claude_dir_in_doc_redundancy(self, tmp_path):
+        """Files under .claude/ are excluded from doc redundancy scanning."""
+        content = "# Same content\n\nThis is identical text.\n" * 20
+        (tmp_path / "README.md").write_text(content)
+        claude_dir = tmp_path / ".claude" / "docs"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "README.md").write_text(content)
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_doc_redundancy()
+        assert len(findings) == 0
+
+    def test_skips_sessions_dir_in_doc_redundancy(self, tmp_path):
+        """Files under sessions/ are excluded from doc redundancy scanning."""
+        content = "# Same content\n\nThis is identical text.\n" * 20
+        (tmp_path / "README.md").write_text(content)
+        sessions_dir = tmp_path / "sessions" / "2026-01"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "session.md").write_text(content)
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_doc_redundancy()
+        assert len(findings) == 0
+
+    def test_skips_claude_dir_in_dead_code_detection(self, tmp_path):
+        """Files under .claude/ are excluded from dead code scanning."""
+        claude_lib_dir = tmp_path / ".claude" / "lib"
+        claude_lib_dir.mkdir(parents=True)
+        (claude_lib_dir / "utils.py").write_text(
+            "def orphaned_claude_func_xyz():\n    return 1\n"
+        )
+
+        lib_dir = tmp_path / "plugins" / "autonomous-dev" / "lib"
+        lib_dir.mkdir(parents=True)
+        (lib_dir / "real_lib.py").write_text(
+            "def active_func():\n    return 2\n"
+        )
+        cmd_dir = tmp_path / "plugins" / "autonomous-dev" / "commands"
+        cmd_dir.mkdir(parents=True)
+        (cmd_dir / "cmd.py").write_text("from real_lib import active_func\nactive_func()\n")
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_dead_code_cross_file()
+        claude_findings = [
+            f for f in findings if "orphaned_claude_func_xyz" in f.description
+        ]
+        assert len(claude_findings) == 0
+
+    @pytest.mark.parametrize("excluded_dir", [
+        ".git", ".worktrees", ".claude", "sessions", "archived",
+        "node_modules", "__pycache__", ".venv", "venv",
+    ])
+    def test_skips_various_excluded_dirs_in_doc_redundancy(self, tmp_path, excluded_dir):
+        """Parametrized: various excluded dirs are all skipped in doc redundancy."""
+        content = "# Same\n\nIdentical content.\n" * 20
+        (tmp_path / "README.md").write_text(content)
+        excluded_path = tmp_path / excluded_dir / "sub"
+        excluded_path.mkdir(parents=True)
+        (excluded_path / "copy.md").write_text(content)
+
+        analyzer = RefactorAnalyzer(tmp_path)
+        findings = analyzer._detect_doc_redundancy()
+        assert len(findings) == 0, (
+            f"Expected no findings but got {len(findings)} for excluded dir '{excluded_dir}'"
+        )

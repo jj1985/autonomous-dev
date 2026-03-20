@@ -282,9 +282,41 @@ class RefactorAnalyzer:
         "click.group",
     }
 
-    def __init__(self, project_root: Path):
+    DEFAULT_EXCLUDE_DIRS: Set[str] = {
+        ".git", ".svn", ".hg",                  # Version control
+        "node_modules",                           # Node.js
+        "venv", ".venv", "env",                  # Virtual environments
+        "__pycache__", ".pytest_cache",           # Python cache
+        ".mypy_cache", ".ruff_cache",             # Linter caches
+        "build", "dist", "egg-info",             # Build artifacts
+        ".tox", ".nox",                           # Test runners
+        "site-packages",                          # Installed packages
+        ".idea", ".vscode",                       # IDE configs
+        "coverage", "htmlcov",                    # Coverage reports
+        ".claude",                                # Install target (duplicate of plugins/)
+        ".worktrees",                             # Git worktrees (full repo copies)
+        "sessions",                               # Session logs
+        "archived",                               # Archived files
+    }
+
+    def __init__(self, project_root: Path, *, exclude_dirs: Optional[Set[str]] = None):
         self.project_root = project_root.resolve()
+        self.exclude_dirs = exclude_dirs if exclude_dirs is not None else self.DEFAULT_EXCLUDE_DIRS
         self._sweep_analyzer = SweepAnalyzer(self.project_root)
+
+    def _should_skip_path(self, path: Path) -> bool:
+        """Check if path should be skipped based on exclude_dirs.
+
+        Args:
+            path: Path to check against excluded directory names.
+
+        Returns:
+            True if any part of the path matches an excluded directory name.
+        """
+        for part in path.parts:
+            if part in self.exclude_dirs:
+                return True
+        return False
 
     def analyze_tests(self) -> List[RefactorFinding]:
         """Analyze test suite for shape imbalance and waste.
@@ -735,13 +767,12 @@ class RefactorAnalyzer:
         """
         findings: List[RefactorFinding] = []
 
-        # Collect .md files (skip node_modules, .git, archived, venv)
-        exclude_dirs = {".git", "node_modules", ".venv", "venv", "__pycache__", "archived"}
+        # Collect .md files, skipping excluded directories
         md_files: List[Path] = []
 
         for md_file in self.project_root.rglob("*.md"):
             # Skip excluded directories
-            if any(part in exclude_dirs for part in md_file.parts):
+            if self._should_skip_path(md_file):
                 continue
             # Skip very large files (>100KB) to avoid slow comparisons
             try:
@@ -759,9 +790,13 @@ class RefactorAnalyzer:
             except (OSError, UnicodeDecodeError):
                 continue
 
-        # Pairwise comparison
+        # Pairwise comparison with size pre-filter
+        # Files with very different sizes cannot have >85% similarity,
+        # so skip pairs where the smaller file is less than 70% of the larger.
+        # This eliminates most comparisons without missing real duplicates.
         compared: Set[Tuple[Path, Path]] = set()
         for file_a in file_contents:
+            len_a = len(file_contents[file_a])
             for file_b in file_contents:
                 if file_a >= file_b:
                     continue
@@ -770,11 +805,22 @@ class RefactorAnalyzer:
                     continue
                 compared.add(pair)
 
-                ratio = difflib.SequenceMatcher(
+                # Size pre-filter: skip if sizes are too different
+                len_b = len(file_contents[file_b])
+                if len_a > 0 and len_b > 0:
+                    size_ratio = min(len_a, len_b) / max(len_a, len_b)
+                    if size_ratio < 0.70:
+                        continue
+
+                matcher = difflib.SequenceMatcher(
                     None,
                     file_contents[file_a],
                     file_contents[file_b],
-                ).ratio()
+                )
+                # Use quick_ratio() as fast upper bound; skip if below threshold
+                if matcher.quick_ratio() <= 0.85:
+                    continue
+                ratio = matcher.ratio()
 
                 if ratio > 0.85:
                     rel_a = str(file_a.relative_to(self.project_root))
@@ -814,9 +860,6 @@ class RefactorAnalyzer:
 
         # Collect definitions: name -> (file_path, lineno, type)
         definitions: Dict[str, Tuple[str, int, str]] = {}
-        exclude_dirs = {
-            ".git", "node_modules", ".venv", "venv", "__pycache__", "archived"
-        }
 
         for def_dir in def_dirs:
             if not def_dir.is_dir():
@@ -824,7 +867,7 @@ class RefactorAnalyzer:
             for py_file in def_dir.rglob("*.py"):
                 if py_file.name.startswith("__"):
                     continue
-                if any(part in exclude_dirs for part in py_file.parts):
+                if self._should_skip_path(py_file):
                     continue
                 try:
                     source = py_file.read_text(encoding="utf-8")
@@ -853,7 +896,7 @@ class RefactorAnalyzer:
         # Scan all Python files for references
         referenced_names: Set[str] = set()
         for py_file in self.project_root.rglob("*.py"):
-            if any(part in exclude_dirs for part in py_file.parts):
+            if self._should_skip_path(py_file):
                 continue
             try:
                 source = py_file.read_text(encoding="utf-8")
@@ -931,14 +974,14 @@ class RefactorAnalyzer:
             return findings
 
         # Scan non-test, non-archived Python files for imports
-        exclude_dirs = {
-            ".git", "node_modules", ".venv", "venv", "__pycache__",
-            "archived", "tests", "test",
-        }
+        # Also exclude "tests" and "test" directories (method-specific, not class-level)
+        test_dirs = {"tests", "test"}
 
         imported_modules: Set[str] = set()
         for py_file in self.project_root.rglob("*.py"):
-            if any(part in exclude_dirs for part in py_file.parts):
+            if self._should_skip_path(py_file):
+                continue
+            if any(part in test_dirs for part in py_file.parts):
                 continue
             # Skip the lib file itself
             if py_file.parent == lib_dir:

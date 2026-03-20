@@ -12,6 +12,9 @@
 ### Changed
 - `/sweep` is now an alias for `/refactor --quick` instead of running independent analysis logic. Behavior is preserved; all hygiene sweep work is delegated to `RefactorAnalyzer.quick_sweep()`.
 
+### Fixed
+- `RefactorAnalyzer` no longer scans `.worktrees/` or `.claude/` directories, which caused O(n²) timeout on large repos with multiple worktrees (Issue #514). Added `DEFAULT_EXCLUDE_DIRS` class constant (covers version control, caches, worktrees, session logs, archives) and `_should_skip_path()` helper used by all `rglob` traversals. The `__init__` signature now accepts an optional `exclude_dirs` parameter to override the defaults.
+
 ## [3.46.0] - 2026-01-09
 ### Fixed
 - Fix doc-master auto-apply (#204)
