@@ -81,7 +81,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/session_activity_logger.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/session_activity_logger.py\"",
             "timeout": 3
           }
         ]
@@ -108,7 +108,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/auto_format.py"
+            "command": "python \"$(git rev-parse --show-toplevel)/.claude/hooks/auto_format.py\""
           }
         ]
       },
@@ -117,7 +117,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 plugins/autonomous-dev/hooks/session_activity_logger.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
             "timeout": 5
           }
         ]
@@ -129,15 +129,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/auto_test.py"
+            "command": "python \"$(git rev-parse --show-toplevel)/.claude/hooks/auto_test.py\""
           },
           {
             "type": "command",
-            "command": "python .claude/hooks/security_scan.py"
+            "command": "python \"$(git rev-parse --show-toplevel)/.claude/hooks/security_scan.py\""
           },
           {
             "type": "command",
-            "command": "python .claude/hooks/validate_command_file_ops.py"
+            "command": "python \"$(git rev-parse --show-toplevel)/.claude/hooks/validate_command_file_ops.py\""
           }
         ]
       }
@@ -171,7 +171,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh",
+            "command": "bash \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh\"",
             "timeout": 5
           }
         ]
@@ -183,7 +183,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash plugins/autonomous-dev/hooks/post_compact_enricher.sh",
+            "command": "bash \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/post_compact_enricher.sh\"",
             "timeout": 5
           }
         ]

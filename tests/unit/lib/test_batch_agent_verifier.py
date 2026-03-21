@@ -56,7 +56,7 @@ class TestVerifyIssueAgents:
     def test_missing_agents_detected(self, tmp_path: Path):
         """When some agents are missing, returns (False, partial, missing)."""
         log_file = tmp_path / "activity.jsonl"
-        # Only include 3 of 7 required agents
+        # Only include 3 of 8 required agents
         partial_agents = ["researcher-local", "planner", "implementer"]
         lines = [_make_agent_entry(agent, "issue-42") for agent in partial_agents]
         log_file.write_text("\n".join(lines))
@@ -65,8 +65,34 @@ class TestVerifyIssueAgents:
 
         assert passed is False
         assert set(present) == set(partial_agents)
-        expected_missing = {"researcher", "reviewer", "security-auditor", "doc-master"}
+        # continuous-improvement-analyst is required (Issue #505 — must run for every issue
+        # including the last one in the batch)
+        expected_missing = {
+            "researcher",
+            "reviewer",
+            "security-auditor",
+            "doc-master",
+            "continuous-improvement-analyst",
+        }
         assert set(missing) == expected_missing
+
+    def test_ci_analyst_required_in_default_agents(self):
+        """Regression test for Issue #505: CI analyst must be in DEFAULT_REQUIRED_AGENTS.
+
+        Without this fix, the verifier would pass even if continuous-improvement-analyst
+        was skipped (as happened for the last issue in 4-issue batches).
+        """
+        assert "continuous-improvement-analyst" in DEFAULT_REQUIRED_AGENTS, (
+            "continuous-improvement-analyst must be in DEFAULT_REQUIRED_AGENTS "
+            "(Issue #505: CI analyst was skipped for last issue in batch)"
+        )
+
+    def test_default_required_agents_count(self):
+        """Default mode requires exactly 8 agents (Issue #505 added CI analyst)."""
+        assert len(DEFAULT_REQUIRED_AGENTS) == 8, (
+            f"Expected 8 default required agents, got {len(DEFAULT_REQUIRED_AGENTS)}: "
+            f"{DEFAULT_REQUIRED_AGENTS}"
+        )
 
     def test_empty_log_file(self, tmp_path: Path):
         """Empty log file returns all agents as missing."""

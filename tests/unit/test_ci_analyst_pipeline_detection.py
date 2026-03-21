@@ -171,42 +171,37 @@ class TestParseSessionLogsSubagentType:
 class TestValidatePipelineIntentMissingAgents:
     """validate_pipeline_intent() must detect missing agents."""
 
-    def test_pipeline_intent_validator_detects_missing_agents(self, tmp_path: Path):
-        """A log with planner + implementer but missing test-master produces a finding.
+    def test_pipeline_intent_validator_does_not_flag_missing_test_master(self, tmp_path: Path):
+        """Absence of test-master must NOT produce a finding in acceptance-first mode.
 
-        When the pipeline has enough agents (>=4) and includes core steps
-        (planner, implementer) but is missing test-master, the validator
-        should produce a finding about the skipped test-master step.
+        In acceptance-first mode (the default), test-master is intentionally not invoked.
+        The validator must not produce a false positive step_skipping_test_master finding
+        on every default pipeline run. (#518)
         """
         log_file = tmp_path / "activity.jsonl"
         entries = [
             _make_agent_entry("researcher-local", "2026-03-07T10:00:00Z"),
             _make_agent_entry("researcher", "2026-03-07T10:00:01Z"),
             _make_agent_entry("planner", "2026-03-07T10:01:00Z"),
-            # test-master is MISSING
+            # test-master is intentionally absent (acceptance-first / default mode)
             _make_agent_entry("implementer", "2026-03-07T10:05:00Z"),
             _make_test_run_entry("2026-03-07T10:04:00Z", success=True),
             _make_agent_entry("reviewer", "2026-03-07T10:06:00Z"),
-            _make_agent_entry("security-auditor", "2026-03-07T10:06:01Z"),
+            _make_agent_entry("security-auditor", "2026-03-07T10:07:00Z"),
         ]
         _write_jsonl(log_file, entries)
 
         findings = validate_pipeline_intent(log_file)
 
-        # Should detect test-master is missing
+        # Must NOT produce a test-master step_skipping finding (#518)
         test_master_findings = [
             f for f in findings
             if "test-master" in f.description.lower() or "test_master" in f.pattern_id
         ]
-        assert len(test_master_findings) >= 1, (
-            f"Expected at least one finding about missing test-master. "
-            f"All findings: {[(f.finding_type, f.description) for f in findings]}"
+        assert len(test_master_findings) == 0, (
+            f"#518: test-master absence must not be flagged in acceptance-first mode. "
+            f"Got unexpected findings: {[(f.pattern_id, f.description) for f in test_master_findings]}"
         )
-
-        # The finding should be a step_skipping type with CRITICAL severity
-        for finding in test_master_findings:
-            assert isinstance(finding, Finding)
-            assert finding.severity == "CRITICAL"
 
     def test_no_finding_when_all_agents_present(self, tmp_path: Path):
         """A complete pipeline with all agents should not produce step_skipping findings."""

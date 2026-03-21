@@ -220,21 +220,11 @@ def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
     if len(agent_events) < 2:
         return findings
 
-    # Check for missing required sequential steps (only for full pipelines)
-    agent_types_present = {e.subagent_type for e in agent_events}
-    core_steps = {"planner", "implementer"}
-    if len(agent_events) >= MIN_FULL_PIPELINE_AGENTS and core_steps.issubset(agent_types_present):
-        # Check if test-master is missing (should be between planner and implementer)
-        if "test-master" not in agent_types_present:
-            findings.append(Finding(
-                finding_type="step_skipping",
-                severity="CRITICAL",
-                pattern_id="step_skipping_test_master",
-                description="test-master agent not invoked between planner and implementer",
-                evidence=[f"Agents present: {sorted(agent_types_present)}"],
-            ))
-
     # Check ordering: for each sequential pair, verify first completed before second
+    # NOTE: test-master absence is intentionally NOT checked here. In acceptance-first mode
+    # (the default), test-master is never invoked — it only runs in --tdd-first mode.
+    # The pipeline coordinator (implement.md STEP 7) is responsible for mode-specific agent
+    # inclusion. Post-hoc log validation must not second-guess mode selection. (#518)
     for first_type, second_type in SEQUENTIAL_REQUIRED:
         first_events = [e for e in agent_events if e.subagent_type == first_type]
         second_events = [e for e in agent_events if e.subagent_type == second_type]

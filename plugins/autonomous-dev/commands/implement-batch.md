@@ -157,7 +157,7 @@ For each feature in the list:
 3. If a feature fails, log the failure and continue to the next feature
 4. **HARD GATE: Per-Issue Agent Count Verification**
 
-   After each issue's pipeline completes, BEFORE advancing to the next issue, verify ALL required agents ran for this issue.
+   After each issue's pipeline completes, BEFORE advancing to the next issue (or to STEP B3.5/B4 if this is the last issue), verify ALL required agents ran for this issue. **This verification applies to ALL issues in the batch, including the LAST issue.**
 
    **Required agents** (mode-conditional):
    - **Default mode** (acceptance-first): 8 agents — researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst
@@ -188,6 +188,7 @@ For each feature in the list:
    - ❌ Claiming an agent "was not needed" for this issue (all required agents for the current mode must run, no exceptions)
    - ❌ Combining multiple issues into a single agent invocation to "save time"
    - ❌ Counting the coordinator's own reasoning as an agent invocation
+   - ❌ Skipping CI analyst for the last issue in the batch (known regression: Issue #505)
 
    **Why this gate exists**: Without per-issue verification, the model progressively shortcuts later issues (Issue #362/#363). Issues 1-2 get full pipeline; issues 3+ get 2-3 agents. This gate is fail-closed: if you cannot verify an agent ran, it did not run.
 
@@ -412,6 +413,12 @@ Same as BATCH FILE MODE:
    ```
 
    This replaces the previous heavy per-issue CI analysis. Full analysis happens once post-batch.
+
+   **HARD GATE: Last Issue CI** — The final issue in the batch MUST have its per-issue CI analyst check completed BEFORE proceeding to STEP B3.5 (Post-Batch Full CI Analysis) or STEP B4 (Batch Finalization). Skipping CI for the last issue is a known regression pattern (Issue #505).
+
+   **FORBIDDEN**:
+   - ❌ Proceeding to STEP B3.5 or STEP B4 without CI analyst completion for the last issue
+   - ❌ Treating the last issue differently from any other issue in CI requirements
 
 4. Git automation (see STEP B4) - triggers at end of batch
 5. Report summary (see STEP B5)

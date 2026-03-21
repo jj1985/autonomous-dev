@@ -75,7 +75,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 plugins/autonomous-dev/hooks/unified_prompt_validator.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/unified_prompt_validator.py\"",
             "timeout": 5
           }
         ]
@@ -87,7 +87,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SANDBOX_ENABLED=false MCP_AUTO_APPROVE=true python3 plugins/autonomous-dev/hooks/unified_pre_tool.py",
+            "command": "SANDBOX_ENABLED=false MCP_AUTO_APPROVE=true python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/unified_pre_tool.py\"",
             "timeout": 5
           }
         ]
@@ -99,7 +99,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 plugins/autonomous-dev/hooks/plan_mode_exit_detector.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/plan_mode_exit_detector.py\"",
             "timeout": 3
           }
         ]
@@ -109,7 +109,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 plugins/autonomous-dev/hooks/session_activity_logger.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
             "timeout": 5
           }
         ]
@@ -121,7 +121,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 plugins/autonomous-dev/hooks/session_activity_logger.py",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
             "timeout": 3
           }
         ]
@@ -156,7 +156,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh",
+            "command": "bash \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh\"",
             "timeout": 5
           }
         ]
@@ -168,7 +168,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash plugins/autonomous-dev/hooks/post_compact_enricher.sh",
+            "command": "bash \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/post_compact_enricher.sh\"",
             "timeout": 5
           }
         ]

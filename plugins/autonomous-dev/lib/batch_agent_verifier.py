@@ -25,6 +25,8 @@ from typing import List, Optional, Tuple
 AGENT_TOOL_NAMES = {"Task", "Agent"}
 
 # Default required agents for the acceptance-first pipeline
+# NOTE: continuous-improvement-analyst is explicitly included here (Issue #505).
+# The CI analyst MUST run for EVERY issue including the LAST one in the batch.
 DEFAULT_REQUIRED_AGENTS = [
     "researcher-local",
     "researcher",
@@ -33,6 +35,7 @@ DEFAULT_REQUIRED_AGENTS = [
     "reviewer",
     "security-auditor",
     "doc-master",
+    "continuous-improvement-analyst",
 ]
 
 
@@ -52,7 +55,8 @@ def verify_issue_agents(
         issue_id: Issue identifier to filter log entries (matched against
             session_context, issue_id, or run_id fields).
         required_agents: List of agent subagent_type values that must be
-            present. Defaults to the 7 acceptance-first pipeline agents.
+            present. Defaults to the 8 acceptance-first pipeline agents
+            (including continuous-improvement-analyst, Issue #505).
 
     Returns:
         Tuple of (all_present, present_agents, missing_agents) where:
