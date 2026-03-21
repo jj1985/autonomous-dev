@@ -249,9 +249,64 @@ model: "sonnet"
 
 **This applies to ALL pipeline agents when running in batch mode (7 in default acceptance-first mode, 8 in `--tdd-first` mode).**
 
+**BATCH LOGGING: Coordinator-Side Agent Completion Log** (Issue #526)
+
+The session_activity_logger hook may miss agent completions in batch context (Issue #526). To ensure complete observability, the coordinator MUST emit a structured log entry after EACH agent returns in batch mode:
+
+```bash
+python3 -c "
+import json, datetime, os
+from pathlib import Path
+
+entry = {
+    'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    'hook': 'BatchCoordinatorLog',
+    'tool': 'Agent',
+    'subagent_type': 'AGENT_TYPE_HERE',
+    'issue_number': ISSUE_NUMBER_HERE,
+    'batch_id': '$BATCH_ID',
+    'result_word_count': WORD_COUNT_HERE,
+    'duration_seconds': DURATION_HERE,
+    'session_id': os.environ.get('CLAUDE_SESSION_ID', 'unknown'),
+}
+
+# Find log directory
+cwd = Path.cwd()
+for parent in [cwd] + list(cwd.parents):
+    claude_dir = parent / '.claude'
+    if claude_dir.exists():
+        log_dir = claude_dir / 'logs' / 'activity'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / (datetime.datetime.now().strftime('%Y-%m-%d') + '.jsonl')
+        with open(log_file, 'a') as f:
+            f.write(json.dumps(entry) + '\n')
+        break
+"
+```
+
+This provides a backup log of all agent completions even when the PostToolUse hook misses them. The continuous-improvement-analyst can parse `BatchCoordinatorLog` entries alongside regular `PostToolUse` entries.
+
+**REQUIRED**: Emit this log after EVERY agent completion in batch mode (all 7-8 agents per issue).
+
 **STEP B4: Batch Finalization -- Auto-Commit, Merge, Cleanup (Issue #333)**
 
 After ALL features in batch are processed, YOU (the coordinator) MUST finalize:
+
+0. **Drain all remaining agents and verify writes** (Issue #536, #537):
+   ```bash
+   # Ensure ALL background agents have completed before committing
+   # This prevents doc-master writes from being lost
+   ```
+
+   **REQUIRED**: Before committing, verify:
+   a. ALL background agents (especially doc-master from the last issue) have completed. Use TaskOutput to drain any remaining background tasks.
+   b. The post-batch CI analysis (STEP B3.5) has been launched (it can complete after commit, but must be launched before worktree cleanup).
+   c. Run `cd $WORKTREE_PATH && git status` to confirm all modified files are visible.
+
+   **FORBIDDEN** (Issue #536):
+   - ❌ Running `git add -A && git commit` while any background agent may still be writing files
+   - ❌ Deleting the worktree before the post-batch CIA has read the session log
+   - ❌ Proceeding to merge without verifying doc-master's file modifications are staged
 
 1. **Commit all changes** in the worktree:
    ```bash
@@ -439,6 +494,14 @@ Session date: YYYY-MM-DD"
 ```
 
 This single comprehensive analysis replaces N heavy per-issue analyses. It detects cross-issue patterns (progressive shortcutting, recurring bypasses) that per-issue checks cannot see.
+
+**CRITICAL (Issue #537)**: The post-batch CIA MUST be launched BEFORE worktree cleanup (STEP B4 step 3). The CIA needs to read session logs from the worktree. Launch order:
+1. STEP B3.5: Launch CIA in background
+2. STEP B4 step 1: Commit in worktree (CIA is reading logs in parallel)
+3. STEP B4 step 2: Merge to master
+4. STEP B4 step 3: Cleanup worktree (CIA has already read what it needs)
+
+If CIA has not been launched yet when you reach STEP B4 step 3, BLOCK worktree cleanup until CIA is launched.
 
 **CRITICAL**: When invoking agents in batch issues mode, include the **BATCH CONTEXT** block (with `$WORKTREE_PATH`) at the start of EVERY agent prompt, exactly as described in STEP B3.
 

@@ -46,7 +46,18 @@ done
 
 Intersect the changed file list with the `covers:` mappings. A doc is "affected" if any changed file falls within a path listed in its `covers:`.
 
-If no docs are affected -> update CHANGELOG only -> output `DOC-DRIFT-VERDICT: PASS` -> done.
+**HARD GATE: covers: Scan Completion**
+
+You MUST complete the `covers:` frontmatter scan before ANY other action. This is not optional.
+
+1. If `covers:` scan finds affected docs → proceed to Step 2 for EACH affected doc
+2. If `covers:` scan finds NO affected docs → update CHANGELOG only → output `DOC-DRIFT-VERDICT: PASS` → done
+3. If NO docs have `covers:` frontmatter at all → this is itself a finding (structural drift). Log it and proceed to Step 4 (CHANGELOG only) with `DOC-DRIFT-VERDICT: PASS`
+
+**FORBIDDEN**:
+- ❌ Skipping the `covers:` scan and going straight to CHANGELOG
+- ❌ Declaring "no docs affected" without actually reading the `covers:` frontmatter from docs/*.md files
+- ❌ Treating the CHANGELOG update as the primary deliverable (it's secondary to drift detection)
 
 ### Step 2: Semantic Comparison (You Are the Judge)
 
@@ -72,6 +83,16 @@ For each finding:
 - Add CHANGELOG entry under `[Unreleased]` using Keep a Changelog format
 - Update README.md if public-facing behavior changed
 - Apply semantic updates (explain WHAT changed and WHY, not file lists)
+
+### Step 4.5: Self-Check — HARD GATE
+
+Before writing your verdict, verify:
+- [ ] You actually ran the `covers:` frontmatter extraction (Step 1 bash command or equivalent)
+- [ ] For each affected doc, you READ both the doc AND the source files it covers
+- [ ] You compared prose claims against actual code behavior (not just file existence)
+- [ ] You are about to output a DOC-DRIFT-VERDICT line (not skip it)
+
+If you cannot check all boxes, GO BACK and complete the missing steps. Do NOT output a verdict without completing the scan.
 
 ### Step 5: Output Verdict
 
@@ -103,6 +124,9 @@ findings:
 - Writing hardcoded component counts into README.md (use descriptive labels)
 - Updating CLAUDE.md (out of scope)
 - Only updating CHANGELOG without checking affected docs
+- Only updating CHANGELOG without scanning `covers:` frontmatter first (CHANGELOG-only sweeps are a known anti-pattern — Issue #534)
+- Producing output without a DOC-DRIFT-VERDICT line (every run MUST end with a verdict)
+- Claiming "no docs affected" without showing which docs you checked and their `covers:` paths
 
 ## CHANGELOG Format
 
