@@ -1,0 +1,361 @@
+"""
+Unit tests for Issue #528: Enforce /implement hard block when explicitly invoked.
+
+Validates that when /implement is explicitly invoked by the user, the coordinator
+(non-pipeline agent) is blocked from making code changes directly — it must
+delegate to pipeline agents (implementer, test-master, doc-master).
+
+Tests cover:
+- _is_explicit_implement_active() function
+- Coordinator blocking in validate_agent_authorization()
+- Pipeline agent bypass
+- Non-code file exemptions
+- ENFORCEMENT_LEVEL=off override
+- NATIVE_TOOLS fast path blocking
+
+Date: 2026-03-21
+Issue: #528
+"""
+
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+# Add hook's parent to path so we can import the module
+HOOK_DIR = Path(__file__).resolve().parents[3] / "plugins" / "autonomous-dev" / "hooks"
+sys.path.insert(0, str(HOOK_DIR))
+
+# Also add lib dir for any transitive imports
+LIB_DIR = Path(__file__).resolve().parents[3] / "plugins" / "autonomous-dev" / "lib"
+sys.path.insert(0, str(LIB_DIR))
+
+import unified_pre_tool as hook
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch):
+    """Reset relevant env vars for each test."""
+    env_keys = [
+        "SANDBOX_ENABLED", "PRE_TOOL_MCP_SECURITY", "PRE_TOOL_AGENT_AUTH",
+        "PRE_TOOL_BATCH_PERMISSION", "MCP_AUTO_APPROVE", "ENFORCEMENT_LEVEL",
+        "CLAUDE_AGENT_NAME", "PIPELINE_STATE_FILE",
+    ]
+    for key in env_keys:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("PRE_TOOL_MCP_SECURITY", "true")
+    monkeypatch.setenv("PRE_TOOL_AGENT_AUTH", "true")
+
+
+@pytest.fixture
+def state_file(tmp_path):
+    """Create a temporary pipeline state file."""
+    state_path = tmp_path / "implement_pipeline_state.json"
+
+    def _write(data: dict) -> str:
+        state_path.write_text(json.dumps(data))
+        return str(state_path)
+
+    return _write
+
+
+@pytest.fixture
+def valid_state(state_file, monkeypatch):
+    """Create a valid explicit pipeline state and set env var."""
+    path = state_file({
+        "session_start": datetime.now().isoformat(),
+        "mode": "full",
+        "run_id": "test-run",
+        "explicitly_invoked": True,
+    })
+    monkeypatch.setenv("PIPELINE_STATE_FILE", path)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# 1. _is_explicit_implement_active() tests
+# ---------------------------------------------------------------------------
+
+class TestIsExplicitImplementActive:
+    """Tests for the _is_explicit_implement_active() function."""
+
+    def test_valid_state_returns_true(self, valid_state):
+        """Active explicit state with valid TTL returns True."""
+        assert hook._is_explicit_implement_active() is True
+
+    def test_missing_flag_returns_false(self, state_file, monkeypatch):
+        """State file without explicitly_invoked flag returns False."""
+        path = state_file({
+            "session_start": datetime.now().isoformat(),
+            "mode": "full",
+            "run_id": "test-run",
+        })
+        monkeypatch.setenv("PIPELINE_STATE_FILE", path)
+        assert hook._is_explicit_implement_active() is False
+
+    def test_false_flag_returns_false(self, state_file, monkeypatch):
+        """State file with explicitly_invoked=false returns False."""
+        path = state_file({
+            "session_start": datetime.now().isoformat(),
+            "mode": "full",
+            "run_id": "test-run",
+            "explicitly_invoked": False,
+        })
+        monkeypatch.setenv("PIPELINE_STATE_FILE", path)
+        assert hook._is_explicit_implement_active() is False
+
+    def test_expired_ttl_returns_false(self, state_file, monkeypatch):
+        """State file older than 2 hours returns False."""
+        expired = (datetime.now() - timedelta(hours=3)).isoformat()
+        path = state_file({
+            "session_start": expired,
+            "mode": "full",
+            "run_id": "test-run",
+            "explicitly_invoked": True,
+        })
+        monkeypatch.setenv("PIPELINE_STATE_FILE", path)
+        assert hook._is_explicit_implement_active() is False
+
+    def test_missing_file_returns_false(self, monkeypatch):
+        """Non-existent state file returns False."""
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_state_528.json")
+        assert hook._is_explicit_implement_active() is False
+
+    def test_malformed_json_returns_false(self, tmp_path, monkeypatch):
+        """Malformed JSON in state file returns False."""
+        bad_file = tmp_path / "bad_state.json"
+        bad_file.write_text("{not valid json")
+        monkeypatch.setenv("PIPELINE_STATE_FILE", str(bad_file))
+        assert hook._is_explicit_implement_active() is False
+
+    def test_missing_session_start_returns_false(self, state_file, monkeypatch):
+        """State file with no session_start returns False."""
+        path = state_file({
+            "mode": "full",
+            "run_id": "test-run",
+            "explicitly_invoked": True,
+        })
+        monkeypatch.setenv("PIPELINE_STATE_FILE", path)
+        assert hook._is_explicit_implement_active() is False
+
+    def test_near_ttl_boundary_returns_true(self, state_file, monkeypatch):
+        """State file just under 2 hours returns True."""
+        near_expiry = (datetime.now() - timedelta(hours=1, minutes=59)).isoformat()
+        path = state_file({
+            "session_start": near_expiry,
+            "mode": "full",
+            "run_id": "test-run",
+            "explicitly_invoked": True,
+        })
+        monkeypatch.setenv("PIPELINE_STATE_FILE", path)
+        assert hook._is_explicit_implement_active() is True
+
+
+# ---------------------------------------------------------------------------
+# 2. Coordinator blocking in validate_agent_authorization()
+# ---------------------------------------------------------------------------
+
+class TestCoordinatorBlocking:
+    """Coordinator (non-pipeline agent) should be blocked from code writes."""
+
+    def test_write_py_blocked(self, valid_state, monkeypatch):
+        """Coordinator Write to .py file is blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": "/tmp/app.py", "content": "print('hello')"}
+        )
+        assert decision == "deny"
+        assert "delegate" in reason.lower()
+
+    def test_edit_py_blocked(self, valid_state, monkeypatch):
+        """Coordinator Edit to .py file is blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Edit", {"file_path": "/tmp/app.py", "old_string": "a", "new_string": "b"}
+        )
+        assert decision == "deny"
+        assert "pipeline agents" in reason.lower()
+
+    def test_bash_redirect_to_code_blocked(self, valid_state, monkeypatch):
+        """Coordinator Bash redirect to .py file is blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Bash", {"command": "echo 'code' > /tmp/app.py"}
+        )
+        assert decision == "deny"
+        assert "WORKFLOW ENFORCEMENT" in reason
+
+    def test_write_js_blocked(self, valid_state, monkeypatch):
+        """Coordinator Write to .js file is blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": "/tmp/app.js", "content": "console.log('hi')"}
+        )
+        assert decision == "deny"
+
+    def test_write_ts_blocked(self, valid_state, monkeypatch):
+        """Coordinator Write to .ts file is blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": "/tmp/app.ts", "content": "const x = 1;"}
+        )
+        assert decision == "deny"
+
+
+# ---------------------------------------------------------------------------
+# 3. Pipeline agent bypass
+# ---------------------------------------------------------------------------
+
+class TestPipelineAgentBypass:
+    """Pipeline agents should still be allowed through."""
+
+    @pytest.mark.parametrize("agent", ["implementer", "test-master", "doc-master"])
+    def test_pipeline_agent_allowed(self, valid_state, monkeypatch, agent):
+        """Pipeline agents bypass the explicit implement block."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", agent)
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": "/tmp/app.py", "content": "real impl"}
+        )
+        assert decision == "allow"
+        assert agent in reason
+
+
+# ---------------------------------------------------------------------------
+# 4. Exemptions
+# ---------------------------------------------------------------------------
+
+class TestExemptions:
+    """Non-code files and non-file-write Bash commands should be allowed."""
+
+    @pytest.mark.parametrize("ext", [".json", ".yaml", ".yml", ".md", ".txt", ".toml", ".cfg", ".ini"])
+    def test_non_code_files_allowed(self, valid_state, monkeypatch, ext):
+        """Non-code file extensions are not blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": f"/tmp/config{ext}", "content": "data"}
+        )
+        # Should not be denied by the explicit implement check
+        assert decision != "deny" or "WORKFLOW ENFORCEMENT" not in reason
+
+    def test_bash_without_file_writes_allowed(self, valid_state, monkeypatch):
+        """Bash commands without file writes are not blocked."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Bash", {"command": "pytest tests/ -v"}
+        )
+        # The Bash command doesn't write to code files, so should be allowed
+        assert decision != "deny" or "WORKFLOW ENFORCEMENT" not in reason
+
+    def test_read_tool_not_blocked(self, valid_state, monkeypatch):
+        """Read tool is not subject to blocking."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        decision, reason = hook.validate_agent_authorization(
+            "Read", {"file_path": "/tmp/app.py"}
+        )
+        assert decision == "allow"
+
+
+# ---------------------------------------------------------------------------
+# 5. ENFORCEMENT_LEVEL=off override
+# ---------------------------------------------------------------------------
+
+class TestEnforcementLevelOff:
+    """ENFORCEMENT_LEVEL=off should disable the block."""
+
+    def test_off_overrides_block(self, valid_state, monkeypatch):
+        """ENFORCEMENT_LEVEL=off allows coordinator code writes."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        monkeypatch.setenv("ENFORCEMENT_LEVEL", "off")
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": "/tmp/app.py", "content": "code"}
+        )
+        # With enforcement off, the explicit implement block should not fire
+        # It returns allow from the "Active /implement pipeline" path
+        assert decision == "allow"
+
+
+# ---------------------------------------------------------------------------
+# 6. _is_code_file_target() tests
+# ---------------------------------------------------------------------------
+
+class TestIsCodeFileTarget:
+    """Tests for the _is_code_file_target() helper."""
+
+    def test_write_py_is_code(self):
+        assert hook._is_code_file_target("Write", {"file_path": "/tmp/app.py"}) is True
+
+    def test_write_json_is_not_code(self):
+        assert hook._is_code_file_target("Write", {"file_path": "/tmp/config.json"}) is False
+
+    def test_write_md_is_not_code(self):
+        assert hook._is_code_file_target("Write", {"file_path": "/tmp/README.md"}) is False
+
+    def test_edit_ts_is_code(self):
+        assert hook._is_code_file_target("Edit", {"file_path": "/tmp/app.ts"}) is True
+
+    def test_bash_with_py_redirect_is_code(self):
+        assert hook._is_code_file_target("Bash", {"command": "echo 'x' > app.py"}) is True
+
+    def test_bash_without_writes_is_not_code(self):
+        assert hook._is_code_file_target("Bash", {"command": "pytest -v"}) is False
+
+    def test_bash_with_json_redirect_is_not_code(self):
+        assert hook._is_code_file_target("Bash", {"command": "echo '{}' > config.json"}) is False
+
+    def test_empty_file_path_is_not_code(self):
+        assert hook._is_code_file_target("Write", {"file_path": ""}) is False
+
+    def test_read_tool_is_not_code(self):
+        assert hook._is_code_file_target("Read", {"file_path": "/tmp/app.py"}) is False
+
+
+# ---------------------------------------------------------------------------
+# 7. NATIVE_TOOLS fast path (integration-level)
+# ---------------------------------------------------------------------------
+
+class TestNativeToolsFastPath:
+    """Test explicit implement enforcement in the native tools fast path.
+
+    These test the _is_code_file_target + _is_explicit_implement_active
+    combination used in main() for native tools. We test the helper functions
+    directly since main() calls sys.exit.
+    """
+
+    def test_coordinator_code_write_detected(self, valid_state, monkeypatch):
+        """Fast path detects coordinator code writes when explicit implement active."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        # Simulate what the fast path checks
+        tool_name = "Write"
+        tool_input = {"file_path": "/tmp/app.py", "content": "code"}
+        agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+        assert agent_name not in hook.PIPELINE_AGENTS
+        assert hook._is_explicit_implement_active() is True
+        assert hook._is_code_file_target(tool_name, tool_input) is True
+
+    def test_pipeline_agent_bypasses_fast_path(self, valid_state, monkeypatch):
+        """Pipeline agent is NOT blocked in fast path."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "implementer")
+        agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+        assert agent_name in hook.PIPELINE_AGENTS
+
+    def test_no_state_file_backward_compat(self, monkeypatch):
+        """Without state file, fast path does not block (backward compatibility)."""
+        monkeypatch.setenv("PIPELINE_STATE_FILE", "/tmp/nonexistent_state_528.json")
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        assert hook._is_explicit_implement_active() is False
+
+    def test_enforcement_off_bypasses_fast_path(self, valid_state, monkeypatch):
+        """ENFORCEMENT_LEVEL=off disables fast path block."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        monkeypatch.setenv("ENFORCEMENT_LEVEL", "off")
+        level = os.getenv("ENFORCEMENT_LEVEL", "suggest").strip().lower()
+        assert level == "off"

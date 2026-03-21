@@ -122,6 +122,16 @@ ENFORCE_WORKFLOW_STRICT=true    # Maps to BLOCK (strictest)
 
 **Precedence**: `ENFORCEMENT_LEVEL` takes precedence over `ENFORCE_WORKFLOW_STRICT`
 
+### Explicit /implement Hard Block (Issue #528)
+
+When the user explicitly invokes `/implement`, the hook enters a higher enforcement mode regardless of `ENFORCEMENT_LEVEL`:
+
+- **Detection**: `/implement` writes `{"explicitly_invoked": true, ...}` to `/tmp/implement_pipeline_state.json` on startup.
+- **Behavior**: If `explicitly_invoked` is true and `ENFORCEMENT_LEVEL` is not `off`, the coordinator is blocked from writing code files directly. Code changes must be delegated to pipeline agents (`implementer`, `test-master`, `doc-master`).
+- **Scope**: Code files only (`.py`, `.js`, `.ts`, etc.). Config files, docs (`.md`), and non-code files are exempt.
+- **TTL**: Block expires 2 hours after session start. State file cleaned up after STEP 15.
+- **Purpose**: Prevents the coordinator from bypassing specialist agents during an active `/implement` session.
+
 ### Default Behavior (v3.49.0+)
 
 By default, enforcement level is **SUGGEST**:
@@ -213,8 +223,8 @@ What this prevents:
 - Bypassing the /implement pipeline for meaningful work
 
 Exemptions:
-- Allowed agents: `implementer`, `test-master`, `brownfield-analyzer`, `setup-wizard`, `project-bootstrapper`
-- These agents ARE part of the /implement workflow
+- Allowed agents: `implementer`, `test-master`, `doc-master`
+- These are the pipeline agents authorized to write code/tests/docs during `/implement`
 
 Configuration:
 ```bash
@@ -343,7 +353,7 @@ ENFORCE_WORKFLOW=false  # Disables bypass detection
 
 ## Why This is Mandatory
 
-Hooks don't block direct implementation (Intent detection doesn't work - Issue #141). But `/implement` is still REQUIRED by instruction.
+When `/implement` is explicitly invoked, `unified_pre_tool.py` hard-blocks coordinator code writes (Issue #528). When `/implement` is not active, the hook cannot detect intent and relies on enforcement levels (Issue #141). Either way, `/implement` is REQUIRED for code changes.
 
 **If you skip `/implement`, you skip**:
 - TDD enforcement (tests before code)

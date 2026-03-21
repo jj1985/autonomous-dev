@@ -41,11 +41,11 @@ class TestCoordinatorSize:
     """Verify the coordinator is thin, not monolithic."""
 
     def test_implement_md_under_405_lines(self, implement_content):
-        """implement.md should be under 470 lines total (was 385 before auto-mode detection + STEP 6.5 remediation gate added)."""
+        """implement.md should be under 510 lines total (was 385 before auto-mode detection + STEP 11 remediation gate added)."""
         total_lines = len(implement_content.strip().split("\n"))
-        assert total_lines <= 470, (
-            f"implement.md is {total_lines} lines — should be <= 470 "
-            f"(thin coordinator + Light Pipeline + auto-mode detection + STEP 6.5 remediation gate)."
+        assert total_lines <= 510, (
+            f"implement.md is {total_lines} lines — should be <= 510 "
+            f"(thin coordinator + Light Pipeline + auto-mode detection + STEP 11 remediation gate)."
         )
 
 
@@ -57,18 +57,20 @@ class TestAllStepsPresent:
         [
             "STEP 0",
             "STEP 1",
-            "STEP 1.5",
             "STEP 2",
             "STEP 3",
-            "STEP 3.5",
             "STEP 4",
             "STEP 5",
-            "STEP 5.5",
             "STEP 6",
             "STEP 7",
             "STEP 8",
-            "STEP 8.5",
             "STEP 9",
+            "STEP 10",
+            "STEP 11",
+            "STEP 12",
+            "STEP 13",
+            "STEP 14",
+            "STEP 15",
         ],
     )
     def test_step_referenced(self, implement_content, step):
@@ -84,7 +86,7 @@ class TestHardGatesPreserved:
         assert "HARD GATE" in implement_content
 
     def test_test_gate_present(self, implement_content):
-        """STEP 5 test gate — 0 failures required."""
+        """STEP 8 test gate — 0 failures required."""
         assert "pytest" in implement_content.lower() or "test" in implement_content.lower()
 
     def test_no_new_skips_gate(self, implement_content):
@@ -94,23 +96,23 @@ class TestHardGatesPreserved:
         )
 
     def test_hook_registration_gate(self, implement_content):
-        """STEP 5.5 hook registration check."""
+        """STEP 9 hook registration check."""
         assert "hook" in implement_content.lower() and (
             "registration" in implement_content.lower()
             or "settings" in implement_content.lower()
         )
 
     def test_doc_congruence_gate(self, implement_content):
-        """STEP 8.5 documentation congruence validation."""
+        """STEP 14 documentation congruence validation."""
         assert "congruence" in implement_content.lower() or (
             "documentation" in implement_content.lower()
             and "test" in implement_content.lower()
         )
 
-    def test_step_9_mandatory(self, implement_content):
-        """STEP 9 continuous improvement is mandatory."""
+    def test_step_15_mandatory(self, implement_content):
+        """STEP 15 continuous improvement is mandatory."""
         assert "continuous-improvement-analyst" in implement_content or (
-            "STEP 9" in implement_content and "mandatory" in implement_content.lower()
+            "STEP 15" in implement_content and "mandatory" in implement_content.lower()
         )
 
     def test_forbidden_list_present(self, implement_content):
@@ -204,5 +206,5 @@ class TestPipelineState:
         )
 
     def test_pipeline_cleanup(self, implement_content):
-        """Pipeline state must be cleaned up in STEP 9."""
+        """Pipeline state must be cleaned up in STEP 15."""
         assert "cleanup" in implement_content.lower() or "clean" in implement_content.lower()

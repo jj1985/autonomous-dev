@@ -548,6 +548,86 @@ def _is_pipeline_active() -> bool:
     return False
 
 
+def _is_explicit_implement_active() -> bool:
+    """Check if /implement was explicitly invoked by the user (Issue #528).
+
+    Reads the pipeline state file and checks for the 'explicitly_invoked' flag.
+    This distinguishes user-invoked /implement from other pipeline activity,
+    enabling hard blocking of coordinator code writes during explicit sessions.
+
+    Returns:
+        True if /implement was explicitly invoked and session is within TTL
+    """
+    pipeline_state_file = os.getenv(
+        "PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json"
+    )
+    try:
+        state_path = Path(pipeline_state_file)
+        if not state_path.exists():
+            return False
+        import json as _json
+        from datetime import datetime as _datetime
+
+        with open(state_path) as f:
+            state = _json.load(f)
+        # Must have explicitly_invoked flag set to true
+        if not state.get("explicitly_invoked", False):
+            return False
+        # Check session TTL (2 hours)
+        session_start = state.get("session_start", "")
+        if not session_start:
+            return False
+        start_time = _datetime.fromisoformat(session_start)
+        elapsed = (_datetime.now() - start_time).total_seconds()
+        if elapsed >= 7200:  # 2 hours TTL
+            return False
+        return True
+    except (json.JSONDecodeError, ValueError, KeyError, OSError, TypeError):
+        return False
+
+
+# Non-code file extensions exempt from explicit /implement coordinator blocking
+_NON_CODE_EXTENSIONS = {
+    ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini",
+    ".md", ".txt", ".rst", ".csv", ".env",
+}
+
+
+def _is_code_file_target(tool_name: str, tool_input: Dict) -> bool:
+    """Check if the tool operation targets a code file (Issue #528).
+
+    Args:
+        tool_name: Name of the tool (Write, Edit, Bash)
+        tool_input: Tool input parameters
+
+    Returns:
+        True if the tool targets a code file (not config/docs)
+    """
+    if tool_name in ("Write", "Edit"):
+        file_path = tool_input.get("file_path", "")
+        if not file_path:
+            return False
+        suffix = Path(file_path).suffix.lower()
+        # Exempt non-code files
+        if suffix in _NON_CODE_EXTENSIONS:
+            return False
+        # Check against known code extensions
+        return suffix in CODE_EXTENSIONS
+    elif tool_name == "Bash":
+        command = tool_input.get("command", "")
+        if not command:
+            return False
+        target_files = _extract_bash_file_writes(command)
+        for fp in target_files:
+            suffix = Path(fp).suffix.lower()
+            if suffix in _NON_CODE_EXTENSIONS:
+                continue
+            if suffix in CODE_EXTENSIONS:
+                return True
+        return False
+    return False
+
+
 def _has_significant_additions(old_string: str, new_string: str, file_path: str = "") -> tuple:
     """Check if the edit adds significant code (new functions, classes, >5 lines)."""
     import re
@@ -656,6 +736,22 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
         agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
         if agent_name in PIPELINE_AGENTS:
             return ("allow", f"Pipeline agent '{agent_name}' authorized")
+        # Issue #528: If /implement was explicitly invoked, block coordinator code writes
+        if _is_explicit_implement_active() and tool_name in ("Write", "Edit", "Bash"):
+            level = os.getenv("ENFORCEMENT_LEVEL", "suggest").strip().lower()
+            if level != "off" and _is_code_file_target(tool_name, tool_input):
+                block_reason = (
+                    "WORKFLOW ENFORCEMENT: /implement is active — code changes must be "
+                    "made by pipeline agents (implementer, test-master, doc-master), "
+                    "not the coordinator. Delegate this work to the appropriate agent."
+                )
+                _log_deviation(
+                    tool_input.get("file_path", "unknown") if tool_name != "Bash"
+                    else "bash_command",
+                    tool_name,
+                    "explicit_implement_coordinator_block",
+                )
+                return ("deny", block_reason)
         return ("allow", "Active /implement pipeline detected via state file")
 
     # Only check Edit, Write, and Bash tools
@@ -1119,6 +1215,30 @@ def main():
                         _log_deviation(bash_block[0], tool_name, "bash_infrastructure_protection_block")
                         _log_pretool_activity(tool_name, tool_input, "deny", bash_block[1])
                         output_decision("deny", bash_block[1], system_message=bash_block[1])
+                        sys.exit(0)
+
+            # Issue #528: Block coordinator code writes when /implement explicitly active
+            # This is CRITICAL for external repo coverage — native tools bypass all
+            # validation layers, so this check must be in the fast path.
+            if tool_name in ("Write", "Edit", "Bash"):
+                agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+                if (agent_name not in PIPELINE_AGENTS
+                        and _is_explicit_implement_active()
+                        and os.getenv("ENFORCEMENT_LEVEL", "suggest").strip().lower() != "off"):
+                    if _is_code_file_target(tool_name, tool_input):
+                        block_reason = (
+                            "WORKFLOW ENFORCEMENT: /implement is active — code changes must be "
+                            "made by pipeline agents (implementer, test-master, doc-master), "
+                            "not the coordinator. Delegate this work to the appropriate agent."
+                        )
+                        _log_deviation(
+                            tool_input.get("file_path", "bash_command")
+                            if tool_name != "Bash" else "bash_command",
+                            tool_name,
+                            "explicit_implement_coordinator_block_native",
+                        )
+                        _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
+                        output_decision("deny", block_reason, system_message=block_reason)
                         sys.exit(0)
 
             # Run extensions even for native tools

@@ -84,22 +84,22 @@ class TestImplementCommandStep5:
     def content(self) -> str:
         return (COMMANDS_DIR / "implement.md").read_text()
 
-    def test_step5_no_skip_option(self, content: str):
-        """STEP 5 should not list 'Skip it' as a resolution."""
-        # Find the STEP 5 section
-        step5_start = content.find("### STEP 5:")
-        step6_start = content.find("### STEP 5.5:")
-        if step5_start >= 0 and step6_start >= 0:
-            step5 = content[step5_start:step6_start]
-            assert "Skip it" not in step5
+    def test_step8_no_skip_option(self, content: str):
+        """STEP 8 should not list 'Skip it' as a resolution."""
+        # Find the STEP 8 section (Implementer + Test Gate)
+        step8_start = content.find("### STEP 8:")
+        step9_start = content.find("### STEP 9:")
+        if step8_start >= 0 and step9_start >= 0:
+            step8 = content[step8_start:step9_start]
+            assert "Skip it" not in step8
 
-    def test_step5_zero_skip_gate(self, content: str):
-        """STEP 5 should enforce 0 new skips."""
-        step5_start = content.find("### STEP 5:")
-        step6_start = content.find("### STEP 5.5:")
-        if step5_start >= 0 and step6_start >= 0:
-            step5 = content[step5_start:step6_start]
-            assert "0 new skips" in step5 or "No New Skips" in step5 or "zero-skip" in step5.lower()
+    def test_step8_zero_skip_gate(self, content: str):
+        """STEP 8 should enforce 0 new skips."""
+        step8_start = content.find("### STEP 8:")
+        step9_start = content.find("### STEP 9:")
+        if step8_start >= 0 and step9_start >= 0:
+            step8 = content[step8_start:step9_start]
+            assert "0 new skips" in step8 or "No New Skips" in step8 or "zero-skip" in step8.lower()
 
 
 class TestTestingGuideSkill:

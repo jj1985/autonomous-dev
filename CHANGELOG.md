@@ -21,6 +21,12 @@
 ### Changed
 - `/sweep` is now an alias for `/refactor --quick` instead of running independent analysis logic. Behavior is preserved; all hygiene sweep work is delegated to `RefactorAnalyzer.quick_sweep()`.
 
+- `/implement` now writes `explicitly_invoked: true` flag to the pipeline state file (`/tmp/implement_pipeline_state.json`) on startup, enabling `unified_pre_tool.py` to hard-block coordinator code writes during active sessions regardless of `ENFORCEMENT_LEVEL` (Issue #528).
+
+### Changed
+- `unified_pre_tool.py` Agent Auth layer (Layer 2) now detects `explicitly_invoked` flag and denies Write/Edit/Bash to code files when the coordinator attempts to bypass pipeline agents during an active `/implement` session. Config files and docs remain exempt.
+- Pipeline authorized agents (`PIPELINE_AGENTS`) updated to `implementer`, `test-master`, `doc-master` — removed legacy entries `brownfield-analyzer`, `setup-wizard`, `project-bootstrapper` that no longer exist.
+
 ### Fixed
 - `RefactorAnalyzer` no longer scans `.worktrees/` or `.claude/` directories, which caused O(n²) timeout on large repos with multiple worktrees (Issue #514). Added `DEFAULT_EXCLUDE_DIRS` class constant (covers version control, caches, worktrees, session logs, archives) and `_should_skip_path()` helper used by all `rglob` traversals. The `__init__` signature now accepts an optional `exclude_dirs` parameter to override the defaults.
 

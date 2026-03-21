@@ -5,7 +5,7 @@ Bug: Model replaces broken code with `raise NotImplementedError()` and declares
 the feature "implemented". Same root cause as #206 — path of least resistance.
 
 Fix: HARD GATE "No Stubs, No Shortcuts" in implementer.md with FORBIDDEN list,
-and matching HARD GATE in implement.md STEP 5.
+and matching HARD GATE in implement.md STEP 8.
 
 These tests verify the fix infrastructure exists and would break if removed.
 """
@@ -55,10 +55,10 @@ class TestIssue310AntiStubbing:
             "Regression #310: must include usability check"
         )
 
-    def test_implement_md_step5_mentions_stubs(self):
-        """implement.md STEP 5 must mention stub/placeholder prohibition."""
+    def test_implement_md_step8_mentions_stubs(self):
+        """implement.md STEP 8 must mention stub/placeholder prohibition."""
         content = (PLUGIN_DIR / "commands" / "implement.md").read_text()
-        step5_section = content.split("### STEP 5:")[1].split("### STEP 5.5")[0]
-        assert "stub" in step5_section.lower() or "placeholder" in step5_section.lower(), (
-            "Regression #310: STEP 5 must mention stub/placeholder prohibition"
+        step8_section = content.split("### STEP 8:")[1].split("### STEP 9")[0]
+        assert "stub" in step8_section.lower() or "placeholder" in step8_section.lower(), (
+            "Regression #310: STEP 8 must mention stub/placeholder prohibition"
         )

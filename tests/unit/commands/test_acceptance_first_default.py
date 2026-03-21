@@ -3,9 +3,9 @@
 Validates structural content changes across multiple markdown files:
 1. implement.md - Default mode switches from TDD-first to acceptance-first
 2. implement.md - --tdd-first flag documented for backward compatibility
-3. implement.md - STEP 3.5 runs by default (no skip gate)
-4. implement.md - STEP 4 only runs in --tdd-first mode
-5. implement.md - STEP 7 agent count is conditional on mode
+3. implement.md - STEP 6 runs by default (no skip gate)
+4. implement.md - STEP 7 only runs in --tdd-first mode
+5. implement.md - STEP 12 agent count is conditional on mode
 6. PROJECT.md - Constraints reflect acceptance-first default
 7. implement-batch.md - Agent count not hardcoded to 9
 8. test-master.md - References --tdd-first mode invocation
@@ -127,129 +127,129 @@ class TestStep0ParsesTddFirstFlag:
         )
 
 
-class TestStep35RunsByDefault:
-    """STEP 3.5 (acceptance tests) should run by default, not only with --acceptance-first."""
+class TestStep6RunsByDefault:
+    """STEP 6 (acceptance tests) should run by default, not only with --acceptance-first."""
 
-    def test_step35_no_skip_for_acceptance_first(self, implement_content: str):
-        """STEP 3.5 should NOT have 'Skip this step if --acceptance-first was NOT specified'."""
-        step35_start = implement_content.find("### STEP 3.5")
-        assert step35_start != -1, "STEP 3.5 section not found"
+    def test_step6_no_skip_for_acceptance_first(self, implement_content: str):
+        """STEP 6 should NOT have 'Skip this step if --acceptance-first was NOT specified'."""
+        step6_start = implement_content.find("### STEP 6")
+        assert step6_start != -1, "STEP 6 section not found"
 
-        step4_start = implement_content.find("### STEP 4", step35_start + 1)
-        step35_section = implement_content[step35_start:step4_start]
+        step7_start = implement_content.find("### STEP 7", step6_start + 1)
+        step6_section = implement_content[step6_start:step7_start]
 
         # The old text said "Skip this step if --acceptance-first was NOT specified"
         # After #404, this skip condition should reference --tdd-first instead
-        assert "skip this step if `--acceptance-first` was not" not in step35_section.lower(), (
-            "STEP 3.5 still has the old skip condition for --acceptance-first. "
+        assert "skip this step if `--acceptance-first` was not" not in step6_section.lower(), (
+            "STEP 6 still has the old skip condition for --acceptance-first. "
             "Issue #404 makes acceptance-first the default, so this step should "
             "run by default and only be skipped if --tdd-first is specified."
         )
 
-    def test_step35_skips_only_for_tdd_first(self, implement_content: str):
-        """STEP 3.5 should skip only when --tdd-first is specified."""
-        step35_start = implement_content.find("### STEP 3.5")
-        step4_start = implement_content.find("### STEP 4", step35_start + 1)
-        step35_section = implement_content[step35_start:step4_start]
+    def test_step6_skips_only_for_tdd_first(self, implement_content: str):
+        """STEP 6 should skip only when --tdd-first is specified."""
+        step6_start = implement_content.find("### STEP 6")
+        step7_start = implement_content.find("### STEP 7", step6_start + 1)
+        step6_section = implement_content[step6_start:step7_start]
 
-        assert "--tdd-first" in step35_section, (
-            "STEP 3.5 should reference --tdd-first as the condition to skip. "
+        assert "--tdd-first" in step6_section, (
+            "STEP 6 should reference --tdd-first as the condition to skip. "
             "In acceptance-first default mode, this step runs unless --tdd-first is set."
         )
 
-    def test_step35_has_conftest_fallback(self, implement_content: str):
-        """STEP 3.5 should still fall back to TDD if conftest.py is missing."""
-        step35_start = implement_content.find("### STEP 3.5")
-        step4_start = implement_content.find("### STEP 4", step35_start + 1)
-        step35_section = implement_content[step35_start:step4_start]
+    def test_step6_has_conftest_fallback(self, implement_content: str):
+        """STEP 6 should still fall back to TDD if conftest.py is missing."""
+        step6_start = implement_content.find("### STEP 6")
+        step7_start = implement_content.find("### STEP 7", step6_start + 1)
+        step6_section = implement_content[step6_start:step7_start]
 
-        assert "conftest.py" in step35_section, (
-            "STEP 3.5 must still check for tests/genai/conftest.py and fall back "
+        assert "conftest.py" in step6_section, (
+            "STEP 6 must still check for tests/genai/conftest.py and fall back "
             "to TDD-first if it doesn't exist."
         )
 
 
-class TestStep4OnlyInTddFirstMode:
-    """STEP 4 (test-master TDD) should only run in --tdd-first mode."""
+class TestStep7OnlyInTddFirstMode:
+    """STEP 7 (test-master TDD) should only run in --tdd-first mode."""
 
-    def test_step4_conditional_on_tdd_first(self, implement_content: str):
-        """STEP 4 should indicate it runs only in --tdd-first mode."""
-        step4_start = implement_content.find("### STEP 4")
-        assert step4_start != -1, "STEP 4 section not found"
-
-        step5_start = implement_content.find("### STEP 5", step4_start + 1)
-        step4_section = implement_content[step4_start:step5_start]
-
-        assert "--tdd-first" in step4_section, (
-            "STEP 4 should reference --tdd-first mode. "
-            "In acceptance-first default, STEP 4 is skipped (unit tests are "
-            "generated by implementer alongside code)."
-        )
-
-    def test_step4_default_skip_language(self, implement_content: str):
-        """STEP 4 should indicate it is skipped by default (acceptance-first is default)."""
-        step4_start = implement_content.find("### STEP 4")
-        step5_start = implement_content.find("### STEP 5", step4_start + 1)
-        step4_section = implement_content[step4_start:step5_start]
-
-        # The old text said "Acceptance-first mode: Skip this step"
-        # New text should indicate default behavior skips this step
-        has_default_skip = (
-            "default" in step4_section.lower()
-            or "skip" in step4_section.lower()
-        )
-        assert has_default_skip, (
-            "STEP 4 should mention that it is skipped by default. "
-            "Since acceptance-first is now the default, STEP 4 only "
-            "runs when --tdd-first is explicitly specified."
-        )
-
-
-class TestStep5DefaultPathMentionsAcceptanceTests:
-    """STEP 5 default path should reference acceptance tests."""
-
-    def test_step5_default_mentions_acceptance(self, implement_content: str):
-        """STEP 5 should mention acceptance tests in its default (non-flag) path."""
-        step5_start = implement_content.find("### STEP 5")
-        assert step5_start != -1, "STEP 5 section not found"
-
-        step55_start = implement_content.find("### STEP 5.5", step5_start + 1)
-        step5_section = implement_content[step5_start:step55_start]
-
-        # In acceptance-first default mode, the implementer gets acceptance tests
-        # and generates unit tests alongside code
-        assert "acceptance" in step5_section.lower(), (
-            "STEP 5 should mention acceptance tests in the default path. "
-            "Since acceptance-first is the default, the implementer receives "
-            "acceptance tests from STEP 3.5 and generates unit tests alongside code."
-        )
-
-
-class TestStep7AgentCount:
-    """STEP 7 verification should reflect conditional agent count."""
-
-    def test_step7_does_not_hardcode_8_agents_unconditionally(self, implement_content: str):
-        """STEP 7 should not hardcode 'all 8 pipeline agents' as universal requirement."""
+    def test_step7_conditional_on_tdd_first(self, implement_content: str):
+        """STEP 7 should indicate it runs only in --tdd-first mode."""
         step7_start = implement_content.find("### STEP 7")
         assert step7_start != -1, "STEP 7 section not found"
 
         step8_start = implement_content.find("### STEP 8", step7_start + 1)
         step7_section = implement_content[step7_start:step8_start]
 
+        assert "--tdd-first" in step7_section, (
+            "STEP 7 should reference --tdd-first mode. "
+            "In acceptance-first default, STEP 7 is skipped (unit tests are "
+            "generated by implementer alongside code)."
+        )
+
+    def test_step7_default_skip_language(self, implement_content: str):
+        """STEP 7 should indicate it is skipped by default (acceptance-first is default)."""
+        step7_start = implement_content.find("### STEP 7")
+        step8_start = implement_content.find("### STEP 8", step7_start + 1)
+        step7_section = implement_content[step7_start:step8_start]
+
+        # The old text said "Acceptance-first mode: Skip this step"
+        # New text should indicate default behavior skips this step
+        has_default_skip = (
+            "default" in step7_section.lower()
+            or "skip" in step7_section.lower()
+        )
+        assert has_default_skip, (
+            "STEP 7 should mention that it is skipped by default. "
+            "Since acceptance-first is now the default, STEP 7 only "
+            "runs when --tdd-first is explicitly specified."
+        )
+
+
+class TestStep8DefaultPathMentionsAcceptanceTests:
+    """STEP 8 default path should reference acceptance tests."""
+
+    def test_step8_default_mentions_acceptance(self, implement_content: str):
+        """STEP 8 should mention acceptance tests in its default (non-flag) path."""
+        step8_start = implement_content.find("### STEP 8")
+        assert step8_start != -1, "STEP 8 section not found"
+
+        step9_start = implement_content.find("### STEP 9", step8_start + 1)
+        step8_section = implement_content[step8_start:step9_start]
+
+        # In acceptance-first default mode, the implementer gets acceptance tests
+        # and generates unit tests alongside code
+        assert "acceptance" in step8_section.lower(), (
+            "STEP 8 should mention acceptance tests in the default path. "
+            "Since acceptance-first is the default, the implementer receives "
+            "acceptance tests from STEP 6 and generates unit tests alongside code."
+        )
+
+
+class TestStep12AgentCount:
+    """STEP 12 verification should reflect conditional agent count."""
+
+    def test_step12_does_not_hardcode_8_agents_unconditionally(self, implement_content: str):
+        """STEP 12 should not hardcode 'all 8 pipeline agents' as universal requirement."""
+        step12_start = implement_content.find("### STEP 12")
+        assert step12_start != -1, "STEP 12 section not found"
+
+        step13_start = implement_content.find("### STEP 13", step12_start + 1)
+        step12_section = implement_content[step12_start:step13_start]
+
         # After #404, acceptance-first skips test-master, so agent count varies
-        # STEP 7 should not insist on exactly "8 pipeline agents" unconditionally
+        # STEP 12 should not insist on exactly "8 pipeline agents" unconditionally
         # It should either be conditional or list the correct agents per mode
-        old_unconditional = "all 8 pipeline agents" in step7_section.lower()
+        old_unconditional = "all 8 pipeline agents" in step12_section.lower()
         has_conditional_or_updated = (
-            "--tdd-first" in step7_section
-            or "conditional" in step7_section.lower()
-            or "mode" in step7_section.lower()
-            or "7" in step7_section  # 7 agents in acceptance-first mode
+            "--tdd-first" in step12_section
+            or "conditional" in step12_section.lower()
+            or "mode" in step12_section.lower()
+            or "7" in step12_section  # 7 agents in acceptance-first mode
         )
 
         # Either the old unconditional text is gone, or conditional logic is added
         assert not old_unconditional or has_conditional_or_updated, (
-            "STEP 7 unconditionally requires 'all 8 pipeline agents' but in "
+            "STEP 12 unconditionally requires 'all 8 pipeline agents' but in "
             "acceptance-first mode (now default), test-master is skipped. "
             "Agent verification should be conditional on the pipeline mode."
         )
@@ -262,6 +262,8 @@ class TestTechnicalDetailsAgentList:
         """Technical Details section should reflect that test-master is conditional."""
         # Find the Technical Details section near the bottom
         td_start = implement_content.find("## Technical Details")
+        if td_start == -1:
+            td_start = implement_content.find("**Agents (full)**:")
         if td_start == -1:
             td_start = implement_content.find("**Agents**:")
 

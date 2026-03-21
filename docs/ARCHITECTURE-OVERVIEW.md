@@ -106,7 +106,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 
 ## Workflow Pipeline
 
-**Autonomous Development Workflow** (11 steps):
+**Autonomous Development Workflow** (15 steps):
 
 1. **Alignment Check**: Verify feature aligns with PROJECT.md
 2. **Complexity Assessment** (v3.45.0): complexity_assessor determines pipeline scaling
