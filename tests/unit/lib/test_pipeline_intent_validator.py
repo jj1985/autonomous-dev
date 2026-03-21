@@ -284,8 +284,12 @@ class TestValidateStepOrdering:
         assert len(findings) >= 1, "#367: wrong order should produce findings"
         assert any(f.severity == "CRITICAL" for f in findings), "#367: should be CRITICAL"
 
-    def test_missing_step_detected(self):
-        """Missing test-master step produces CRITICAL finding."""
+    def test_missing_test_master_not_flagged_in_acceptance_first_mode(self):
+        """Absence of test-master must NOT produce a CRITICAL finding.
+
+        In acceptance-first mode (the default), test-master is intentionally skipped.
+        Flagging it as CRITICAL is a false positive on every default pipeline run. (#518)
+        """
         base = datetime(2026, 2, 28, 10, 0, 0)
         events = [
             _make_event(subagent_type="researcher-local", timestamp=base.isoformat()),
@@ -294,8 +298,13 @@ class TestValidateStepOrdering:
             _make_event(subagent_type="reviewer", timestamp=(base + timedelta(minutes=6)).isoformat()),
         ]
         findings = validate_step_ordering(events)
-        critical = [f for f in findings if f.severity == "CRITICAL" and "skip" in f.pattern_id.lower()]
-        assert len(critical) >= 1, "#367: missing test-master should be CRITICAL step_skipping"
+        test_master_findings = [
+            f for f in findings if f.pattern_id == "step_skipping_test_master"
+        ]
+        assert len(test_master_findings) == 0, (
+            "#518: test-master absence must not produce step_skipping_test_master finding "
+            "in acceptance-first (default) mode"
+        )
 
     def test_batch_mode_not_checked(self):
         """Events without full pipeline indicator skip ordering checks."""
