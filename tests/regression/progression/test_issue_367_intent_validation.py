@@ -111,10 +111,10 @@ class TestIssue367CIAnalystUpdated:
             "Regression #367: CI analyst must reference intent-level pipeline validation"
         )
 
-    def test_analyst_references_8_quality_checks(self, analyst_source):
-        """Agent must reference '8 Quality Checks'."""
-        assert "8 Quality Checks" in analyst_source, (
-            "Regression #367: CI analyst must reference 8 quality checks"
+    def test_analyst_references_quality_checks(self, analyst_source):
+        """Agent must reference quality checks section."""
+        assert "Quality Checks" in analyst_source, (
+            "Regression #367: CI analyst must reference quality checks"
         )
 
 

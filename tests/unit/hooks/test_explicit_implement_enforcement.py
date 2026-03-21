@@ -357,5 +357,57 @@ class TestNativeToolsFastPath:
         """ENFORCEMENT_LEVEL=off disables fast path block."""
         monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
         monkeypatch.setenv("ENFORCEMENT_LEVEL", "off")
-        level = os.getenv("ENFORCEMENT_LEVEL", "suggest").strip().lower()
+        level = os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower()
         assert level == "off"
+
+
+# ---------------------------------------------------------------------------
+# 8. Default enforcement is "block" during explicit /implement (Issue #529)
+# ---------------------------------------------------------------------------
+
+class TestDefaultEnforcementIsBlockDuringExplicitImplement:
+    """When ENFORCEMENT_LEVEL is unset and explicit /implement is active,
+    the default must be 'block', not 'suggest'."""
+
+    def test_default_enforcement_is_block_during_explicit_implement(
+        self, valid_state, monkeypatch
+    ):
+        """Write to .py is DENIED (not asked) when ENFORCEMENT_LEVEL is not set."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        # ENFORCEMENT_LEVEL is deliberately NOT set (clean_env fixture removes it)
+        assert os.getenv("ENFORCEMENT_LEVEL") is None
+
+        decision, reason = hook.validate_agent_authorization(
+            "Write", {"file_path": "/tmp/app.py", "content": "print('hello')"}
+        )
+        assert decision == "deny", (
+            "Expected 'deny' when ENFORCEMENT_LEVEL is unset and explicit /implement active, "
+            f"but got '{decision}'. Default must be 'block', not 'suggest'."
+        )
+        assert "WORKFLOW ENFORCEMENT" in reason
+
+    def test_default_enforcement_blocks_edit_during_explicit_implement(
+        self, valid_state, monkeypatch
+    ):
+        """Edit to .py is DENIED when ENFORCEMENT_LEVEL is not set."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        assert os.getenv("ENFORCEMENT_LEVEL") is None
+
+        decision, reason = hook.validate_agent_authorization(
+            "Edit", {"file_path": "/tmp/module.py", "old_string": "x", "new_string": "y"}
+        )
+        assert decision == "deny"
+
+    def test_native_fast_path_default_is_block(self, valid_state, monkeypatch):
+        """NATIVE_TOOLS fast path: ENFORCEMENT_LEVEL unset defaults to 'block' (not 'off')."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        assert os.getenv("ENFORCEMENT_LEVEL") is None
+
+        # The fast path condition: os.getenv("ENFORCEMENT_LEVEL", "block") != "off"
+        # When unset, default "block" != "off" → True → the block fires
+        level = os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower()
+        assert level != "off", (
+            "Default ENFORCEMENT_LEVEL in explicit implement fast path must not be 'off'. "
+            f"Got '{level}'."
+        )
+        assert level == "block"

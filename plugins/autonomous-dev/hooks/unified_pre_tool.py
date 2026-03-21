@@ -738,7 +738,7 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
             return ("allow", f"Pipeline agent '{agent_name}' authorized")
         # Issue #528: If /implement was explicitly invoked, block coordinator code writes
         if _is_explicit_implement_active() and tool_name in ("Write", "Edit", "Bash"):
-            level = os.getenv("ENFORCEMENT_LEVEL", "suggest").strip().lower()
+            level = os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower()
             if level != "off" and _is_code_file_target(tool_name, tool_input):
                 block_reason = (
                     "WORKFLOW ENFORCEMENT: /implement is active — code changes must be "
@@ -1224,7 +1224,7 @@ def main():
                 agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
                 if (agent_name not in PIPELINE_AGENTS
                         and _is_explicit_implement_active()
-                        and os.getenv("ENFORCEMENT_LEVEL", "suggest").strip().lower() != "off"):
+                        and os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower() != "off"):
                     if _is_code_file_target(tool_name, tool_input):
                         block_reason = (
                             "WORKFLOW ENFORCEMENT: /implement is active — code changes must be "
