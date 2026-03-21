@@ -36,6 +36,8 @@ user-invocable: true
 - ❌ You MUST NOT contain detailed agent instructions inline — those belong in agents/*.md
 - ❌ You MUST NOT do an agent's work yourself when the agent crashes — RETRY the agent once with the same prompt. If retry also crashes, BLOCK and report to user. This applies to ALL specialist agents (implementer, test-master, researcher, planner, reviewer, security-auditor, doc-master). The coordinator is a dispatcher, never a substitute.
 - ❌ You MUST NOT paraphrase, summarize, or condense agent output when passing it to the next stage. Pass the FULL agent output text verbatim. If output exceeds context limits, pass the first 2000 words plus the final summary/conclusion section — never your own restatement. The anti-pattern: "The implementer changed X, Y, Z" instead of the implementer's actual output. STEP 10 agents (reviewer, security-auditor) need the real output to do real reviews.
+- ❌ You MUST NOT skip validation agents (reviewer, security-auditor, doc-master) under context pressure — BLOCK the pipeline instead and suggest `/clear` then `/implement --resume $RUN_ID`
+- ❌ You MUST NOT pass fewer than 50% of the implementer's output words to the reviewer — if you must truncate, include the first 3000 words plus the full summary/conclusion. Log the word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)"
 
 ### Pipeline Progress Protocol
 
@@ -302,14 +304,34 @@ You MUST invoke the missing agents before proceeding to STEP 10.
 
 **FORBIDDEN**: Proceeding to STEP 10 with fewer than the minimum agents. If an agent was skipped due to a crash, the crash retry rule (forbidden list) applies — retry once, then block.
 
-### STEP 10: Sequential Validation (3 agents)
+### STEP 10: Ordered Validation — Reviewer then Security then Docs (3 agents)
 
-**Progress**: Output step banner (STEP 10/15 — Validation, Agents: reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet)). Output each agent completion as they return.
+**Progress**: Output step banner (STEP 10/15 — Ordered Validation, Agents: reviewer (Sonnet) → security-auditor (Sonnet) → doc-master (Sonnet)). Output each agent completion as they return.
 
-Invoke reviewer FIRST, then security-auditor after reviewer completes. Doc-master runs in background (non-blocking):
-1. **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary. Output: APPROVAL or issues. **MUST complete before security-auditor starts** (STEP 11 remediation gate needs reviewer result first).
-2. **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list. Output: PASS/FAIL (OWASP Top 10). Starts AFTER reviewer completes.
-3. **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. Launches in parallel with reviewer for efficiency — collected at STEP 12.
+Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — they MUST NOT be launched in the same message.
+
+**STEP 10a: Reviewer (MUST complete before 10b)**
+
+**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer. Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
+
+**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output. Output: APPROVAL or issues.
+
+**HARD GATE: Reviewer Completion** — You MUST wait for the reviewer agent to return its result BEFORE invoking security-auditor. Do NOT launch security-auditor in the same message as reviewer. This is a SEQUENTIAL constraint, not a suggestion. If you violate this gate, the pipeline is invalid.
+
+**STEP 10b: Security Auditor (ONLY after reviewer returns)**
+
+**VERBATIM PASSING REQUIRED**: Pass the FULL file list with complete diffs from STEP 8 to the security-auditor. Do NOT summarize or condense the file changes.
+
+**Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list with complete diffs. Output: PASS/FAIL (OWASP Top 10). Starts ONLY AFTER reviewer in STEP 10a has returned its verdict.
+
+**STEP 10c: Doc-Master (can run in parallel with 10a/10b)**
+
+**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. MAY be launched in parallel with STEP 10a for efficiency — collected at STEP 12.
+
+**FORBIDDEN** — STEP 10 ordering violations:
+- ❌ You MUST NOT launch reviewer and security-auditor in the same Agent tool call message
+- ❌ You MUST NOT invoke security-auditor before the reviewer has returned its verdict
+- ❌ You MUST NOT skip reviewer and go directly to security-auditor
 
 ### STEP 11: Remediation Gate — HARD GATE
 
@@ -326,10 +348,11 @@ Parse the reviewer verdict (`APPROVE` or `REQUEST_CHANGES`) and security-auditor
 
 For each cycle:
 1. **Collect BLOCKING findings** — Extract ALL findings with severity BLOCKING from the failing validator(s). Pass them VERBATIM to the implementer (do not summarize, paraphrase, or reorder).
-2. **Re-invoke implementer in REMEDIATION MODE** — **Agent**(subagent_type="implementer", model="opus") with prompt: "REMEDIATION MODE — Fix the following BLOCKING findings. Critique history: {full validator output verbatim}. BLOCKING findings: {findings verbatim}."
-3. **Run pytest** — Verify 0 failures after remediation fixes.
-4. **Re-run ONLY failing validators** — If reviewer failed, re-run reviewer. If security-auditor failed, re-run security-auditor. Do NOT re-run validators that already passed. Do NOT invoke doc-master during remediation.
-5. **Check verdicts** — If all pass → proceed to STEP 12. If any fail → next cycle.
+2. **VERBATIM PASSING REQUIRED**: Pass ALL BLOCKING findings VERBATIM to the implementer. Do NOT summarize, reword, or condense. Include the full validator output as critique history. The implementer needs the exact finding text to understand what to fix.
+3. **Re-invoke implementer in REMEDIATION MODE** — **Agent**(subagent_type="implementer", model="opus") with prompt: "REMEDIATION MODE — Fix the following BLOCKING findings. Critique history: {full validator output verbatim}. BLOCKING findings: {findings verbatim}."
+4. **Run pytest** — Verify 0 failures after remediation fixes.
+5. **Re-run ONLY failing validators** — If reviewer failed, re-run reviewer. If security-auditor failed, re-run security-auditor. Do NOT re-run validators that already passed. Do NOT invoke doc-master during remediation.
+6. **Check verdicts** — If all pass → proceed to STEP 12. If any fail → next cycle.
 
 **After 2 cycles still failing**:
 - File GitHub issues for each remaining BLOCKING finding:
@@ -348,11 +371,31 @@ For each cycle:
 - You MUST NOT re-run validators that already passed (only re-run the failing ones)
 - You MUST NOT invoke doc-master during remediation (doc-master is excluded from the remediation loop)
 
+**Reviewer Out-of-Scope Finding Tracking**
+
+When the reviewer returns `REQUEST_CHANGES` and any findings are marked as out-of-scope or deferred (e.g., "future work", "separate issue", "not in scope", "out of scope", "defer", "follow-up"), the coordinator MUST create a GitHub issue for EACH such finding:
+
+```bash
+gh issue create --title "[Review] finding-summary" --body "Out-of-scope finding from reviewer in pipeline run $RUN_ID.\n\nFinding:\n{finding verbatim}\n\nContext: {brief description of what was being implemented}" --label "auto-improvement"
+```
+
+This ensures deferred findings are tracked as searchable artifacts, not lost in session logs.
+
+**FORBIDDEN** — Out-of-scope finding violations:
+- ❌ Acknowledging an out-of-scope finding verbally without creating a tracking issue
+- ❌ Deferring a finding to "future work" without filing a GitHub issue
+- ❌ Logging findings only in Stop hook messages (these are not searchable artifacts)
+
 ### STEP 12: Final Verification + Doc-Drift Gate — HARD GATE
 
 **Progress**: Output step banner (STEP 12/15 — Final Verification + Doc-Drift Gate). Output result after.
 
-Verify all required agents ran. Default: 7 (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master). TDD-first: 8 (add test-master). If any missing, invoke NOW.
+Verify all required agents ran. Default: 7 (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master). TDD-first: 8 (add test-master). If ANY of the 7 (or 8) required agents are missing, you MUST invoke them NOW. Do NOT proceed to STEP 13 with missing agents. If context pressure prevents invoking them, BLOCK the pipeline and output:
+```
+BLOCKED: Context limit reached. Required agents missing: [list missing agents].
+Run: /clear then /implement --resume $RUN_ID to complete validation.
+```
+**FORBIDDEN**: Proceeding to STEP 13 with fewer than the required agent count. Missing validation agents (reviewer, security-auditor, doc-master) is a pipeline failure, not a degraded pass.
 
 **Doc-Drift Collection Point** — Collect doc-master background result:
 1. Wait for doc-master to complete (it was launched in STEP 10 background)

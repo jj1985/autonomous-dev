@@ -34,11 +34,11 @@ Exit codes:
 
 import json
 import os
+import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-
-import time
 
 # In-process cache for session date (avoids repeated file reads within same invocation)
 _SESSION_DATE_CACHE: dict = {}
@@ -163,6 +163,12 @@ def main():
                 "duration_ms": round((time.monotonic() - _start) * 1000),
                 "success": output_summary.get("success", True),
             }
+            # Enhanced Agent event tracking (Issue #526)
+            # Agent events are critical for pipeline completeness validation
+            # Log them with elevated priority to ensure they're captured
+            if tool_name in ("Task", "Agent"):
+                entry["priority"] = "high"
+                entry["agent_event"] = True
 
         # Write to log file
         log_dir = _find_log_dir()
@@ -173,6 +179,9 @@ def main():
 
         with open(log_file, "a") as f:
             f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+
+        # Heartbeat check for batch session monitoring (Issue #526)
+        _check_and_log_heartbeat(session_id, log_dir, date_str)
 
     except Exception:
         # Non-blocking: never crash Claude Code
@@ -217,6 +226,13 @@ def _summarize_input(tool_name: str, tool_input: dict) -> dict:
         # Word count for intent validation (Issue #367)
         prompt_text = tool_input.get("prompt", "")
         summary["prompt_word_count"] = len(prompt_text.split()) if isinstance(prompt_text, str) else 0
+        # Batch context detection (Issue #526)
+        if isinstance(prompt_text, str) and "BATCH CONTEXT" in prompt_text:
+            summary["batch_mode"] = True
+            # Extract issue number if present
+            issue_match = re.search(r'Issue #(\d+)', prompt_text)
+            if issue_match:
+                summary["batch_issue_number"] = int(issue_match.group(1))
     elif tool_name == "Skill":
         summary["skill"] = tool_input.get("skill", "")
         args = tool_input.get("args", "")
@@ -327,6 +343,42 @@ def _find_log_dir() -> Path:
 
     # Fallback to cwd
     return cwd / ".claude" / "logs" / "activity"
+
+
+def _check_and_log_heartbeat(session_id: str, log_dir: Path, date_str: str):
+    """Write a heartbeat entry if >5 minutes since last log for this session.
+
+    Helps detect when the logger stops receiving events in batch mode (Issue #526).
+
+    Args:
+        session_id: The Claude session identifier.
+        log_dir: Directory where log files are written.
+        date_str: Date string for the log file name (YYYY-MM-DD).
+    """
+    try:
+        heartbeat_file = log_dir / f".heartbeat_{session_id}"
+        now = time.time()
+
+        if heartbeat_file.exists():
+            last_beat = float(heartbeat_file.read_text().strip())
+            if now - last_beat < 300:  # 5 minutes
+                return
+
+        # Write heartbeat
+        heartbeat_file.write_text(str(now))
+
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "hook": "Heartbeat",
+            "session_id": session_id,
+            "agent": os.environ.get("CLAUDE_AGENT_NAME", "main"),
+            "message": "Logger heartbeat - still receiving events",
+        }
+        log_file = log_dir / f"{date_str}.jsonl"
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except Exception:
+        pass  # Non-blocking
 
 
 if __name__ == "__main__":

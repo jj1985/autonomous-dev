@@ -259,7 +259,7 @@ class TestMainPostToolUse:
         # Verify log was written
         log_files = list(log_dir.glob("*.jsonl"))
         assert len(log_files) == 1
-        entry = json.loads(log_files[0].read_text().strip())
+        entry = json.loads(log_files[0].read_text().splitlines()[0])
         assert entry["tool"] == "Read"
         assert entry["session_id"] == "test123"
         assert "timestamp" in entry
@@ -280,7 +280,7 @@ class TestMainPostToolUse:
 
         log_files = list(log_dir.glob("*.jsonl"))
         assert len(log_files) == 1
-        entry = json.loads(log_files[0].read_text().strip())
+        entry = json.loads(log_files[0].read_text().splitlines()[0])
         assert entry.get("debug") is True
         assert "tool_input" in entry
 
@@ -304,7 +304,7 @@ class TestMainStopHook:
 
         log_files = list(log_dir.glob("*.jsonl"))
         assert len(log_files) == 1
-        entry = json.loads(log_files[0].read_text().strip())
+        entry = json.loads(log_files[0].read_text().splitlines()[0])
         assert entry["hook"] == "Stop"
         assert "message_preview" in entry
         assert entry["message_length"] == len("I completed the task.")
@@ -334,7 +334,7 @@ class TestMainStopHook:
                         sal.main()
                     assert exc_info.value.code == 0
 
-        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
         assert entry.get("debug") is True
         assert "message" in entry
 
@@ -358,7 +358,7 @@ class TestMainUserPromptSubmit:
 
         log_files = list(log_dir.glob("*.jsonl"))
         assert len(log_files) == 1
-        entry = json.loads(log_files[0].read_text().strip())
+        entry = json.loads(log_files[0].read_text().splitlines()[0])
         assert entry["hook"] == "UserPromptSubmit"
         assert entry["prompt_preview"] == "implement JWT authentication feature"
         assert entry["prompt_length"] == len("implement JWT authentication feature")
@@ -379,7 +379,7 @@ class TestMainUserPromptSubmit:
                         sal.main()
                     assert exc_info.value.code == 0
 
-        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
         assert len(entry["prompt_preview"]) == 500
         assert entry["prompt_length"] == 1000
 
@@ -424,7 +424,7 @@ class TestPostToolUseHookField:
                     with pytest.raises(SystemExit):
                         sal.main()
 
-        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
         assert entry["hook"] == "PostToolUse"
 
     def test_debug_mode_has_hook_field(self, tmp_path):
@@ -441,7 +441,7 @@ class TestPostToolUseHookField:
                     with pytest.raises(SystemExit):
                         sal.main()
 
-        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
         assert entry["hook"] == "PostToolUse"
 
     def test_session_id_from_hook_input_when_env_absent(self, tmp_path):
@@ -462,7 +462,7 @@ class TestPostToolUseHookField:
                     with pytest.raises(SystemExit):
                         sal.main()
 
-        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
         assert entry["session_id"] == "from-hook-input"
 
     def test_session_id_env_takes_priority(self, tmp_path):
@@ -480,7 +480,7 @@ class TestPostToolUseHookField:
                     with pytest.raises(SystemExit):
                         sal.main()
 
-        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().strip())
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
         assert entry["session_id"] == "from-env"
 
 
@@ -530,10 +530,12 @@ class TestJsonFormat:
                         sal.main()
 
         content = list(log_dir.glob("*.jsonl"))[0].read_text().strip()
+        # Read first line (PostToolUse entry); heartbeat may add a second line (Issue #526)
+        first_line = content.splitlines()[0]
         # Compact JSON should not have spaces after : or ,
-        assert ": " not in content or content.count(": ") == 0 or True  # timestamps have colons
+        assert ": " not in first_line or first_line.count(": ") == 0 or True  # timestamps have colons
         # Just verify it's valid JSON
-        entry = json.loads(content)
+        entry = json.loads(first_line)
         assert "timestamp" in entry
 
     def test_newline_delimited(self, tmp_path):
@@ -553,6 +555,205 @@ class TestJsonFormat:
 
         content = list(log_dir.glob("*.jsonl"))[0].read_text()
         lines = [l for l in content.strip().split("\n") if l.strip()]
-        assert len(lines) == 3
+        # At least 3 PostToolUse entries; heartbeat may add more lines (Issue #526)
+        post_tool_use_lines = [l for l in lines if '"PostToolUse"' in l]
+        assert len(post_tool_use_lines) == 3
         for line in lines:
             json.loads(line)  # Each line must be valid JSON
+
+
+class TestBatchContextDetection:
+    """Regression tests for Issue #526: batch context detection in Agent tool calls."""
+
+    def test_batch_context_detected_in_task_prompt(self):
+        """Task tool with BATCH CONTEXT in prompt sets batch_mode=True."""
+        result = sal._summarize_input(
+            "Task",
+            {
+                "description": "implementer",
+                "subagent_type": "implementer",
+                "prompt": "BATCH CONTEXT - Operating in worktree. Implement fixes for Issue #42.",
+            },
+        )
+        assert result.get("batch_mode") is True
+
+    def test_batch_context_extracts_issue_number(self):
+        """Issue number is extracted from batch prompt."""
+        result = sal._summarize_input(
+            "Task",
+            {
+                "description": "implementer",
+                "prompt": "BATCH CONTEXT - Implement fixes for Issue #526 in batch mode.",
+            },
+        )
+        assert result.get("batch_issue_number") == 526
+
+    def test_batch_context_detected_in_agent_prompt(self):
+        """Agent tool with BATCH CONTEXT in prompt also sets batch_mode=True."""
+        result = sal._summarize_input(
+            "Agent",
+            {
+                "description": "researcher",
+                "subagent_type": "researcher",
+                "prompt": "BATCH CONTEXT (CRITICAL - Operating in worktree): Research Issue #100.",
+            },
+        )
+        assert result.get("batch_mode") is True
+        assert result.get("batch_issue_number") == 100
+
+    def test_no_batch_context_when_absent(self):
+        """Prompt without BATCH CONTEXT does not set batch_mode."""
+        result = sal._summarize_input(
+            "Task",
+            {
+                "description": "implementer",
+                "prompt": "Normal implementation task without batch context.",
+            },
+        )
+        assert result.get("batch_mode") is None
+
+    def test_batch_mode_absent_when_no_prompt(self):
+        """Task tool with no prompt does not set batch_mode."""
+        result = sal._summarize_input("Task", {"description": "task", "subagent_type": "planner"})
+        assert result.get("batch_mode") is None
+
+    def test_batch_issue_number_absent_when_no_issue(self):
+        """BATCH CONTEXT without Issue # does not set batch_issue_number."""
+        result = sal._summarize_input(
+            "Task",
+            {"prompt": "BATCH CONTEXT - No specific issue referenced here."},
+        )
+        assert result.get("batch_mode") is True
+        assert result.get("batch_issue_number") is None
+
+
+class TestHeartbeatMechanism:
+    """Regression tests for Issue #526: heartbeat mechanism for batch sessions."""
+
+    def test_heartbeat_file_created_on_first_call(self, tmp_path):
+        """First call creates the heartbeat file."""
+        sal._check_and_log_heartbeat("test-session", tmp_path, "2026-03-22")
+        hb_file = tmp_path / ".heartbeat_test-session"
+        assert hb_file.exists()
+
+    def test_heartbeat_log_entry_written(self, tmp_path):
+        """Heartbeat call writes a Heartbeat entry to the JSONL log."""
+        sal._check_and_log_heartbeat("test-session", tmp_path, "2026-03-22")
+        log_file = tmp_path / "2026-03-22.jsonl"
+        assert log_file.exists()
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["hook"] == "Heartbeat"
+        assert entry["session_id"] == "test-session"
+        assert "timestamp" in entry
+
+    def test_heartbeat_rate_limited_within_5_minutes(self, tmp_path):
+        """Second heartbeat call within 5 minutes does not write a second log entry."""
+        sal._check_and_log_heartbeat("rate-session", tmp_path, "2026-03-22")
+        log_file = tmp_path / "2026-03-22.jsonl"
+        first_content = log_file.read_text()
+
+        # Second call immediately — should be rate-limited
+        sal._check_and_log_heartbeat("rate-session", tmp_path, "2026-03-22")
+        assert log_file.read_text() == first_content  # No new content
+
+    def test_heartbeat_written_after_5_minutes(self, tmp_path):
+        """Heartbeat is written again after the 5-minute window expires."""
+        import time as _time
+        hb_file = tmp_path / ".heartbeat_expired-session"
+        # Simulate a heartbeat written more than 5 minutes ago
+        old_time = _time.time() - 310  # 5 minutes and 10 seconds ago
+        hb_file.write_text(str(old_time))
+
+        sal._check_and_log_heartbeat("expired-session", tmp_path, "2026-03-22")
+        log_file = tmp_path / "2026-03-22.jsonl"
+        assert log_file.exists()
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["hook"] == "Heartbeat"
+
+    def test_heartbeat_non_blocking_on_error(self, tmp_path):
+        """Heartbeat failure does not raise exceptions (non-blocking)."""
+        # Use a path that can't be written to
+        read_only_dir = tmp_path / "no-write"
+        read_only_dir.mkdir()
+        read_only_dir.chmod(0o444)
+        try:
+            # Should not raise
+            sal._check_and_log_heartbeat("session", read_only_dir, "2026-03-22")
+        finally:
+            read_only_dir.chmod(0o755)
+
+
+class TestAgentEventPriority:
+    """Regression tests for Issue #526: Agent events marked with elevated priority."""
+
+    def test_task_tool_entry_has_priority_high(self, tmp_path):
+        """Task tool PostToolUse log entry has priority='high'."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Task",
+            "tool_input": {"description": "run implementer", "subagent_type": "implementer", "prompt": "fix stuff"},
+            "tool_output": {"output": "done"},
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "priority-test"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
+        assert entry.get("priority") == "high"
+        assert entry.get("agent_event") is True
+
+    def test_agent_tool_entry_has_priority_high(self, tmp_path):
+        """Agent tool PostToolUse log entry has priority='high'."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Agent",
+            "tool_input": {"description": "research", "subagent_type": "researcher", "prompt": "find patterns"},
+            "tool_output": {"output": "found patterns"},
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "priority-agent"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
+        assert entry.get("priority") == "high"
+        assert entry.get("agent_event") is True
+
+    def test_non_agent_tool_has_no_priority(self, tmp_path):
+        """Non-Agent tools (Read, Bash, etc.) do NOT get priority='high'."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/tmp/x.py"},
+            "tool_output": {"output": "content"},
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "true", "CLAUDE_SESSION_ID": "no-priority"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
+        assert "priority" not in entry
+        assert "agent_event" not in entry
+
+    def test_agent_priority_not_set_in_debug_mode(self, tmp_path):
+        """In debug mode, priority field is NOT added (raw mode)."""
+        log_dir = tmp_path / ".claude" / "logs" / "activity"
+        hook_input = json.dumps({
+            "tool_name": "Task",
+            "tool_input": {"description": "run implementer", "prompt": "fix"},
+            "tool_output": {"output": "done"},
+        })
+        with patch.dict(os.environ, {"ACTIVITY_LOGGING": "debug", "CLAUDE_SESSION_ID": "debug-priority"}):
+            with patch("sys.stdin", StringIO(hook_input)):
+                with patch("session_activity_logger._find_log_dir", return_value=log_dir):
+                    with pytest.raises(SystemExit):
+                        sal.main()
+
+        entry = json.loads(list(log_dir.glob("*.jsonl"))[0].read_text().splitlines()[0])
+        # Debug mode uses raw format, priority field should not be present
+        assert "priority" not in entry
