@@ -270,10 +270,11 @@ class StateManager:
             self.start_agent(agent_name, f"Auto-started before completion: {message}")
             agent_entry = self.tracker.session_data["agents"][-1]
 
-        # IDEMPOTENCY CHECK (GitHub Issue #57)
-        # If agent is already completed, skip the update (no-op)
+        # IDEMPOTENCY CHECK (GitHub Issue #57, #541)
+        # If agent is already in a terminal state, skip the update (no-op)
         # This prevents duplicate completions when Task tool + SubagentStop both fire
-        if agent_entry.get("status") == "completed":
+        # Also prevents a late fail_agent() call from overwriting a completed agent
+        if agent_entry.get("status") in ("completed", "failed"):
             # Silently return - this is expected behavior when using Task tool
             # Task tool marks complete, then SubagentStop fires and tries again
             return
@@ -360,6 +361,13 @@ class StateManager:
             }
             self.tracker.session_data["agents"].append(entry)
         else:
+            # IDEMPOTENCY CHECK (Issue #541)
+            # If agent already in terminal state, do not overwrite
+            # Prevents SubagentStop race: complete_agent fires first, then
+            # unified_session_tracker's text-scan incorrectly calls fail_agent
+            if agent_entry.get("status") in ("completed", "failed"):
+                return
+
             # Update existing entry
             agent_entry["status"] = "failed"
             agent_entry["failed_at"] = datetime.now().isoformat()

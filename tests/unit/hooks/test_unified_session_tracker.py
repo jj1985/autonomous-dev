@@ -69,23 +69,39 @@ class TestParseStdinJson:
 
 
 class TestStopHookActive:
-    """Tests for stop_hook_active infinite loop prevention."""
+    """Tests for stop_hook_active — guard removed, hook always logs."""
 
-    def test_stop_hook_active_exits_immediately(self):
-        """When stop_hook_active=true, main() exits 0 immediately."""
+    def test_stop_hook_active_true_still_logs(self, tmp_path):
+        """When stop_hook_active=true, hook still processes event and writes JSONL.
+
+        Regression test for Issue #539: the early-return guard was causing
+        zero activity log entries in consumer repos because SubagentStop events
+        always carry stop_hook_active=true when a subagent completes.
+        """
         input_data = json.dumps({
             "agent_type": "researcher",
+            "last_assistant_message": "Research complete.",
+            "session_id": "test-session-stop",
             "stop_hook_active": True,
             "hook_event_name": "SubagentStop",
         })
+
         with patch("sys.stdin", io.StringIO(input_data)):
-            # Capture stdout to verify JSON output
-            with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
-                result = ust.main()
+            with patch("sys.stdout", new_callable=io.StringIO):
+                with patch.object(ust, "_find_log_dir", return_value=tmp_path):
+                    with patch.object(ust, "_get_session_date", return_value="2026-03-22"):
+                        with patch.object(ust, "track_basic_session", return_value=True):
+                            with patch.object(ust, "track_pipeline_completion", return_value=True):
+                                result = ust.main()
 
         assert result == 0
-        output = json.loads(mock_stdout.getvalue().strip())
-        assert output["hookSpecificOutput"]["hookEventName"] == "SubagentStop"
+
+        # The JSONL file must have been written — this is the core regression fix
+        log_file = tmp_path / "2026-03-22.jsonl"
+        assert log_file.exists(), "JSONL entry must be written even when stop_hook_active=true"
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["subagent_type"] == "researcher"
+        assert entry["hook"] == "SubagentStop"
 
 
 class TestExtractFields:
@@ -268,6 +284,25 @@ class TestMainFunction:
                         result = ust.main()
         assert result == 0
 
+    def test_main_no_hookSpecificOutput(self):
+        """main() produces no stdout output (SubagentStop hooks must not emit hookSpecificOutput).
+
+        Regression test for Issue #539: emitting hookSpecificOutput wrapper caused
+        Claude Code to misinterpret the hook response and skip logging in consumer repos.
+        """
+        with patch("sys.stdin", io.StringIO('{"agent_type":"researcher","session_id":"s1"}')):
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+                with patch.object(ust, "track_basic_session", return_value=True):
+                    with patch.object(ust, "track_pipeline_completion", return_value=True):
+                        with patch.object(ust, "_write_jsonl_entry", return_value=True):
+                            result = ust.main()
+
+        assert result == 0
+        stdout_output = mock_stdout.getvalue().strip()
+        assert stdout_output == "", (
+            f"SubagentStop hook must produce no stdout output, got: {stdout_output!r}"
+        )
+
     def test_backward_compat_env_vars(self, tmp_path):
         """Old env var path still works when stdin is empty."""
         env = {
@@ -351,14 +386,276 @@ class TestDetermineSuccess:
         """Clean output without error indicators returns True."""
         assert ust._determine_success("Implementation complete. All tests pass.") is True
 
-    def test_failure_on_error_output(self):
-        """Output with 'error' returns False."""
-        assert ust._determine_success("Fatal error: module not found") is False
+    def test_failure_on_error_prefix_line(self):
+        """Output with 'Error:' at line start returns False."""
+        assert ust._determine_success("Error: module not found") is False
 
     def test_failure_on_traceback(self):
-        """Output with 'traceback' returns False."""
+        """Output with 'Traceback (most recent call last):' returns False."""
         assert ust._determine_success("Traceback (most recent call last):") is False
 
     def test_success_on_empty(self):
         """Empty output returns True."""
         assert ust._determine_success("") is True
+
+    # --- Benign mentions that must NOT trigger failure ---
+
+    def test_benign_error_handling(self):
+        """'Fixed the error handling' is benign — returns True."""
+        assert ust._determine_success("Fixed the error handling in the parser.") is True
+
+    def test_benign_no_errors(self):
+        """'No errors found' is benign — returns True."""
+        assert ust._determine_success("No errors found in the codebase.") is True
+
+    def test_benign_error_free(self):
+        """'Error-free implementation' is benign — returns True."""
+        assert ust._determine_success("Error-free implementation completed.") is True
+
+    def test_benign_improved_error_messages(self):
+        """'Improved error messages' is benign — returns True."""
+        assert ust._determine_success("Improved error messages for better UX.") is True
+
+    # --- Actual failures that MUST trigger failure ---
+
+    def test_failure_on_failed_to(self):
+        """'Failed to connect' returns False."""
+        assert ust._determine_success("Failed to connect to the database.") is False
+
+    def test_failure_on_could_not(self):
+        """'Could not parse' returns False."""
+        assert ust._determine_success("Could not parse the configuration file.") is False
+
+    def test_failure_on_unable_to(self):
+        """'Unable to write' returns False."""
+        assert ust._determine_success("Unable to write to the output directory.") is False
+
+    def test_failure_on_unhandled_exception(self):
+        """'Unhandled exception in worker' returns False."""
+        assert ust._determine_success("Unhandled exception in worker thread.") is False
+
+    def test_failure_on_fatal_prefix(self):
+        """'Fatal:' at line start returns False."""
+        assert ust._determine_success("Fatal: out of memory") is False
+
+    def test_failure_multiline_with_traceback(self):
+        """Multiline output containing a Traceback line returns False."""
+        output = (
+            "Starting computation...\n"
+            "Traceback (most recent call last):\n"
+            "  File 'main.py', line 42\n"
+            "ValueError: bad input\n"
+        )
+        assert ust._determine_success(output) is False
+
+
+class TestMainWritesJsonlWithStopHookActive:
+    """Integration test: JSONL is written even when stop_hook_active=true (Issue #539)."""
+
+    def test_main_writes_jsonl_with_stop_hook_active(self, tmp_path):
+        """Full end-to-end: main() writes JSONL entry regardless of stop_hook_active.
+
+        This is the primary regression test for Issue #539. Before the fix,
+        the early-return guard on stop_hook_active meant zero JSONL entries were
+        written in consumer repos (where SubagentStop always sends stop_hook_active=true).
+        """
+        input_data = json.dumps({
+            "agent_type": "planner",
+            "last_assistant_message": "Plan created with 5 implementation steps.",
+            "session_id": "integration-test-session",
+            "stop_hook_active": True,
+            "hook_event_name": "SubagentStop",
+            "agent_transcript_path": "",
+        })
+
+        with patch("sys.stdin", io.StringIO(input_data)):
+            with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+                with patch.object(ust, "_find_log_dir", return_value=tmp_path):
+                    with patch.object(ust, "_get_session_date", return_value="2026-03-22"):
+                        with patch.object(ust, "track_basic_session", return_value=True):
+                            with patch.object(ust, "track_pipeline_completion", return_value=True):
+                                result = ust.main()
+
+        # Hook must exit 0
+        assert result == 0
+
+        # Hook must produce no stdout output
+        assert mock_stdout.getvalue().strip() == ""
+
+        # JSONL file must exist and contain the expected entry
+        log_file = tmp_path / "2026-03-22.jsonl"
+        assert log_file.exists(), (
+            "JSONL log file was not created — stop_hook_active guard must be removed"
+        )
+
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["hook"] == "SubagentStop"
+        assert entry["subagent_type"] == "planner"
+        assert entry["session_id"] == "integration-test-session"
+        assert entry["result_word_count"] == len(
+            "Plan created with 5 implementation steps.".split()
+        )
+        assert entry["success"] is True
+
+
+class TestJsonlFeatureRef:
+    """Tests for feature_ref inclusion in JSONL entries (Issue #540)."""
+
+    def test_jsonl_entry_includes_feature_ref(self, tmp_path):
+        """JSONL entry includes feature_ref when PIPELINE_FEATURE_REF env var is set."""
+        with patch.dict(os.environ, {"PIPELINE_FEATURE_REF": "issue-540"}, clear=False):
+            with patch.object(ust, "_find_log_dir", return_value=tmp_path):
+                with patch.object(ust, "_get_session_date", return_value="2026-03-22"):
+                    result = ust._write_jsonl_entry(
+                        subagent_type="implementer",
+                        duration_ms=3000,
+                        result_word_count=50,
+                        agent_transcript_path="",
+                        session_id="batch-session",
+                        success=True,
+                    )
+
+        assert result is True
+        log_file = tmp_path / "2026-03-22.jsonl"
+        entry = json.loads(log_file.read_text().strip())
+        assert entry["feature_ref"] == "issue-540"
+
+    def test_jsonl_entry_excludes_feature_ref_when_unset(self, tmp_path):
+        """JSONL entry omits feature_ref when PIPELINE_FEATURE_REF is not set."""
+        env = os.environ.copy()
+        env.pop("PIPELINE_FEATURE_REF", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(ust, "_find_log_dir", return_value=tmp_path):
+                with patch.object(ust, "_get_session_date", return_value="2026-03-22"):
+                    result = ust._write_jsonl_entry(
+                        subagent_type="researcher",
+                        duration_ms=1000,
+                        result_word_count=20,
+                        agent_transcript_path="",
+                        session_id="single-session",
+                        success=True,
+                    )
+
+        assert result is True
+        log_file = tmp_path / "2026-03-22.jsonl"
+        entry = json.loads(log_file.read_text().strip())
+        assert "feature_ref" not in entry
+
+
+class TestStatusPriority:
+    """Tests for status priority fix (Issue #541).
+
+    Before the fix, CLAUDE_AGENT_STATUS=success could be overridden by the
+    text-scan fallback when the output contained benign failure-pattern words.
+    After the fix, the env var is authoritative and text-scan is a fallback only.
+    """
+
+    def test_env_var_success_overrides_text_scan(self, tmp_path):
+        """CLAUDE_AGENT_STATUS=success wins even when output contains failure-pattern words.
+
+        Regression test for Issue #541: pipeline JSON status corruption.
+        Without the fix, output like 'Failed to connect' would override the env var.
+        """
+        input_data = json.dumps({
+            "agent_type": "implementer",
+            "last_assistant_message": "Failed to connect to optional cache — continuing without it.",
+            "session_id": "test-session-541",
+            "hook_event_name": "SubagentStop",
+        })
+
+        with patch.dict(os.environ, {"CLAUDE_AGENT_STATUS": "success"}, clear=False):
+            with patch("sys.stdin", io.StringIO(input_data)):
+                with patch("sys.stdout", new_callable=io.StringIO):
+                    with patch.object(ust, "track_basic_session", return_value=True):
+                        with patch.object(ust, "track_pipeline_completion", return_value=True) as mock_pipeline:
+                            with patch.object(ust, "_write_jsonl_entry", return_value=True):
+                                result = ust.main()
+
+        assert result == 0
+        mock_pipeline.assert_called_once()
+        # Status passed to track_pipeline_completion must be "success" not "error"
+        call_args = mock_pipeline.call_args
+        agent_status_arg = call_args[0][2]
+        assert agent_status_arg == "success", (
+            f"Expected status 'success' from env var, got '{agent_status_arg}'. "
+            "CLAUDE_AGENT_STATUS env var must take priority over text scan."
+        )
+
+    def test_env_var_error_respected(self, tmp_path):
+        """CLAUDE_AGENT_STATUS=error is respected even when output is clean."""
+        input_data = json.dumps({
+            "agent_type": "researcher",
+            "last_assistant_message": "Research complete. All findings documented.",
+            "session_id": "test-session-error",
+            "hook_event_name": "SubagentStop",
+        })
+
+        with patch.dict(os.environ, {"CLAUDE_AGENT_STATUS": "error"}, clear=False):
+            with patch("sys.stdin", io.StringIO(input_data)):
+                with patch("sys.stdout", new_callable=io.StringIO):
+                    with patch.object(ust, "track_basic_session", return_value=True):
+                        with patch.object(ust, "track_pipeline_completion", return_value=True) as mock_pipeline:
+                            with patch.object(ust, "_write_jsonl_entry", return_value=True):
+                                result = ust.main()
+
+        assert result == 0
+        mock_pipeline.assert_called_once()
+        call_args = mock_pipeline.call_args
+        agent_status_arg = call_args[0][2]
+        assert agent_status_arg == "error", (
+            f"Expected status 'error' from env var, got '{agent_status_arg}'."
+        )
+
+    def test_no_env_var_falls_back_to_text_scan_failure(self, tmp_path):
+        """Without CLAUDE_AGENT_STATUS, text scan determines failure."""
+        input_data = json.dumps({
+            "agent_type": "planner",
+            "last_assistant_message": "Error: could not open config file",
+            "session_id": "test-session-fallback",
+            "hook_event_name": "SubagentStop",
+        })
+
+        env = os.environ.copy()
+        env.pop("CLAUDE_AGENT_STATUS", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("sys.stdin", io.StringIO(input_data)):
+                with patch("sys.stdout", new_callable=io.StringIO):
+                    with patch.object(ust, "track_basic_session", return_value=True):
+                        with patch.object(ust, "track_pipeline_completion", return_value=True) as mock_pipeline:
+                            with patch.object(ust, "_write_jsonl_entry", return_value=True):
+                                result = ust.main()
+
+        assert result == 0
+        mock_pipeline.assert_called_once()
+        call_args = mock_pipeline.call_args
+        agent_status_arg = call_args[0][2]
+        assert agent_status_arg == "error", (
+            f"Expected text scan to detect failure and set 'error', got '{agent_status_arg}'."
+        )
+
+    def test_no_env_var_clean_output_is_success(self, tmp_path):
+        """Without CLAUDE_AGENT_STATUS and with clean output, status is 'success'."""
+        input_data = json.dumps({
+            "agent_type": "doc-master",
+            "last_assistant_message": "Documentation updated. All sections current.",
+            "session_id": "test-session-clean",
+            "hook_event_name": "SubagentStop",
+        })
+
+        env = os.environ.copy()
+        env.pop("CLAUDE_AGENT_STATUS", None)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("sys.stdin", io.StringIO(input_data)):
+                with patch("sys.stdout", new_callable=io.StringIO):
+                    with patch.object(ust, "track_basic_session", return_value=True):
+                        with patch.object(ust, "track_pipeline_completion", return_value=True) as mock_pipeline:
+                            with patch.object(ust, "_write_jsonl_entry", return_value=True):
+                                result = ust.main()
+
+        assert result == 0
+        mock_pipeline.assert_called_once()
+        call_args = mock_pipeline.call_args
+        agent_status_arg = call_args[0][2]
+        assert agent_status_arg == "success", (
+            f"Expected 'success' for clean output with no env var, got '{agent_status_arg}'."
+        )

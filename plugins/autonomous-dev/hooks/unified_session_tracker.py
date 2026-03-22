@@ -246,18 +246,53 @@ def _compute_duration_ms() -> int:
 def _determine_success(output: str) -> bool:
     """Determine success from last_assistant_message content.
 
+    Uses contextual pattern matching to distinguish actual failures from
+    benign mentions of error-related words (e.g. "error handling", "no error").
+
     Args:
         output: The last assistant message text.
 
     Returns:
-        True if no error indicators found in output.
+        True if no actual failure indicators found in output.
     """
     if not output:
         return True
 
-    error_indicators = ["error", "traceback", "failed", "exception", "fatal"]
-    output_lower = output.lower()
-    return not any(indicator in output_lower for indicator in error_indicators)
+    # Benign contexts that should NOT be treated as failures
+    benign_patterns = [
+        r"\berror[\s-]?handling\b",
+        r"\bno\s+errors?\b",
+        r"\berror[\s-]?free\b",
+        r"\bfixed\s+(?:the\s+)?error\b",
+        r"\bimproved?\s+error\b",
+        r"\berror\s+message\b",
+        r"\bwithout\s+errors?\b",
+    ]
+
+    # Actual failure patterns that indicate a real problem
+    failure_line_prefixes = re.compile(
+        r"^(Error|ERROR|Fatal|FATAL|Exception)\s*:"
+        r"|^Traceback\s*\(",  # Handles "Traceback (most recent call last):"
+        re.MULTILINE,
+    )
+    failure_phrases = re.compile(
+        r"\b(failed\s+to|could\s+not|unable\s+to|crashed|unhandled\s+exception)\b",
+        re.IGNORECASE,
+    )
+
+    # Build a version of the output with benign matches removed so that
+    # benign mentions don't trigger the failure checks below
+    scrubbed = output
+    for pattern in benign_patterns:
+        scrubbed = re.sub(pattern, "", scrubbed, flags=re.IGNORECASE)
+
+    # Check for actual failures in the scrubbed text
+    if failure_line_prefixes.search(scrubbed):
+        return False
+    if failure_phrases.search(scrubbed):
+        return False
+
+    return True
 
 
 # ============================================================================
@@ -384,12 +419,17 @@ def track_pipeline_completion(agent_name: str, agent_output: str, agent_status: 
     try:
         tracker = AgentTracker()
 
+        # Read feature_ref from environment (batch mode)
+        feature_ref = os.environ.get("PIPELINE_FEATURE_REF", "")
+
         if agent_status == "success":
             # Extract tools used
             tools = extract_tools_from_output(agent_output)
 
             # Create summary (first 100 chars)
             summary = agent_output[:100].replace("\n", " ") if agent_output else "Completed"
+            if feature_ref:
+                summary = f"[{feature_ref}] {summary}"
 
             # Auto-track agent first (idempotent)
             tracker.auto_track_from_environment(message=summary)
@@ -399,6 +439,8 @@ def track_pipeline_completion(agent_name: str, agent_output: str, agent_status: 
         else:
             # Extract error message
             error_msg = agent_output[:100].replace("\n", " ") if agent_output else "Failed"
+            if feature_ref:
+                error_msg = f"[{feature_ref}] {error_msg}"
 
             # Auto-track even for failures
             tracker.auto_track_from_environment(message=error_msg)
@@ -536,6 +578,11 @@ def _write_jsonl_entry(
             "success": success,
         }
 
+        # Include feature_ref from environment when in batch mode
+        feature_ref = os.environ.get("PIPELINE_FEATURE_REF", "")
+        if feature_ref:
+            entry["feature_ref"] = feature_ref
+
         with open(log_file, "a") as f:
             f.write(json.dumps(entry, separators=(",", ":")) + "\n")
 
@@ -562,16 +609,6 @@ def main() -> int:
         # Parse stdin JSON (SubagentStop provides input via stdin)
         hook_input = _parse_stdin()
 
-        # Check for infinite loop prevention
-        if hook_input.get("stop_hook_active", False):
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "SubagentStop"
-                }
-            }
-            print(json.dumps(output))
-            return 0
-
         # Extract fields from stdin, fall back to env vars
         if hook_input:
             agent_name = hook_input.get("agent_type", "unknown")
@@ -585,10 +622,18 @@ def main() -> int:
             session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
             agent_transcript_path_raw = ""
 
-        # Determine status from env or output content
-        agent_status = os.environ.get("CLAUDE_AGENT_STATUS", "success")
-        if agent_output and not _determine_success(agent_output):
+        # Determine status with correct priority (Issue #541):
+        # 1. CLAUDE_AGENT_STATUS env var (structural signal) — authoritative
+        # 2. _determine_success() text scan — fallback only when env var absent
+        # Previously, the text scan always ran and could override a "success" env var
+        # when the output happened to contain benign failure-pattern words.
+        env_status = os.environ.get("CLAUDE_AGENT_STATUS")
+        if env_status:
+            agent_status = env_status
+        elif agent_output and not _determine_success(agent_output):
             agent_status = "error"
+        else:
+            agent_status = "success"
 
         # Validate transcript path
         agent_transcript_path = _validate_transcript_path(agent_transcript_path_raw)
@@ -631,12 +676,6 @@ def main() -> int:
         pass
 
     # Always succeed (non-blocking hook)
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "SubagentStop"
-        }
-    }
-    print(json.dumps(output))
     return 0
 
 

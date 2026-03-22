@@ -620,3 +620,161 @@ class TestFinalizeToSession:
         )
         result = finalize_to_session("does-not-exist-99999")
         assert result is False
+
+
+# =============================================================================
+# 8. BATCH MODE FINALIZATION (Issue #540)
+# =============================================================================
+
+
+class TestFinalizeBatchMode:
+    """Tests for finalize_to_session batch mode (feature_ref parameter).
+
+    Issue #540: Pipeline JSON collapses batch into single session record.
+    These tests verify that batch mode appends per-feature entries to a
+    features[] list while preserving flat fields for v1 compatibility.
+    """
+
+    def test_finalize_batch_appends_features(self, run_id, monkeypatch, tmp_path):
+        """Calling finalize_to_session with different feature_refs appends to features[]."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        # Create and finalize first feature
+        state1 = create_pipeline(run_id, "Add login feature", mode="batch")
+        state1 = advance(state1, Step.ALIGNMENT)
+        state1 = complete_step(state1, Step.ALIGNMENT, passed=True)
+        save_pipeline(state1)
+        result1 = finalize_to_session(run_id, feature_ref="issue-101")
+        assert result1 is True
+
+        # Modify pipeline to represent second feature (reuse run_id for same session)
+        state2 = create_pipeline(run_id, "Add signup feature", mode="batch")
+        state2 = advance(state2, Step.ALIGNMENT)
+        state2 = complete_step(state2, Step.ALIGNMENT, passed=True)
+        save_pipeline(state2)
+        result2 = finalize_to_session(run_id, feature_ref="issue-102")
+        assert result2 is True
+
+        # Verify features list has 2 entries
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        data = json.loads(session_file.read_text())
+        assert "features" in data
+        assert len(data["features"]) == 2
+        refs = [f["feature_ref"] for f in data["features"]]
+        assert "issue-101" in refs
+        assert "issue-102" in refs
+
+    def test_finalize_batch_preserves_flat_fields(self, run_id, monkeypatch, tmp_path):
+        """After batch finalization, flat pipeline_summary/pipeline_steps still exist."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        state = create_pipeline(run_id, "Batch feature A", mode="batch")
+        state = advance(state, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=True)
+        save_pipeline(state)
+        finalize_to_session(run_id, feature_ref="feat-A")
+
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        data = json.loads(session_file.read_text())
+        assert "pipeline_summary" in data
+        assert "pipeline_steps" in data
+        assert data["feature"] == "Batch feature A"
+
+    def test_finalize_batch_schema_version(self, run_id, monkeypatch, tmp_path):
+        """Batch mode sets schema_version to '2.0', single mode to '1.0'."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        # Batch mode
+        state = create_pipeline(run_id, "Batch feature", mode="batch")
+        state = advance(state, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=True)
+        save_pipeline(state)
+        finalize_to_session(run_id, feature_ref="feat-1")
+
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        data = json.loads(session_file.read_text())
+        assert data["schema_version"] == "2.0"
+
+        # Single mode (different run_id)
+        single_run_id = run_id + "-single"
+        state2 = create_pipeline(single_run_id, "Single feature", mode="quick")
+        state2 = advance(state2, Step.ALIGNMENT)
+        state2 = complete_step(state2, Step.ALIGNMENT, passed=True)
+        save_pipeline(state2)
+        finalize_to_session(single_run_id)
+
+        single_file = tmp_path / "docs" / "sessions" / f"{single_run_id}-pipeline.json"
+        data2 = json.loads(single_file.read_text())
+        assert data2["schema_version"] == "1.0"
+
+    def test_finalize_batch_idempotent(self, run_id, monkeypatch, tmp_path):
+        """Calling finalize with same feature_ref twice produces only 1 entry."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        state = create_pipeline(run_id, "Idempotent feature", mode="batch")
+        state = advance(state, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=True)
+        save_pipeline(state)
+
+        finalize_to_session(run_id, feature_ref="issue-200")
+        finalize_to_session(run_id, feature_ref="issue-200")
+
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        data = json.loads(session_file.read_text())
+        assert len(data["features"]) == 1
+        assert data["features"][0]["feature_ref"] == "issue-200"
+
+    def test_finalize_single_feature_unchanged(self, run_id, monkeypatch, tmp_path):
+        """Single-feature finalize (no feature_ref) keeps flat behavior, no features key."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        state = create_pipeline(run_id, "Single feature only", mode="quick")
+        state = advance(state, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=True)
+        save_pipeline(state)
+        finalize_to_session(run_id)
+
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        data = json.loads(session_file.read_text())
+        assert "features" not in data
+        assert data["pipeline_summary"]["mode"] == "quick"
+        assert data["feature"] == "Single feature only"
+        assert data["schema_version"] == "1.0"
+
+    def test_finalize_batch_batch_id(self, run_id, monkeypatch, tmp_path):
+        """Batch mode with batch_id sets the batch_id field in session data."""
+        monkeypatch.setattr(
+            "pipeline_state.get_state_path",
+            lambda rid: tmp_path / f"pipeline_state_{rid}.json",
+        )
+        monkeypatch.chdir(tmp_path)
+
+        state = create_pipeline(run_id, "Batch with ID", mode="batch")
+        state = advance(state, Step.ALIGNMENT)
+        state = complete_step(state, Step.ALIGNMENT, passed=True)
+        save_pipeline(state)
+        finalize_to_session(run_id, feature_ref="feat-X", batch_id="batch-42")
+
+        session_file = tmp_path / "docs" / "sessions" / f"{run_id}-pipeline.json"
+        data = json.loads(session_file.read_text())
+        assert data["batch_id"] == "batch-42"

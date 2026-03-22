@@ -4125,6 +4125,7 @@ Features are only marked as completed when they truly pass ALL quality gates:
   - Links to GitHub issue if provided
 - **Returns**: Boolean indicating success
 - **Error Handling**: Logs errors without raising (non-blocking)
+- **Idempotency (Issue #57, #541)**: If agent is already in a terminal state ("completed" or "failed"), the call is a no-op. This prevents duplicate status entries when both an explicit `complete_agent()` call and the SubagentStop hook fire for the same agent.
 
 #### `fail_agent(agent_name, message)`
 - **Purpose**: Log agent failure
@@ -4136,6 +4137,7 @@ Features are only marked as completed when they truly pass ALL quality gates:
   - Error message with context
   - Status set to "failed"
 - **Security**: Error messages sanitized to prevent log injection
+- **Idempotency (Issue #541)**: If agent is already in a terminal state ("completed" or "failed"), the call is a no-op. This prevents a late `fail_agent()` call (e.g. from a text-scan fallback in `unified_session_tracker.py`) from overwriting a correctly completed agent.
 
 #### Pipeline Status Methods
 

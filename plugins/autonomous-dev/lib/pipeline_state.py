@@ -485,15 +485,29 @@ def get_completion_summary(state: PipelineState) -> Dict[str, Any]:
     }
 
 
-def finalize_to_session(run_id: str) -> bool:
+def finalize_to_session(
+    run_id: str,
+    *,
+    feature_ref: Optional[str] = None,
+    batch_id: Optional[str] = None,
+) -> bool:
     """Merge pipeline state into session record for post-analysis.
 
     Loads pipeline state from /tmp/pipeline_state_{run_id}.json, reads the
     session record from docs/sessions/{run_id}-pipeline.json (if it exists),
     merges completion data, and writes back atomically.
 
+    In batch mode (feature_ref is provided), each feature's pipeline data is
+    appended to a ``features`` list in the session record, enabling per-feature
+    analysis.  Flat ``pipeline_summary`` / ``pipeline_steps`` fields are still
+    written for backward compatibility (last-feature-wins).
+
     Args:
         run_id: The pipeline run identifier.
+        feature_ref: Optional feature reference for batch mode (e.g. issue
+            number or feature slug).  When provided, the session record uses
+            schema_version "2.0" with a ``features`` list.
+        batch_id: Optional batch identifier to tag the session record.
 
     Returns:
         True if finalization succeeded, False otherwise.
@@ -521,12 +535,33 @@ def finalize_to_session(run_id: str) -> bool:
         except (json.JSONDecodeError, OSError):
             session_data = {}
 
-    # Merge pipeline data into session record
+    # Merge pipeline data into session record (flat fields for v1 compat)
     session_data["pipeline_summary"] = summary
     session_data["pipeline_steps"] = state.steps
     session_data["run_id"] = run_id
     session_data["mode"] = state.mode
     session_data["feature"] = state.feature
+
+    if feature_ref is not None:
+        # Batch mode: append to features list (schema v2.0)
+        session_data["schema_version"] = "2.0"
+        if batch_id is not None:
+            session_data["batch_id"] = batch_id
+
+        features = session_data.setdefault("features", [])
+
+        # Idempotency: skip if feature_ref already recorded
+        existing_refs = {f.get("feature_ref") for f in features}
+        if feature_ref not in existing_refs:
+            features.append({
+                "feature_ref": feature_ref,
+                "pipeline_summary": summary,
+                "pipeline_steps": state.steps,
+                "feature": state.feature,
+            })
+    else:
+        # Single-feature mode: set v1.0 schema (default)
+        session_data.setdefault("schema_version", "1.0")
 
     # Write atomically (temp file + os.replace)
     try:
