@@ -17,6 +17,8 @@ Design Patterns:
 """
 
 import json
+import subprocess
+import sys
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -97,6 +99,88 @@ def _merge_settings_hooks(
     except Exception as e:
         audit_log("settings_merge", "exception", {"error": str(e)})
         return 0
+
+
+def _run_hook_config_generator(dispatcher: "SyncDispatcher") -> None:
+    """Run the hook config generator script if available.
+
+    This is a non-blocking enhancement that generates hook configuration
+    from the install manifest. It never raises exceptions or fails the sync.
+
+    Args:
+        dispatcher: SyncDispatcher instance with project_path and _no_generate flag
+    """
+    if dispatcher._no_generate:
+        return
+
+    # Locate the generator script
+    script_candidates = [
+        dispatcher.project_path / "scripts" / "generate_hook_config.py",
+        dispatcher.project_path / ".claude" / "scripts" / "generate_hook_config.py",
+    ]
+
+    script_path = None
+    for candidate in script_candidates:
+        if candidate.exists():
+            script_path = candidate
+            break
+
+    if script_path is None:
+        return
+
+    # Validate script path to prevent path traversal (CWE-22)
+    try:
+        script_path = script_path.resolve()
+        project_resolved = dispatcher.project_path.resolve()
+        if not str(script_path).startswith(str(project_resolved)):
+            audit_log(
+                "hook_config_generator",
+                "security_blocked",
+                {"path": str(script_path), "reason": "outside project directory"},
+            )
+            return
+    except (OSError, ValueError):
+        return
+
+    # Determine paths for the generator
+    hooks_dir = dispatcher.project_path / ".claude" / "hooks"
+    manifest_path = dispatcher.project_path / ".claude" / "config" / "install_manifest.json"
+    settings_path = dispatcher.project_path / ".claude" / "settings.local.json"
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--write",
+                "--hooks-dir", str(hooks_dir),
+                "--manifest-path", str(manifest_path),
+                "--settings-path", str(settings_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        audit_log(
+            "hook_config_generator",
+            "completed",
+            {
+                "script": str(script_path),
+                "return_code": result.returncode,
+                "stdout": result.stdout[:200] if result.stdout else "",
+                "stderr": result.stderr[:200] if result.stderr else "",
+            },
+        )
+    except Exception as e:
+        # Non-blocking: never fail sync due to generator issues
+        audit_log(
+            "hook_config_generator",
+            "error",
+            {
+                "script": str(script_path) if script_path else "not found",
+                "error": str(e),
+            },
+        )
 
 
 def dispatch_environment(dispatcher: "SyncDispatcher") -> SyncResult:
@@ -346,6 +430,9 @@ def dispatch_plugin_dev(dispatcher: "SyncDispatcher") -> SyncResult:
                 scripts_src, scripts_dst, pattern="*.py",
                 description="script files", delete_orphans=True
             )
+
+        # Run hook config generator (Issue #553) - after hooks deployed, before merge
+        _run_hook_config_generator(dispatcher)
 
         # Merge settings.json hooks from template (Issue #373)
         template_path = plugin_dir / "templates" / "settings.local.json"
@@ -652,6 +739,10 @@ def dispatch_github(dispatcher: "SyncDispatcher") -> SyncResult:
                 },
             )
             errors.append(f"Global download failed: {e}")
+
+        # Step 4.5: Run hook config generator (Issue #553)
+        # Generates hook configuration from manifest - non-blocking
+        _run_hook_config_generator(dispatcher)
 
         # Step 5: Migrate hooks from array format to object format (Issue #135)
         # This runs after global file downloads to fix any old format settings

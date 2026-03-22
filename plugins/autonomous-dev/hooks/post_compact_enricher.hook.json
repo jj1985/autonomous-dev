@@ -1,0 +1,14 @@
+{
+  "name": "post_compact_enricher",
+  "type": "lifecycle",
+  "description": "Enriches compaction recovery marker with summary after compaction",
+  "interpreter": "bash",
+  "active": true,
+  "registrations": [
+    {
+      "event": "PostCompact",
+      "matcher": "*",
+      "timeout": 5
+    }
+  ]
+}

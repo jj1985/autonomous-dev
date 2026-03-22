@@ -1,0 +1,7 @@
+{
+  "name": "validate_project_alignment",
+  "type": "utility",
+  "description": "Validates project alignment with PROJECT.md",
+  "interpreter": "python3",
+  "active": true
+}

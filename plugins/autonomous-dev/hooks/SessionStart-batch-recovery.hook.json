@@ -1,0 +1,7 @@
+{
+  "name": "SessionStart-batch-recovery",
+  "type": "utility",
+  "description": "Restores batch state on session start after /clear or compaction",
+  "interpreter": "bash",
+  "active": true
+}

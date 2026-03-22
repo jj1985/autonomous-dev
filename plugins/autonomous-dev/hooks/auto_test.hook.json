@@ -1,0 +1,7 @@
+{
+  "name": "auto_test",
+  "type": "utility",
+  "description": "Auto-runs tests after code changes",
+  "interpreter": "python3",
+  "active": true
+}

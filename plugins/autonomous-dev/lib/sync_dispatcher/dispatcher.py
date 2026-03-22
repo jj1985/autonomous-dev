@@ -61,12 +61,18 @@ class SyncDispatcher:
         _backup_dir: Temporary directory for backup files
     """
 
-    def __init__(self, project_path: Optional[str] = None, project_root: Optional[str] = None):
+    def __init__(
+        self,
+        project_path: Optional[str] = None,
+        project_root: Optional[str] = None,
+        no_generate: bool = False,
+    ):
         """Initialize dispatcher with project path.
 
         Args:
             project_path: Path to project root directory (legacy parameter)
             project_root: Path to project root directory (preferred parameter)
+            no_generate: If True, skip hook config generator invocation during sync
 
         Raises:
             ValueError: If path fails security validation
@@ -114,6 +120,7 @@ class SyncDispatcher:
                 f"See: docs/SYNC-COMMAND.md for usage"
             )
 
+        self._no_generate = no_generate
         self._backup_dir: Optional[Path] = None
 
     def sync(

@@ -1,0 +1,14 @@
+{
+  "name": "plan_mode_exit_detector",
+  "type": "lifecycle",
+  "description": "Detects ExitPlanMode tool calls and writes marker for /implement routing",
+  "interpreter": "python3",
+  "active": true,
+  "registrations": [
+    {
+      "event": "PostToolUse",
+      "matcher": "ExitPlanMode",
+      "timeout": 3
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "UserPromptSubmit-orchestrator",
+  "type": "utility",
+  "description": "Orchestrates user prompt submission workflow",
+  "interpreter": "bash",
+  "active": true
+}

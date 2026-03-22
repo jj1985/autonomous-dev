@@ -1,0 +1,14 @@
+{
+  "name": "unified_session_tracker",
+  "type": "lifecycle",
+  "description": "Session logging, pipeline tracking, and progress updates for subagents",
+  "interpreter": "python3",
+  "active": true,
+  "registrations": [
+    {
+      "event": "SubagentStop",
+      "matcher": "*",
+      "timeout": 5
+    }
+  ]
+}

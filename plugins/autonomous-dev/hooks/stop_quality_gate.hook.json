@@ -1,0 +1,7 @@
+{
+  "name": "stop_quality_gate",
+  "type": "utility",
+  "description": "Quality gate validation for Stop events",
+  "interpreter": "python3",
+  "active": true
+}

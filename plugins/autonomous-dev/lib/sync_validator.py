@@ -268,38 +268,113 @@ class SyncValidator:
             hooks = settings.get("hooks", [])
             invalid_hooks = []
 
-            for hook in hooks:
-                if not isinstance(hook, dict):
-                    continue
+            if isinstance(hooks, dict):
+                # Object format (modern):
+                # {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command",
+                #   "command": "python3 ~/.claude/hooks/file.py"}]}]}
+                hook_paths = self._extract_hook_paths_from_object_format(hooks)
+                for hook_cmd_path in hook_paths:
+                    # Expand ~ in paths
+                    expanded = os.path.expanduser(hook_cmd_path)
+                    full_path = Path(expanded)
 
-                hook_path = hook.get("path", "")
-                if not hook_path:
-                    continue
+                    if not full_path.exists():
+                        invalid_hooks.append(hook_cmd_path)
+                        result.passed = False
+                        result.issues.append(ValidationIssue(
+                            severity="error",
+                            category="settings",
+                            message=f"Hook command file not found: {hook_cmd_path}",
+                            file_path=str(settings_path),
+                            auto_fixable=False,
+                        ))
+                        result.manual_fixes.append(ManualFix(
+                            issue=f"Hook references missing file: {hook_cmd_path}",
+                            steps=[
+                                f"Verify the file exists at: {expanded}",
+                                "Run /sync --github to re-download hooks",
+                                "Or remove the hook entry from settings",
+                            ],
+                        ))
+            elif isinstance(hooks, list):
+                # Legacy array format
+                for hook in hooks:
+                    if not isinstance(hook, dict):
+                        continue
 
-                # Resolve hook path (may be relative to .claude/)
-                if hook_path.startswith("./"):
-                    full_path = self.claude_dir / hook_path[2:]
-                elif hook_path.startswith("/"):
-                    full_path = Path(hook_path)
-                else:
-                    full_path = self.claude_dir / "hooks" / hook_path
+                    hook_path = hook.get("path", "")
+                    if not hook_path:
+                        continue
 
-                if not full_path.exists():
-                    invalid_hooks.append(hook_path)
-                    result.issues.append(ValidationIssue(
-                        severity="warning",
-                        category="settings",
-                        message=f"Hook path not found: {hook_path}",
-                        file_path=str(settings_path),
-                        auto_fixable=True,
-                        fix_action=f"Remove invalid hook entry: {hook_path}",
-                    ))
+                    # Expand ~ in paths
+                    if "~" in hook_path:
+                        expanded = os.path.expanduser(hook_path)
+                    else:
+                        expanded = hook_path
+
+                    # Resolve hook path (may be relative to .claude/)
+                    if expanded.startswith("./"):
+                        full_path = self.claude_dir / expanded[2:]
+                    elif expanded.startswith("/") or expanded.startswith(str(Path.home())):
+                        full_path = Path(expanded)
+                    else:
+                        full_path = self.claude_dir / "hooks" / expanded
+
+                    if not full_path.exists():
+                        invalid_hooks.append(hook_path)
+                        result.issues.append(ValidationIssue(
+                            severity="warning",
+                            category="settings",
+                            message=f"Hook path not found: {hook_path}",
+                            file_path=str(settings_path),
+                            auto_fixable=True,
+                            fix_action=f"Remove invalid hook entry: {hook_path}",
+                        ))
 
             # Note: Claude Code permission patterns use glob-like syntax
             # (e.g., "Read(**)", "Bash(git:*)") - not regex
             # We skip regex validation as these are valid Claude Code patterns
 
         return result
+
+    @staticmethod
+    def _extract_hook_paths_from_object_format(hooks: dict) -> list:
+        """Extract file paths from object-format hook configuration.
+
+        Parses the modern hook configuration format and extracts file paths
+        from command strings using regex.
+
+        Args:
+            hooks: Dict of event_name -> list of matcher entries, where each
+                entry has a "hooks" list with command strings.
+
+        Returns:
+            List of file path strings found in hook commands.
+        """
+        paths = []
+        path_pattern = re.compile(r'[\w./~-]+\.(py|sh)')
+
+        for event_name, entries in hooks.items():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                hook_list = entry.get("hooks", [])
+                if not isinstance(hook_list, list):
+                    continue
+                for hook_def in hook_list:
+                    if not isinstance(hook_def, dict):
+                        continue
+                    command = hook_def.get("command", "")
+                    if not command:
+                        continue
+                    matches = path_pattern.findall(command)
+                    # findall returns list of group matches (extensions), re-search for full match
+                    for match in path_pattern.finditer(command):
+                        paths.append(match.group(0))
+
+        return paths
 
     def validate_hooks(self) -> PhaseResult:
         """Phase 2: Validate hook integrity.

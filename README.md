@@ -538,6 +538,7 @@ Layer 4: Batch Approver        → Caches user consent for identical operations
 | [Architecture](docs/ARCHITECTURE-OVERVIEW.md) | Technical architecture deep-dive |
 | [Agents](docs/AGENTS.md) | 8-agent pipeline + utility agents |
 | [Hooks](docs/HOOKS.md) | Active automation hooks reference |
+| [Hook Sidecar Schema](docs/HOOK-SIDECAR-SCHEMA.md) | Declarative `.hook.json` metadata for hook registration |
 | [Skills](docs/ARCHITECTURE-OVERVIEW.md) | Skills and agent integration |
 | [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) | Why pipelines beat direct implementation |
 | [Performance](docs/PERFORMANCE.md) | Benchmarks and optimization history |

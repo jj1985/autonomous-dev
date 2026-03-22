@@ -1,0 +1,22 @@
+{
+  "name": "session_activity_logger",
+  "type": "lifecycle",
+  "description": "Structured JSONL activity logging for continuous improvement",
+  "interpreter": "python3",
+  "active": true,
+  "env": {
+    "ACTIVITY_LOGGING": "true"
+  },
+  "registrations": [
+    {
+      "event": "PostToolUse",
+      "matcher": "*",
+      "timeout": 5
+    },
+    {
+      "event": "Stop",
+      "matcher": "*",
+      "timeout": 3
+    }
+  ]
+}

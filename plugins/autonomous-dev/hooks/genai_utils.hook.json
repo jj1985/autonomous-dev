@@ -1,0 +1,7 @@
+{
+  "name": "genai_utils",
+  "type": "utility",
+  "description": "GenAI utility functions imported by other hooks (not a lifecycle hook)",
+  "interpreter": "python3",
+  "active": true
+}

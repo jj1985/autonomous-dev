@@ -93,6 +93,8 @@ Reusable Python libraries for security, validation, automation, and more. See [d
 
 Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.md](docs/HOOKS.md) for complete reference.
 
+**Hook Registration**: Hooks declare lifecycle events and configurations via `.hook.json` sidecar files (Issue #551). See [docs/HOOK-SIDECAR-SCHEMA.md](docs/HOOK-SIDECAR-SCHEMA.md) for the declarative metadata schema (lifecycle events, matchers, timeouts, environment variables, type semantics).
+
 **Key Features**: Dispatcher pattern (env var control), graceful degradation (non-blocking), backward compatible
 
 **Active Hooks**:

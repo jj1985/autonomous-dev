@@ -1,0 +1,7 @@
+{
+  "name": "genai_prompts",
+  "type": "utility",
+  "description": "GenAI prompt templates imported by other hooks",
+  "interpreter": "python3",
+  "active": true
+}
