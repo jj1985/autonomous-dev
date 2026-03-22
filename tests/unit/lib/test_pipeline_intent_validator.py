@@ -32,6 +32,7 @@ from pipeline_intent_validator import (
     Finding,
     PipelineEvent,
     detect_context_dropping,
+    detect_doc_verdict_missing,
     detect_ghost_invocations,
     detect_hard_gate_ordering,
     detect_parallelization_violations,
@@ -744,3 +745,84 @@ class TestDataStructures:
         assert f.severity == "CRITICAL"
         assert f.finding_type == "step_ordering"
         assert len(f.evidence) == 2
+
+
+class TestDetectDocVerdictMissing:
+    """Tests for detect_doc_verdict_missing function (Issue #543)."""
+
+    def test_doc_master_zero_output_flagged(self):
+        """doc-master with result_word_count=0 produces WARNING finding."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                result_word_count=0,
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 1
+        assert findings[0].finding_type == "doc_verdict_missing"
+        assert findings[0].severity == "WARNING"
+        assert findings[0].pattern_id == "doc_verdict_missing"
+        assert "[DOC-VERDICT-MISSING]" in findings[0].description
+
+    def test_doc_master_normal_output_passes(self):
+        """doc-master with result_word_count=500 produces no findings."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                result_word_count=500,
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 0
+
+    def test_doc_master_failed_flagged(self):
+        """doc-master with success=False produces a finding."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                result_word_count=200,
+                success=False,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 1
+        assert findings[0].finding_type == "doc_verdict_missing"
+        assert findings[0].severity == "WARNING"
+        assert "[DOC-VERDICT-MISSING]" in findings[0].description
+
+    def test_no_doc_master_events_no_findings(self):
+        """Events without doc-master produce no findings."""
+        events = [
+            _make_event(subagent_type="researcher", tool="Agent", result_word_count=500),
+            _make_event(subagent_type="implementer", tool="Agent", result_word_count=1000),
+            _make_event(subagent_type="reviewer", tool="Agent", result_word_count=300),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 0
+
+    def test_integrated_in_validate_pipeline_intent(self, tmp_path):
+        """Verify detect_doc_verdict_missing is wired into validate_pipeline_intent."""
+        log_file = tmp_path / "doc_missing.jsonl"
+        entry = {
+            "timestamp": "2026-03-22T10:00:00+00:00",
+            "tool": "Agent",
+            "input_summary": {
+                "subagent_type": "doc-master",
+                "pipeline_action": "agent_invocation",
+                "prompt_word_count": 500,
+            },
+            "output_summary": {"success": True, "result_word_count": 0},
+            "session_id": "test-session",
+            "agent": "main",
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+        findings = validate_pipeline_intent(log_file, session_id="test-session")
+        doc_findings = [f for f in findings if f.finding_type == "doc_verdict_missing"]
+        assert len(doc_findings) == 1
+        assert "[DOC-VERDICT-MISSING]" in doc_findings[0].description

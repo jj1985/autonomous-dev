@@ -74,7 +74,7 @@ The autonomous-dev plugin includes shared libraries organized into the following
 56. **training_metrics.py** - Tulu3 multi-dimensional scoring and DPO preference generation for LLM training quality assessment (v1.0.0, Issue #279)
 57. **coverage_baseline.py** - Coverage baseline storage and regression detection for test quality gates (v1.0.0, Issue #332)
 58. **batch_git_finalize.py** - Batch git finalization with auto-commit, merge, and worktree cleanup (v1.0.0, Issues #333-334)
-59. **pipeline_intent_validator.py** - Intent-level pipeline validation via JSONL session logs for coordinator-level violations (Issue #367)
+59. **pipeline_intent_validator.py** - Intent-level pipeline validation via JSONL session logs for coordinator-level violations. Detects step ordering, hard gate bypasses, context dropping, parallelization violations, progressive prompt compression across batch issues (Issue #367, compression detection Issue #544), and doc-master verdict timeouts/failures (Issue #543)
 60. **pipeline_state.py** - Pipeline state tracker with gate enforcement (stdlib only, zero dependencies) (Issue #402)
 61. **step5_quality_gate.py** - STEP 5 quality gate: runs tests with smart routing or full suite, checks coverage regression, enforces skip baseline (Issue #508)
 62. **test_routing.py** - Smart test routing: classifies changed files into categories and computes minimal pytest marker expression to skip irrelevant test tiers; `--full-tests` override runs complete suite (Issue #508)

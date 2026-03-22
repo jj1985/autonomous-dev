@@ -249,6 +249,22 @@ model: "sonnet"
 
 **This applies to ALL pipeline agents when running in batch mode (7 in default acceptance-first mode, 8 in `--tdd-first` mode).**
 
+**HARD GATE: Prompt Integrity Across Issues** (Issue #544)
+
+The coordinator MUST maintain consistent prompt quality across all issues in the batch. Progressive prompt compression — where later issues receive shorter, summarized, or truncated prompts — is a known regression pattern that degrades security review quality.
+
+**Requirements**:
+- Each agent MUST receive prompts of comparable length across all issues in the batch
+- Security-critical agents (security-auditor, reviewer) MUST receive at least 80 words in their prompts
+- The coordinator MUST log prompt word counts per agent per issue for post-hoc analysis
+- The pipeline_intent_validator detects shrinkage > 25% from the baseline (first issue) automatically
+
+**FORBIDDEN** (violations = batch failure):
+- Passing progressively shorter prompts to security-auditor or reviewer in later batch issues
+- Omitting diff context or implementation details from validation agent prompts due to context pressure
+- Summarizing implementer output for validation agents when full output was passed in earlier issues
+- Reducing prompt detail for any agent as the batch progresses (all issues deserve equal analysis depth)
+
 **BATCH LOGGING: Coordinator-Side Agent Completion Log** (Issue #526)
 
 The session_activity_logger hook may miss agent completions in batch context (Issue #526). To ensure complete observability, the coordinator MUST emit a structured log entry after EACH agent returns in batch mode:

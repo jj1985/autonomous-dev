@@ -60,6 +60,7 @@ Models predictably game evaluations. Detect these patterns:
    - PASS with `docs-checked: 0` when changed files overlap with `covers:` mappings → `[DOC-DRIFT-UNCHECKED]`
    - Only CHANGELOG updated when `covers:` mappings indicate affected docs → `[DOC-DRIFT-SHALLOW]`
    Note: doc-master launches in background at STEP 6 and is collected at STEP 7 before git operations.
+   - Programmatic detection: `detect_doc_verdict_missing()` in `pipeline_intent_validator.py` flags doc-master events with result_word_count=0 as `[DOC-VERDICT-MISSING]`. Use `validate_pipeline_intent()` to get these findings from session logs.
 10. **Extension health** (severity: info): If `.claude/hooks/extensions/` exists and contains .py files, check for stderr output from extensions that may indicate silent crashes:
     ```bash
     ls .claude/hooks/extensions/*.py 2>/dev/null && echo "Extensions present" || echo "No extensions"

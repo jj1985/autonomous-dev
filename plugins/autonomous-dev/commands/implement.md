@@ -407,7 +407,10 @@ Run: /clear then /implement --resume $RUN_ID to complete validation.
    ```
    Display each finding. User must address before proceeding.
 5. If doc-master made fixes: stage them with `git add`
-6. If doc-master crashed or no verdict found: retry once (existing crash policy). If retry also fails, log `[DOC-VERDICT-MISSING]` as warning and proceed.
+6. If doc-master returned empty output (has_output: false OR result_word_count: 0) OR no DOC-DRIFT-VERDICT found:
+   - **Retry once** with reduced context: re-invoke doc-master with ONLY the changed file list and feature description (no implementer output, no reviewer output). Log: `[DOC-VERDICT-RETRY] Re-invoking doc-master with reduced context`
+   - If retry produces a DOC-DRIFT-VERDICT: use that verdict
+   - If retry also fails or returns empty: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry — proceeding with warning`
 
 ### STEP 13: Report and Finalize
 

@@ -39,6 +39,7 @@ class PipelineEvent:
     duration_ms: int = 0
     success: bool = True
     agent_transcript_path: str = ""
+    batch_issue_number: int = 0
 
 
 @dataclass
@@ -94,6 +95,16 @@ TIMESTAMP_WINDOW_SECONDS = 5
 # Threshold for parallel serialization detection (seconds)
 PARALLEL_SERIALIZED_THRESHOLD = 30
 
+# Agents whose prompts are security-critical and must not be compressed
+COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer"}
+
+# Maximum allowed prompt shrinkage ratio from baseline (issue 1) to later issues
+# e.g. 0.25 means if issue 3's prompt is < 25% of issue 1's prompt, flag it
+MAX_PROMPT_SHRINKAGE_RATIO = 0.25
+
+# Minimum prompt word count for security-critical agents
+MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
+
 
 def parse_session_logs(
     log_path: Path,
@@ -137,6 +148,11 @@ def parse_session_logs(
         output_summary = entry.get("output_summary", {})
         pipeline_action = input_summary.get("pipeline_action", "")
 
+        # Extract batch_issue_number from input_summary (default 0 = non-batch)
+        batch_issue_number = input_summary.get("batch_issue_number", 0)
+        if not isinstance(batch_issue_number, int):
+            batch_issue_number = 0
+
         # Include Task (agent invocations) and Bash test_run events
         if tool in AGENT_TOOL_NAMES and pipeline_action == "agent_invocation":
             events.append(PipelineEvent(
@@ -149,6 +165,7 @@ def parse_session_logs(
                 result_word_count=output_summary.get("result_word_count", 0),
                 duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
+                batch_issue_number=batch_issue_number,
             ))
         elif tool == "Bash" and pipeline_action == "test_run":
             events.append(PipelineEvent(
@@ -479,6 +496,196 @@ def detect_ghost_invocations(
     return findings
 
 
+def detect_progressive_compression(events: List[PipelineEvent]) -> List[Finding]:
+    """Detect progressive prompt compression across batch issues.
+
+    Groups agent events by batch_issue_number and compares prompt_word_count
+    across issues for each agent type. Flags when prompts shrink beyond
+    MAX_PROMPT_SHRINKAGE_RATIO from the baseline (issue with lowest number).
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of findings for progressive compression violations.
+    """
+    findings: List[Finding] = []
+
+    # Filter to batch agent invocations with valid batch_issue_number
+    batch_events = [
+        e for e in events
+        if e.tool in AGENT_TOOL_NAMES
+        and e.subagent_type
+        and e.batch_issue_number > 0
+        and e.prompt_word_count > 0
+    ]
+
+    if not batch_events:
+        return findings
+
+    # Group by agent type -> {issue_number: prompt_word_count}
+    # Use the first (earliest) event per agent per issue as representative
+    agent_issue_prompts: dict[str, dict[int, int]] = {}
+    for e in batch_events:
+        agent_type = e.subagent_type
+        if agent_type not in agent_issue_prompts:
+            agent_issue_prompts[agent_type] = {}
+        # Only record the first prompt per agent per issue
+        if e.batch_issue_number not in agent_issue_prompts[agent_type]:
+            agent_issue_prompts[agent_type][e.batch_issue_number] = e.prompt_word_count
+
+    # For each agent, compare later issues against the baseline (lowest issue number)
+    for agent_type, issue_prompts in agent_issue_prompts.items():
+        if len(issue_prompts) < 2:
+            continue
+
+        sorted_issues = sorted(issue_prompts.keys())
+        baseline_issue = sorted_issues[0]
+        baseline_words = issue_prompts[baseline_issue]
+
+        if baseline_words == 0:
+            continue
+
+        for issue_num in sorted_issues[1:]:
+            current_words = issue_prompts[issue_num]
+            ratio = current_words / baseline_words
+
+            if ratio < (1 - MAX_PROMPT_SHRINKAGE_RATIO):
+                shrinkage_pct = (1 - ratio) * 100
+
+                severity = (
+                    "CRITICAL"
+                    if agent_type in COMPRESSION_CRITICAL_AGENTS
+                    else "WARNING"
+                )
+
+                findings.append(Finding(
+                    finding_type="progressive_compression",
+                    severity=severity,
+                    pattern_id="progressive_prompt_compression",
+                    description=(
+                        f"Agent {agent_type} prompt shrank {shrinkage_pct:.0f}% "
+                        f"from issue #{baseline_issue} ({baseline_words} words) to "
+                        f"issue #{issue_num} ({current_words} words) "
+                        f"— progressive compression detected "
+                        f"(threshold: {MAX_PROMPT_SHRINKAGE_RATIO:.0%} shrinkage)"
+                    ),
+                    evidence=[
+                        f"baseline (issue #{baseline_issue}): {baseline_words} words",
+                        f"current (issue #{issue_num}): {current_words} words",
+                        f"ratio: {ratio:.3f} (threshold: {1 - MAX_PROMPT_SHRINKAGE_RATIO})",
+                        f"agent_type: {agent_type}",
+                    ],
+                ))
+
+    return findings
+
+
+def detect_minimum_prompt_violation(events: List[PipelineEvent]) -> List[Finding]:
+    """Check security-critical agents have minimum prompt word counts.
+
+    Ensures that agents in COMPRESSION_CRITICAL_AGENTS receive prompts of at
+    least MIN_CRITICAL_AGENT_PROMPT_WORDS words. Returns CRITICAL findings
+    for violations.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of findings for minimum prompt violations.
+    """
+    findings: List[Finding] = []
+
+    # Filter to agent invocations for security-critical agents
+    critical_events = [
+        e for e in events
+        if e.tool in AGENT_TOOL_NAMES
+        and e.subagent_type in COMPRESSION_CRITICAL_AGENTS
+        and e.prompt_word_count > 0
+    ]
+
+    for event in critical_events:
+        if event.prompt_word_count < MIN_CRITICAL_AGENT_PROMPT_WORDS:
+            findings.append(Finding(
+                finding_type="minimum_prompt_violation",
+                severity="CRITICAL",
+                pattern_id="minimum_prompt_violation",
+                description=(
+                    f"Security-critical agent {event.subagent_type} received only "
+                    f"{event.prompt_word_count} prompt words "
+                    f"(minimum: {MIN_CRITICAL_AGENT_PROMPT_WORDS}) "
+                    f"— prompt too short for meaningful analysis"
+                ),
+                evidence=[
+                    f"agent_type: {event.subagent_type}",
+                    f"prompt_word_count: {event.prompt_word_count}",
+                    f"minimum_required: {MIN_CRITICAL_AGENT_PROMPT_WORDS}",
+                    f"timestamp: {event.timestamp}",
+                ],
+            ))
+
+    return findings
+
+
+def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
+    """Detect doc-master invocations that produced no output or failed.
+
+    Flags doc-master events where result_word_count == 0 (empty output / timeout)
+    or success == False (crash / error). These indicate the doc-master did not
+    produce a DOC-DRIFT-VERDICT, which means documentation drift may go undetected.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of findings for doc-master verdict issues.
+    """
+    findings: List[Finding] = []
+
+    doc_master_events = [
+        e for e in events
+        if e.tool in AGENT_TOOL_NAMES and e.subagent_type == "doc-master"
+    ]
+
+    for event in doc_master_events:
+        if event.result_word_count == 0:
+            findings.append(Finding(
+                finding_type="doc_verdict_missing",
+                severity="WARNING",
+                pattern_id="doc_verdict_missing",
+                description=(
+                    f"[DOC-VERDICT-MISSING] doc-master produced 0 result words "
+                    f"at {event.timestamp} — no DOC-DRIFT-VERDICT generated. "
+                    f"Documentation drift may go undetected."
+                ),
+                evidence=[
+                    f"subagent_type: {event.subagent_type}",
+                    f"result_word_count: {event.result_word_count}",
+                    f"timestamp: {event.timestamp}",
+                    f"success: {event.success}",
+                ],
+            ))
+        elif not event.success:
+            findings.append(Finding(
+                finding_type="doc_verdict_missing",
+                severity="WARNING",
+                pattern_id="doc_verdict_missing",
+                description=(
+                    f"[DOC-VERDICT-MISSING] doc-master failed (success=False) "
+                    f"at {event.timestamp} — no DOC-DRIFT-VERDICT generated. "
+                    f"Documentation drift may go undetected."
+                ),
+                evidence=[
+                    f"subagent_type: {event.subagent_type}",
+                    f"result_word_count: {event.result_word_count}",
+                    f"timestamp: {event.timestamp}",
+                    f"success: {event.success}",
+                ],
+            ))
+
+    return findings
+
+
 def validate_pipeline_intent(
     log_path: Path,
     *,
@@ -503,4 +710,7 @@ def validate_pipeline_intent(
     findings.extend(detect_context_dropping(events))
     findings.extend(detect_parallelization_violations(events))
     findings.extend(detect_ghost_invocations(events))
+    findings.extend(detect_progressive_compression(events))
+    findings.extend(detect_minimum_prompt_violation(events))
+    findings.extend(detect_doc_verdict_missing(events))
     return findings
