@@ -1,0 +1,7 @@
+{
+  "name": "enforce_tdd",
+  "type": "utility",
+  "description": "Enforces test-driven development workflow",
+  "interpreter": "python3",
+  "active": true
+}

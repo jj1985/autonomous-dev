@@ -1,0 +1,7 @@
+{
+  "name": "validate_command_file_ops",
+  "type": "utility",
+  "description": "Validates file operations in command hooks",
+  "interpreter": "python3",
+  "active": true
+}

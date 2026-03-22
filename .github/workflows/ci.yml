@@ -37,6 +37,16 @@ jobs:
           echo "Validating test categorization..."
           python scripts/validate_test_categorization.py --report
 
+      - name: Validate hook sidecar consistency
+        run: |
+          echo "Validating hook registration consistency..."
+          pip install jsonschema -q
+          python scripts/generate_hook_config.py --check \
+            --hooks-dir plugins/autonomous-dev/hooks \
+            --manifest-path plugins/autonomous-dev/config/install_manifest.json \
+            --settings-path plugins/autonomous-dev/config/global_settings_template.json \
+            --schema-path plugins/autonomous-dev/config/hook-metadata.schema.json
+
       - name: Run smoke tests
         run: |
           echo "Running smoke tests (fast sanity check)..."

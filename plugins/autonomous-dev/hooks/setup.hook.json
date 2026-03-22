@@ -1,0 +1,7 @@
+{
+  "name": "setup",
+  "type": "utility",
+  "description": "Plugin setup and initialization utilities",
+  "interpreter": "python3",
+  "active": true
+}

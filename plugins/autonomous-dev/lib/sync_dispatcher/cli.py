@@ -102,6 +102,66 @@ def sync_marketplace(
     )
 
 
+def _run_hook_verify() -> int:
+    """Run hook sidecar consistency check via generate_hook_config.py --check.
+
+    Locates the generator script relative to the project root and executes it
+    in --check mode. Reports consistency status without deploying.
+
+    Returns:
+        0 if hook sidecars are consistent, 1 if drift detected or script not found.
+    """
+    import subprocess
+
+    # Find the project root by looking for scripts/generate_hook_config.py
+    project_root = Path(os.getcwd())
+    generator = project_root / "scripts" / "generate_hook_config.py"
+
+    if not generator.is_file():
+        print(
+            f"Hook config generator not found: {generator}\n"
+            f"Expected: scripts/generate_hook_config.py in project root\n"
+            f"See: docs/HOOK-SIDECAR-SCHEMA.md",
+            file=sys.stderr,
+        )
+        return 1
+
+    hooks_dir = project_root / "plugins" / "autonomous-dev" / "hooks"
+    manifest_path = project_root / "plugins" / "autonomous-dev" / "config" / "install_manifest.json"
+    settings_path = (
+        project_root / "plugins" / "autonomous-dev" / "config" / "global_settings_template.json"
+    )
+    schema_path = (
+        project_root / "plugins" / "autonomous-dev" / "config" / "hook-metadata.schema.json"
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable, str(generator), "--check",
+            "--hooks-dir", str(hooks_dir),
+            "--manifest-path", str(manifest_path),
+            "--settings-path", str(settings_path),
+            "--schema-path", str(schema_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+
+    if result.returncode == 0:
+        print("Hook sidecar consistency: OK")
+    else:
+        print("Hook sidecar consistency: DRIFT DETECTED")
+        print("Fix: python3 scripts/generate_hook_config.py --write")
+
+    return result.returncode
+
+
 def main() -> int:
     """CLI wrapper for sync_dispatcher.py.
 
@@ -198,9 +258,43 @@ Exit Codes:
         action='store_true',
         help='Skip global ~/.claude/ files (uninstall mode only)'
     )
+    parser.add_argument(
+        '--no-generate',
+        action='store_true',
+        help='Skip hook config generator during sync'
+    )
+    parser.add_argument(
+        '--verify',
+        action='store_true',
+        help='Run hook sidecar consistency check without syncing'
+    )
+
+    def _run_hook_verify() -> int:
+        """Run hook sidecar consistency check without syncing."""
+        import subprocess as _sp
+        project_root = Path(os.getcwd())
+        script = project_root / "scripts" / "generate_hook_config.py"
+        if not script.exists():
+            script = project_root / ".claude" / "scripts" / "generate_hook_config.py"
+        if not script.exists():
+            print("Error: generate_hook_config.py not found", file=sys.stderr)
+            return 1
+        result = _sp.run(
+            [sys.executable, str(script), "--check",
+             "--hooks-dir", str(project_root / "plugins/autonomous-dev/hooks"),
+             "--manifest-path", str(project_root / "plugins/autonomous-dev/config/install_manifest.json"),
+             "--settings-path", str(project_root / "plugins/autonomous-dev/config/global_settings_template.json"),
+             "--schema-path", str(project_root / "plugins/autonomous-dev/config/hook-metadata.schema.json")],
+            timeout=30,
+        )
+        return result.returncode
 
     try:
         args = parser.parse_args()
+
+        # Handle --verify: run hook sidecar consistency check and exit
+        if getattr(args, 'verify', False):
+            return _run_hook_verify()
 
         # Determine sync mode (default to GITHUB)
         if args.uninstall:
@@ -222,7 +316,10 @@ Exit Codes:
 
         # Execute sync
         try:
-            dispatcher = SyncDispatcher(project_root=project_root)
+            dispatcher = SyncDispatcher(
+                project_root=project_root,
+                no_generate=getattr(args, 'no_generate', False),
+            )
 
             # Handle uninstall mode with additional arguments
             if mode == SyncMode.UNINSTALL:

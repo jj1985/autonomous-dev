@@ -1,0 +1,14 @@
+{
+  "name": "pre_compact_batch_saver",
+  "type": "lifecycle",
+  "description": "Saves in-progress batch state before context compaction",
+  "interpreter": "bash",
+  "active": true,
+  "registrations": [
+    {
+      "event": "PreCompact",
+      "matcher": "*",
+      "timeout": 5
+    }
+  ]
+}

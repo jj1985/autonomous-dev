@@ -1,0 +1,14 @@
+{
+  "name": "unified_prompt_validator",
+  "type": "lifecycle",
+  "description": "Workflow bypass detection and quality nudges for user prompts",
+  "interpreter": "python3",
+  "active": true,
+  "registrations": [
+    {
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "timeout": 5
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "auto_fix_docs",
+  "type": "utility",
+  "description": "Auto-fixes documentation issues detected by other hooks",
+  "interpreter": "python3",
+  "active": true
+}

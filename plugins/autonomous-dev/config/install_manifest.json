@@ -1,7 +1,4 @@
 {
-  "version": "3.50.0",
-  "generated": "2026-02-14",
-  "description": "File manifest for autonomous-dev plugin installation",
   "base_url": "https://raw.githubusercontent.com/akaszubski/autonomous-dev/master",
   "commands": [
     "advise",
@@ -22,7 +19,6 @@
   ],
   "components": {
     "agents": {
-      "target": ".claude/agents",
       "files": [
         "plugins/autonomous-dev/agents/continuous-improvement-analyst.md",
         "plugins/autonomous-dev/agents/doc-master.md",
@@ -35,10 +31,10 @@
         "plugins/autonomous-dev/agents/security-auditor.md",
         "plugins/autonomous-dev/agents/test-coverage-auditor.md",
         "plugins/autonomous-dev/agents/test-master.md"
-      ]
+      ],
+      "target": ".claude/agents"
     },
     "commands": {
-      "target": ".claude/commands",
       "files": [
         "plugins/autonomous-dev/commands/advise.md",
         "plugins/autonomous-dev/commands/align.md",
@@ -59,10 +55,23 @@
         "plugins/autonomous-dev/commands/sweep.md",
         "plugins/autonomous-dev/commands/sync.md",
         "plugins/autonomous-dev/commands/worktree.md"
-      ]
+      ],
+      "target": ".claude/commands"
+    },
+    "config": {
+      "files": [
+        "plugins/autonomous-dev/config/auto_approve_policy.json",
+        "plugins/autonomous-dev/config/doc_change_registry.json",
+        "plugins/autonomous-dev/config/global_settings_template.json",
+        "plugins/autonomous-dev/config/hook-metadata.schema.json",
+        "plugins/autonomous-dev/config/install_manifest.json",
+        "plugins/autonomous-dev/config/known_bypass_patterns.json",
+        "plugins/autonomous-dev/config/research_rate_limits.json",
+        "plugins/autonomous-dev/config/sandbox_policy.json"
+      ],
+      "target": ".claude/config"
     },
     "hooks": {
-      "target": ".claude/hooks",
       "files": [
         "plugins/autonomous-dev/hooks/auto_fix_docs.py",
         "plugins/autonomous-dev/hooks/auto_format.py",
@@ -83,28 +92,10 @@
         "plugins/autonomous-dev/hooks/validate_command_file_ops.py",
         "plugins/autonomous-dev/hooks/validate_project_alignment.py",
         "plugins/autonomous-dev/hooks/validate_session_quality.py"
-      ]
-    },
-    "scripts": {
-      "target": ".claude/scripts",
-      "files": [
-        "plugins/autonomous-dev/scripts/__init__.py",
-        "plugins/autonomous-dev/scripts/agent_tracker.py",
-        "plugins/autonomous-dev/scripts/align_project_retrofit.py",
-        "plugins/autonomous-dev/scripts/complexity_assessor.py",
-        "plugins/autonomous-dev/scripts/configure_global_settings.py",
-        "plugins/autonomous-dev/scripts/genai_install_wrapper.py",
-        "plugins/autonomous-dev/scripts/install.py",
-        "plugins/autonomous-dev/scripts/invoke_agent.py",
-        "plugins/autonomous-dev/scripts/migrate_hook_paths.py",
-        "plugins/autonomous-dev/scripts/parallel_validation.py",
-        "plugins/autonomous-dev/scripts/pipeline_controller.py",
-        "plugins/autonomous-dev/scripts/progress_display.py",
-        "plugins/autonomous-dev/scripts/session_tracker.py"
-      ]
+      ],
+      "target": ".claude/hooks"
     },
     "lib": {
-      "target": ".claude/lib",
       "files": [
         "plugins/autonomous-dev/lib/__init__.py",
         "plugins/autonomous-dev/lib/abstract_state_manager.py",
@@ -253,35 +244,28 @@
         "plugins/autonomous-dev/lib/worktree_command.py",
         "plugins/autonomous-dev/lib/worktree_conflict_integration.py",
         "plugins/autonomous-dev/lib/worktree_manager.py"
-      ]
+      ],
+      "target": ".claude/lib"
     },
-    "config": {
-      "target": ".claude/config",
+    "scripts": {
       "files": [
-        "plugins/autonomous-dev/config/auto_approve_policy.json",
-        "plugins/autonomous-dev/config/doc_change_registry.json",
-        "plugins/autonomous-dev/config/global_settings_template.json",
-        "plugins/autonomous-dev/config/install_manifest.json",
-        "plugins/autonomous-dev/config/known_bypass_patterns.json",
-        "plugins/autonomous-dev/config/research_rate_limits.json",
-        "plugins/autonomous-dev/config/sandbox_policy.json"
-      ]
-    },
-    "templates": {
-      "target": ".claude/templates",
-      "files": [
-        "plugins/autonomous-dev/templates/PROJECT.md.template",
-        "plugins/autonomous-dev/templates/project-structure.json",
-        "plugins/autonomous-dev/templates/settings.autonomous-dev.json",
-        "plugins/autonomous-dev/templates/settings.default.json",
-        "plugins/autonomous-dev/templates/settings.granular-bash.json",
-        "plugins/autonomous-dev/templates/settings.local.json",
-        "plugins/autonomous-dev/templates/settings.permission-batching.json",
-        "plugins/autonomous-dev/templates/settings.strict-mode.json"
-      ]
+        "plugins/autonomous-dev/scripts/__init__.py",
+        "plugins/autonomous-dev/scripts/agent_tracker.py",
+        "plugins/autonomous-dev/scripts/align_project_retrofit.py",
+        "plugins/autonomous-dev/scripts/complexity_assessor.py",
+        "plugins/autonomous-dev/scripts/configure_global_settings.py",
+        "plugins/autonomous-dev/scripts/genai_install_wrapper.py",
+        "plugins/autonomous-dev/scripts/install.py",
+        "plugins/autonomous-dev/scripts/invoke_agent.py",
+        "plugins/autonomous-dev/scripts/migrate_hook_paths.py",
+        "plugins/autonomous-dev/scripts/parallel_validation.py",
+        "plugins/autonomous-dev/scripts/pipeline_controller.py",
+        "plugins/autonomous-dev/scripts/progress_display.py",
+        "plugins/autonomous-dev/scripts/session_tracker.py"
+      ],
+      "target": ".claude/scripts"
     },
     "skills": {
-      "target": ".claude/skills",
       "files": [
         "plugins/autonomous-dev/skills/DESCRIPTION_PATTERN.md",
         "plugins/autonomous-dev/skills/api-design/SKILL.md",
@@ -310,10 +294,27 @@
         "plugins/autonomous-dev/skills/security-patterns/SKILL.md",
         "plugins/autonomous-dev/skills/state-management-patterns/SKILL.md",
         "plugins/autonomous-dev/skills/testing-guide/SKILL.md"
-      ]
+      ],
+      "target": ".claude/skills"
+    },
+    "templates": {
+      "files": [
+        "plugins/autonomous-dev/templates/PROJECT.md.template",
+        "plugins/autonomous-dev/templates/project-structure.json",
+        "plugins/autonomous-dev/templates/settings.autonomous-dev.json",
+        "plugins/autonomous-dev/templates/settings.default.json",
+        "plugins/autonomous-dev/templates/settings.granular-bash.json",
+        "plugins/autonomous-dev/templates/settings.local.json",
+        "plugins/autonomous-dev/templates/settings.permission-batching.json",
+        "plugins/autonomous-dev/templates/settings.strict-mode.json"
+      ],
+      "target": ".claude/templates"
     }
   },
+  "description": "File manifest for autonomous-dev plugin installation",
+  "generated": "2026-02-14",
   "post_install": {
     "message": "Restart Claude Code (Cmd+Q or Ctrl+Q) to activate commands"
-  }
+  },
+  "version": "3.50.0"
 }

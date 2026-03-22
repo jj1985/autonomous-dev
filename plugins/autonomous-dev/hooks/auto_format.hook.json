@@ -1,0 +1,7 @@
+{
+  "name": "auto_format",
+  "type": "utility",
+  "description": "Auto-formats code using project formatters",
+  "interpreter": "python3",
+  "active": true
+}

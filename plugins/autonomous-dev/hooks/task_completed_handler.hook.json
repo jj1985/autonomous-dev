@@ -1,0 +1,14 @@
+{
+  "name": "task_completed_handler",
+  "type": "lifecycle",
+  "description": "Logs task completion events to daily activity JSONL",
+  "interpreter": "python3",
+  "active": true,
+  "registrations": [
+    {
+      "event": "TaskCompleted",
+      "matcher": "*",
+      "timeout": 5
+    }
+  ]
+}

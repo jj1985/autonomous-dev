@@ -1,0 +1,7 @@
+{
+  "name": "security_scan",
+  "type": "utility",
+  "description": "Security scanning utilities for hook validation",
+  "interpreter": "python3",
+  "active": true
+}

@@ -1,0 +1,7 @@
+{
+  "name": "enforce_orchestrator",
+  "type": "utility",
+  "description": "Orchestrates enforcement hooks for pipeline validation",
+  "interpreter": "python3",
+  "active": true
+}

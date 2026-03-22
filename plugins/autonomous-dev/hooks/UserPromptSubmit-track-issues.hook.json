@@ -1,0 +1,7 @@
+{
+  "name": "UserPromptSubmit-track-issues",
+  "type": "utility",
+  "description": "Tracks GitHub issue references in user prompts",
+  "interpreter": "bash",
+  "active": true
+}

@@ -1,0 +1,7 @@
+{
+  "name": "validate_session_quality",
+  "type": "utility",
+  "description": "Validates session quality metrics",
+  "interpreter": "python3",
+  "active": true
+}
