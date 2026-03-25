@@ -79,10 +79,10 @@ Continue a batch that was interrupted:
 
 ### Overview
 
-In batch processing, the model must run ALL 9 required agents for EVERY feature/issue, not progressively reduce agents on later issues. This HARD GATE prevents Issue #362 regression where Issues 1-2 receive full pipeline while Issues 3+ receive only 2-3 agents.
+In batch processing, the model must run ALL required agents for EVERY feature/issue, not progressively reduce agents on later issues. This HARD GATE prevents Issue #362 regression where Issues 1-2 receive full pipeline while Issues 3+ receive only 2-3 agents.
 
-**Required agents** (7-8 total, depending on mode):
-- **Acceptance-first mode** (default, 7 agents):
+**Required agents** (8-9 total, depending on mode):
+- **Acceptance-first mode** (default, 8 agents):
   1. researcher-local
   2. researcher
   3. planner
@@ -90,10 +90,11 @@ In batch processing, the model must run ALL 9 required agents for EVERY feature/
   5. reviewer
   6. security-auditor
   7. doc-master
-- **TDD-first mode** (8 agents, add test-master):
+  8. continuous-improvement-analyst
+- **TDD-first mode** (9 agents, add test-master):
   4. test-master (added in TDD mode)
 
-Note: continuous-improvement-analyst is a separate QA agent that checks if the pipeline worked correctly (runs post-issue in batch mode), but is NOT part of the required core pipeline.
+Note: continuous-improvement-analyst is required for every issue in batch mode (including the last issue). Skipping it for the last issue is a known regression pattern tracked as Issue #505.
 
 ### How It Works
 
@@ -103,60 +104,59 @@ After each issue completes in batch mode:
 
 1. **Count verification**: Count distinct `subagent_type` values in Task tool invocations for the current issue
 2. **Determine expected count**:
-   - **Acceptance-first mode** (default): 7 agents required
-   - **TDD-first mode**: 8 agents required (7 base + test-master)
+   - **Acceptance-first mode** (default): 8 agents required
+   - **TDD-first mode**: 9 agents required (8 base + test-master)
 3. **Enumerate each agent**: Display status for all required agents (✓ ran, ✗ did not run)
 4. **Display verification result** (acceptance-first mode example):
    ```
-   Issue #N agent verification (acceptance-first mode):
-     researcher-local:   ✓
-     researcher:         ✓
-     planner:            ✓
-     implementer:        ✓
-     reviewer:           ✓
-     security-auditor:   ✓
-     doc-master:         ✓
-   Result: 7/7 PASS
+   Issue #N agent verification:
+     researcher-local:              ✓
+     researcher:                    ✓
+     planner:                       ✓
+     implementer:                   ✓
+     reviewer:                      ✓
+     security-auditor:              ✓
+     doc-master:                    ✓
+     continuous-improvement-analyst: ✓
+   Result: 8/8 PASS
    ```
 
 5. **Block if incomplete**: If any required agent is MISSING, STOP. Do NOT advance to next issue.
    ```
-   Issue #N agent verification (acceptance-first mode):
-     researcher-local:   ✓
-     researcher:         ✓
-     planner:            ✓
-     implementer:        ✓
-     reviewer:           ✗ MISSING
-     security-auditor:   ✓
-     doc-master:         ✓
-   Result: 6/7 FAIL — missing: reviewer
+   Issue #N agent verification:
+     researcher-local:              ✓
+     researcher:                    ✓
+     planner:                       ✓
+     implementer:                   ✓
+     reviewer:                      ✗ MISSING
+     security-auditor:              ✓
+     doc-master:                    ✓
+     continuous-improvement-analyst: ✓
+   Result: 7/8 FAIL — missing: reviewer
 
    BLOCKED: Cannot advance to next issue without reviewer.
    Complete missing agents for Issue #N first, then re-verify.
    ```
 
 6. **Only after all required agents verified**: Proceed to next issue
-7. **Post-issue QA (optional)**: Invoke continuous-improvement-analyst in batch mode to check for suspicious agents or pipeline anomalies
 
 ### FORBIDDEN Behaviors
 
-- ❌ Advancing to next issue with fewer than required agents verified (7 for acceptance-first, 8 for TDD-first)
+- ❌ Advancing to next issue with fewer than required agents verified (8 for acceptance-first, 9 for TDD-first)
 - ❌ Self-reporting agent completion without enumerating each required agent by name
 - ❌ Claiming an agent "was not needed" for this issue (ALL required agents are mandatory, no exceptions)
 - ❌ Combining multiple issues into a single agent invocation to "save time"
 - ❌ Counting the coordinator's own reasoning as an agent invocation
-- ❌ Confusing continuous-improvement-analyst (QA agent) with required core pipeline agents
+- ❌ Skipping continuous-improvement-analyst for the last issue (known regression: Issue #505)
 
 ### Why This Gate Exists
 
 Issue #362/#363 showed the model progressively shortcuts later issues in batch mode:
-- **Issues 1-2**: Full pipeline (7-8 agents)
+- **Issues 1-2**: Full pipeline (8-9 agents)
 - **Issues 3-5**: Partial pipeline (2-3 agents)
 - **Issues 6+**: Skipped (coordinator "final review")
 
 This gate is **fail-closed**: If you cannot verify an agent ran, it did not run.
-
-**Important distinction**: continuous-improvement-analyst is a separate QA agent that evaluates whether the pipeline itself worked correctly. It runs AFTER the core pipeline completes (post-issue in batch mode) and helps detect bypass patterns, but is NOT part of the required core pipeline. The core pipeline is 7-8 agents depending on mode.
 
 ### Detection in Continuous Improvement Analysis
 
@@ -166,10 +166,9 @@ The `continuous-improvement-analyst` agent detects this bypass pattern via the `
 - **Detection**: Issue N+1 has fewer agent invocations than Issue N in same batch
 - **Indicators**:
   - Later issues missing researcher, reviewer, or security-auditor agents (core pipeline agents)
-  - Batch session has fewer than (7 or 8) × num_issues total agent invocations (depending on mode)
-  - Progressive decline: early issues with 7/7 agents, later issues with 3-4 agents
+  - Batch session has fewer than (8 or 9) × num_issues total agent invocations (depending on mode)
+  - Progressive decline: early issues with 8/8 agents, later issues with 3-4 agents
 - **Severity**: Critical
-- **Note**: continuous-improvement-analyst runs post-issue to detect this pattern; it's not counted in the core pipeline agent count
 
 ### Implementation
 

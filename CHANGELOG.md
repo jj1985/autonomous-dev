@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+### Fixed
+- **Deploy script no longer deletes hook extensions** (#560): `scripts/deploy-all.sh` rsync `--delete` runs on the hooks directory previously wiped the `extensions/` subdirectory on every deploy, destroying user-authored and project-specific hook extensions. Fixed by adding `--exclude=extensions/` to all rsync `--delete` commands and adding `plugins/autonomous-dev/hooks/extensions/.gitkeep` so the directory is tracked in source and treated as a valid sync target rather than an orphan.
+
+### Added
+- **Batch CIA Skip Detection** (#559): Added `detect_batch_cia_skip()` to `pipeline_intent_validator.py`. Detects batch issues where `continuous-improvement-analyst` was not invoked. Last-issue skips are flagged as WARNING (known regression, Issue #505); non-last-issue skips are flagged as INFO. Integrated into `validate_pipeline_intent()` orchestrator.
+- **Per-Issue Doc-Drift Verdict Collection** (#559): Batch mode (`implement-batch.md` STEP B3) now parses and acts on `DOC-DRIFT-VERDICT` for each issue as doc-master completes, mirroring single-issue verdict handling. FAIL blocks advancement to the next issue; missing verdict triggers one retry with reduced context.
+
+### Changed
+- **Batch required agent count updated** (#559): Acceptance-first mode now requires 8 agents per issue (was 7) — `continuous-improvement-analyst` is now a required agent rather than optional post-issue QA. TDD-first mode requires 9 agents (was 8). The per-issue HARD GATE in `implement-batch.md` STEP B3 enforces this for every issue including the last.
+- **STEP 15 cleanup ordering fixed** (#559): `implement.md` now enforces that pipeline state cleanup occurs only after the STEP 15 continuous-improvement-analyst launch is confirmed, preventing the analyst from losing context due to premature cleanup.
+
 ### Added
 - **CI and Pre-Commit Hook Enforcement** (#555): Hook sidecar consistency is now enforced at three levels: (1) CI runs `generate_hook_config.py --check` in the smoke job, failing the build on drift; (2) `scripts/pre-commit-hook-check.sh` validates sidecars when hook-related files are staged; (3) `/sync --verify` provides manual consistency checking. See [docs/HOOK-SIDECAR-SCHEMA.md](docs/HOOK-SIDECAR-SCHEMA.md#enforcement) for the developer workflow.
 - **Hook Sidecar Migration Complete** (#554): All 25 active hooks now have `.hook.json` sidecar registration files. Includes 8 lifecycle hooks (plan_mode_exit_detector, post_compact_enricher, pre_compact_batch_saver, session_activity_logger, task_completed_handler, unified_pre_tool, unified_prompt_validator, unified_session_tracker) and 17 utility hooks (auto_fix_docs, auto_format, auto_test, enforce_orchestrator, enforce_tdd, genai_prompts, genai_utils, PreToolUseWrite-protect-sensitive, security_scan, SessionStart-batch-recovery, setup, stop_quality_gate, UserPromptSubmit-orchestrator, UserPromptSubmit-track-issues, validate_command_file_ops, validate_project_alignment, validate_session_quality). All sidecars validate against `hook-metadata.schema.json` and enable declarative hook management.

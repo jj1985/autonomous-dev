@@ -10,7 +10,10 @@ Usage:
     trace = get_trace(state)
 """
 
+import hashlib
+import hmac as _hmac
 import json
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -141,6 +144,179 @@ def _get_status(state: PipelineState, step: Step) -> StepStatus:
     if record is None:
         return StepStatus.PENDING
     return StepStatus(record["status"])
+
+
+
+
+def _get_pipeline_secret_path(run_id: str) -> Path:
+    """Return the filesystem path for a pipeline secret key file.
+
+    The secret is stored separately from the state file so an attacker who
+    controls the state file cannot forge the HMAC without also accessing the
+    secret file (which has restricted permissions).
+
+    Args:
+        run_id: The pipeline run identifier.
+
+    Returns:
+        Path to the secret key file (~/.claude/pipeline_secrets/<run_id>.key).
+    """
+    import re as _re
+
+    secrets_dir = Path.home() / ".claude" / "pipeline_secrets"
+    safe_id = _re.sub(r"[^a-zA-Z0-9_-]", "_", run_id)[:128] if run_id else "unknown"
+    return secrets_dir / f"{safe_id}.key"
+
+
+def _get_or_create_pipeline_secret(run_id: str) -> str:
+    """Get existing pipeline secret or create a new one.
+
+    Creates the secret file with 0o600 permissions. The secret is a 32-byte
+    hex string that is NOT stored in the pipeline state file.
+
+    Args:
+        run_id: The pipeline run identifier.
+
+    Returns:
+        The hex-encoded secret string.
+    """
+    import os as _os
+
+    secret_path = _get_pipeline_secret_path(run_id)
+    if secret_path.exists():
+        return secret_path.read_text().strip()
+
+    secret = secrets.token_hex(32)
+    secret_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = _os.open(str(secret_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+    try:
+        _os.write(fd, secret.encode("utf-8"))
+    finally:
+        _os.close(fd)
+    return secret
+
+
+def _read_pipeline_secret(run_id: str) -> "Optional[str]":
+    """Read a pipeline secret from the secrets directory.
+
+    Args:
+        run_id: The pipeline run identifier.
+
+    Returns:
+        The secret string, or None if the secret file does not exist.
+    """
+    secret_path = _get_pipeline_secret_path(run_id)
+    if not secret_path.exists():
+        return None
+    try:
+        return secret_path.read_text().strip()
+    except OSError:
+        return None
+
+
+def cleanup_pipeline_secret(run_id: str) -> None:
+    """Remove the pipeline secret file from disk.
+
+    Args:
+        run_id: The pipeline run identifier.
+
+    Does not raise if the file does not exist.
+    """
+    secret_path = _get_pipeline_secret_path(run_id)
+    try:
+        secret_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _compute_state_hmac(state: dict, secret: str) -> str:
+    """Compute HMAC-SHA256 over critical pipeline state fields.
+
+    Uses an external secret (NOT stored in the state file) as the HMAC key,
+    combined with the nonce. This prevents forgery even if an attacker
+    controls the state file contents.
+
+    Args:
+        state: Pipeline state dict (must contain 'nonce' key).
+        secret: The pipeline secret from a separate restricted-permission file.
+
+    Returns:
+        Hex-encoded HMAC-SHA256 digest.
+    """
+    nonce = state.get("nonce", "")
+    key = (secret + nonce).encode("utf-8")
+    # Deterministic message from critical fields
+    parts = [
+        state.get("session_start", ""),
+        state.get("mode", ""),
+        state.get("run_id", ""),
+        str(state.get("explicitly_invoked", False)),
+        nonce,
+    ]
+    message = "|".join(parts).encode("utf-8")
+    return _hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def verify_state_hmac(state: dict, session_id: str) -> bool:
+    """Verify the HMAC on a pipeline state dict.
+
+    Reads the secret from a separate pipeline secrets file. The session_id
+    parameter is kept for API compatibility but the actual HMAC key is derived
+    from the secret file.
+
+    Args:
+        state: Pipeline state dict with 'hmac' and 'nonce' fields.
+        session_id: Session identifier (fallback if secret file missing).
+
+    Returns:
+        True if the HMAC is valid, False if tampered or missing nonce.
+        Returns True if there is no 'hmac' field (backward compatibility).
+    """
+    stored_hmac = state.get("hmac")
+    if stored_hmac is None:
+        # Backward compatibility: old state files without HMAC are accepted
+        return True
+    if not state.get("nonce"):
+        # HMAC present but no nonce means tampering
+        return False
+
+    run_id = state.get("run_id", "")
+    secret = _read_pipeline_secret(run_id) if run_id else None
+    if secret is None:
+        # Fallback: try session_id-based key for backward compat with states
+        # signed before the secret-file approach was introduced
+        fallback_key = session_id
+        expected = _compute_state_hmac(state, fallback_key)
+        if _hmac.compare_digest(stored_hmac, expected):
+            return True
+        # No secret file and session_id fallback failed
+        return False
+
+    expected = _compute_state_hmac(state, secret)
+    return _hmac.compare_digest(stored_hmac, expected)
+
+
+def sign_state(state: dict, session_id: str) -> dict:
+    """Add HMAC signature and nonce to a pipeline state dict.
+
+    Generates a per-run secret stored in a separate file with restricted
+    permissions. The HMAC key is derived from this secret, not from
+    session_id (which may be absent or guessable).
+
+    Args:
+        state: Pipeline state dict to sign.
+        session_id: Session identifier (kept for API compat; not used as key).
+
+    Returns:
+        The same dict with 'nonce' and 'hmac' fields set.
+    """
+    if not state.get("nonce"):
+        state["nonce"] = secrets.token_hex(16)
+
+    run_id = state.get("run_id", "unknown")
+    secret = _get_or_create_pipeline_secret(run_id)
+    state["hmac"] = _compute_state_hmac(state, secret)
+    return state
 
 
 # =============================================================================
@@ -587,15 +763,17 @@ def finalize_to_session(
 
 
 def cleanup_pipeline(run_id: str) -> None:
-    """Remove the pipeline state file from disk.
+    """Remove the pipeline state file and its secret from disk.
 
     Args:
         run_id: The pipeline run identifier.
 
-    Does not raise if the file doesn't exist.
+    Does not raise if the files don't exist.
     """
     path = get_state_path(run_id)
     try:
         path.unlink()
     except FileNotFoundError:
         pass
+    # Also clean up the associated secret file
+    cleanup_pipeline_secret(run_id)

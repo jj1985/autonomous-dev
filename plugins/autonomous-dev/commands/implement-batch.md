@@ -155,6 +155,27 @@ For each feature in the list:
 1. Display progress using per-feature header: `Feature M/N — "feature description"` (see Batch Mode Progress Protocol). After each feature completes, output per-feature footer with elapsed time and running total.
 2. Execute the **full pipeline (STEPS 1-8)** for this feature, with BATCH CONTEXT prepended to ALL agent prompts
 3. If a feature fails, log the failure and continue to the next feature
+
+**Per-Issue Doc-Drift Verdict Collection** (Issue #559):
+
+After doc-master completes for each issue, parse its output for the `DOC-DRIFT-VERDICT`. This mirrors the single-issue verdict parsing in implement.md STEP 12.
+
+- If `DOC-DRIFT-VERDICT: PASS`: record `doc-drift-verdict: PASS` and proceed
+- If `DOC-DRIFT-VERDICT: FAIL`: **BLOCK** the per-issue pipeline. Do NOT advance to the next issue until doc-drift is resolved.
+- If doc-master returned empty output or no `DOC-DRIFT-VERDICT` found: **retry once** with reduced context (only changed file list + feature description). Log `[DOC-VERDICT-MISSING] Re-invoking doc-master with reduced context for issue #N`
+  - If retry produces a verdict: use that verdict
+  - If retry also fails: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry for issue #N — proceeding with warning` and record `doc-drift-verdict: MISSING`
+
+Include `doc-drift-verdict: PASS/FAIL/MISSING` in the per-issue agent verification display:
+```
+Issue #N agent verification:
+  ...
+  doc-master:       ✓/✗  (doc-drift-verdict: PASS/FAIL/MISSING)
+  ...
+```
+
+> In batch mode, see implement-batch.md STEP B3 for per-issue doc-drift verdict collection. For single-issue doc-drift, see implement.md STEP 12.
+
 4. **HARD GATE: Per-Issue Agent Count Verification**
 
    After each issue's pipeline completes, BEFORE advancing to the next issue (or to STEP B3.5/B4 if this is the last issue), verify ALL required agents ran for this issue. **This verification applies to ALL issues in the batch, including the LAST issue.**
@@ -352,10 +373,16 @@ After ALL features in batch are processed, YOU (the coordinator) MUST finalize:
    **FORBIDDEN** (Issue #410):
    - ❌ Deleting a worktree directory while your shell CWD is inside it. ALWAYS `cd` to the main repository FIRST, then delete.
 
-4. **Clean up pipeline state**:
+4. **Clean up pipeline state** (MUST happen AFTER confirming post-batch CIA in STEP B3.5 has been launched):
    ```bash
+   # CRITICAL: Only clean up AFTER STEP B3.5 CIA is confirmed launched
+   # The CIA reads pipeline state — cleaning up before launch loses context
    rm -f /tmp/implement_pipeline_state.json
    ```
+
+   **FORBIDDEN** (Issue #559):
+   - ❌ Cleaning up pipeline state before confirming STEP B3.5 CIA agent launch succeeded
+   - ❌ Removing /tmp/implement_pipeline_state.json before STEP B3.5 CIA has a valid task ID
 
 **On merge conflict**: DO NOT force-merge. Report conflicting files and leave worktree intact for manual resolution. Provide manual merge instructions.
 
@@ -485,11 +512,26 @@ Same as BATCH FILE MODE:
 
    This replaces the previous heavy per-issue CI analysis. Full analysis happens once post-batch.
 
-   **HARD GATE: Last Issue CI** — The final issue in the batch MUST have its per-issue CI analyst check completed BEFORE proceeding to STEP B3.5 (Post-Batch Full CI Analysis) or STEP B4 (Batch Finalization). Skipping CI for the last issue is a known regression pattern (Issue #505).
+   **HARD GATE: Last Issue CI** (Issue #505, #559)
 
-   **FORBIDDEN**:
+   The final issue in the batch MUST have its per-issue CI analyst check completed BEFORE proceeding to STEP B3.5 (Post-Batch Full CI Analysis) or STEP B4 (Batch Finalization). Skipping CI for the last issue is a known regression pattern.
+
+   Before starting the last issue's CI, output:
+   ```
+   BATCH FINAL ITEM — Issue #N (last of M)
+   ```
+
+   After CI completes, the coordinator MUST verify:
+   1. The continuous-improvement-analyst agent was invoked (not skipped)
+   2. The agent returned a result (result_word_count > 0)
+   3. The per-issue agent verification shows ✓ for continuous-improvement-analyst
+
+   **FORBIDDEN** (violations = batch failure):
    - ❌ Proceeding to STEP B3.5 or STEP B4 without CI analyst completion for the last issue
    - ❌ Treating the last issue differently from any other issue in CI requirements
+   - ❌ Skipping CIA for the last issue due to context pressure or time constraints (BLOCK the pipeline instead)
+   - ❌ Substituting coordinator-side analysis for the CIA agent invocation on the last issue
+   - ❌ Declaring the batch "complete enough" without the last issue's CIA result
 
 4. Git automation (see STEP B4) - triggers at end of batch
 5. Report summary (see STEP B5)

@@ -148,7 +148,21 @@ state = create_pipeline('$RUN_ID', 'FEATURE_DESC', mode='MODE')
 save_pipeline(state)
 print(f'Pipeline {state.run_id} initialized')
 "
-echo '{"session_start":"'$(date +%Y-%m-%dT%H:%M:%S)'","mode":"MODE","run_id":"'$RUN_ID'","explicitly_invoked":true}' > /tmp/implement_pipeline_state.json
+python3 -c "
+import sys, os, json
+sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from pipeline_state import sign_state
+state = {
+    'session_start': '$(date +%Y-%m-%dT%H:%M:%S)',
+    'mode': 'MODE',
+    'run_id': '$RUN_ID',
+    'explicitly_invoked': True
+}
+sid = os.environ.get('CLAUDE_SESSION_ID', 'unknown')
+state = sign_state(state, sid)
+with open('/tmp/implement_pipeline_state.json', 'w') as f:
+    json.dump(state, f)
+"
 ```
 
 ---
@@ -397,7 +411,7 @@ Run: /clear then /implement --resume $RUN_ID to complete validation.
 ```
 **FORBIDDEN**: Proceeding to STEP 13 with fewer than the required agent count. Missing validation agents (reviewer, security-auditor, doc-master) is a pipeline failure, not a degraded pass.
 
-**Doc-Drift Collection Point** — Collect doc-master background result:
+**Doc-Drift Collection Point** — Collect doc-master background result (in batch mode, see implement-batch.md STEP B3 for per-issue doc-drift verdict collection):
 1. Wait for doc-master to complete (it was launched in STEP 10 background)
 2. Parse output for `DOC-DRIFT-VERDICT: PASS` or `DOC-DRIFT-VERDICT: FAIL`
 3. If **PASS**: proceed to STEP 13
@@ -454,7 +468,9 @@ If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipp
 - ❌ You MUST NOT inline the analysis yourself instead of invoking the agent
 - ❌ You MUST NOT treat STEP 13 as the final step — STEP 15 is mandatory
 
-After launching analyst, cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib'); from pipeline_state import cleanup_pipeline; cleanup_pipeline('RUN_ID')" 2>/dev/null || true`
+After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib'); from pipeline_state import cleanup_pipeline; cleanup_pipeline('RUN_ID')" 2>/dev/null || true`
+
+**FORBIDDEN** (Issue #559): Cleaning up pipeline state before confirming the STEP 15 analyst agent launch succeeded. The analyst reads pipeline state — cleanup before launch loses context.
 
 ---
 

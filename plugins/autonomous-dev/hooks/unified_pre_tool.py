@@ -146,6 +146,12 @@ PIPELINE_AGENTS = [
     'doc-master',
 ]
 
+# Environment variables protected from inline spoofing in Bash commands (Issue #557)
+PROTECTED_ENV_VARS = {
+    'CLAUDE_AGENT_NAME', 'CLAUDE_AGENT_ROLE',
+    'PIPELINE_STATE_FILE', 'ENFORCEMENT_LEVEL', 'CLAUDE_SESSION_ID',
+}
+
 # Code file extensions subject to workflow enforcement
 CODE_EXTENSIONS = {
     '.py', '.js', '.ts', '.jsx', '.tsx', '.java', '.go', '.rs',
@@ -536,6 +542,18 @@ def _is_pipeline_active() -> bool:
             from datetime import datetime as _datetime
             with open(state_path) as f:
                 state = _json.load(f)
+
+            # HMAC integrity check (Issue #557)
+            if state.get("hmac") is not None:
+                try:
+                    from pipeline_state import verify_state_hmac
+                    sid = os.getenv("CLAUDE_SESSION_ID") or _session_id
+                    if not verify_state_hmac(state, sid):
+                        _log_deviation("pipeline_state", "hmac_check", "pipeline_state_hmac_invalid")
+                        return False  # Fail closed: tampered state = not active
+                except ImportError:
+                    return False  # Fail closed: HMAC present but verify library unavailable
+
             session_start = state.get("session_start", "")
             if session_start:
                 start_time = _datetime.fromisoformat(session_start)
@@ -570,6 +588,18 @@ def _is_explicit_implement_active() -> bool:
 
         with open(state_path) as f:
             state = _json.load(f)
+
+        # HMAC integrity check (Issue #557)
+        if state.get("hmac") is not None:
+            try:
+                from pipeline_state import verify_state_hmac
+                sid = os.getenv("CLAUDE_SESSION_ID") or _session_id
+                if not verify_state_hmac(state, sid):
+                    _log_deviation("pipeline_state", "hmac_check", "explicit_implement_hmac_invalid")
+                    return False  # Fail closed: tampered state = not active
+            except ImportError:
+                return False  # Fail closed: HMAC present but verify library unavailable
+
         # Must have explicitly_invoked flag set to true
         if not state.get("explicitly_invoked", False):
             return False
@@ -663,6 +693,113 @@ def _has_significant_additions(old_string: str, new_string: str, file_path: str 
     return False, "", ""
 
 
+def _detect_env_spoofing(command: str) -> "Optional[str]":
+    """Detect inline environment variable spoofing in Bash commands (Issue #557).
+
+    Checks for patterns like:
+    - CLAUDE_AGENT_NAME=implementer python3 ...
+    - export CLAUDE_AGENT_NAME=implementer
+    - env CLAUDE_AGENT_NAME=implementer ...
+
+    Only checks variables in PROTECTED_ENV_VARS. Legitimate env usage
+    (e.g., PATH=foo, HOME=/tmp) is not blocked.
+
+    Args:
+        command: The Bash command string to inspect.
+
+    Returns:
+        Block reason string if spoofing detected, None if clean.
+    """
+    import re
+
+    for var in PROTECTED_ENV_VARS:
+        # Pattern 1: VAR=value command (inline prefix)
+        # Matches: VAR=value, VAR='value', VAR="value" followed by a command
+        pattern1 = (
+            r'(?:^|[;&|]\s*)' + re.escape(var)
+            + r"""=['""]?[^\s'"";|&]*['""]?\s+\S"""
+        )
+        if re.search(pattern1, command):
+            return (
+                f"BLOCKED: Inline env var spoofing detected — '{var}' cannot be "
+                f"set inline in Bash commands. Protected environment variables "
+                f"are managed by the pipeline. (Issue #557)"
+            )
+
+        # Pattern 2: export VAR=value
+        pattern2 = r'\bexport\s+' + re.escape(var) + r'\s*='
+        if re.search(pattern2, command):
+            return (
+                f"BLOCKED: Export of protected env var '{var}' detected. "
+                f"Protected environment variables cannot be overridden via "
+                f"Bash export. (Issue #557)"
+            )
+
+        # Pattern 3: env VAR=value command
+        pattern3 = r'\benv\s+(?:[^\s=]+=\S+\s+)*' + re.escape(var) + r'\s*='
+        if re.search(pattern3, command):
+            return (
+                f"BLOCKED: Env command spoofing detected — '{var}' cannot be "
+                f"set via the env command. Protected environment variables "
+                f"are managed by the pipeline. (Issue #557)"
+            )
+
+    # Pattern 4: bash -c / sh -c subshell containing protected var assignments
+    # Catches: bash -c 'CLAUDE_AGENT_NAME=x python3 ...'
+    #          sh -c "export PIPELINE_STATE_FILE=/tmp/fake.json; ..."
+    subshell_match = re.search(r'(?:ba)?sh\s+-c\s+([\x27"])(.*?)\1', command, re.DOTALL)
+    if subshell_match:
+        inner_cmd = subshell_match.group(2)
+        # Recursively check the inner command for env spoofing
+        inner_result = _detect_env_spoofing(inner_cmd)
+        if inner_result:
+            return (
+                f"BLOCKED: Subshell env spoofing detected — protected environment "
+                f"variable assignment found inside bash -c / sh -c subshell. "
+                f"Inner violation: {inner_result}"
+            )
+
+    return None
+
+
+def _detect_settings_json_write(command: str) -> "Optional[str]":
+    """Detect Bash commands that write to settings.json or settings.local.json.
+
+    Only blocks during active pipeline. Called separately after pipeline check.
+
+    Args:
+        command: The Bash command string to inspect.
+
+    Returns:
+        Block reason string if settings write detected, None if clean.
+    """
+    import re
+
+    settings_patterns = [
+        r'settings\.json',
+        r'settings\.local\.json',
+    ]
+    # Check redirects, tee, cp/mv targets
+    write_targets = _extract_bash_file_writes(command)
+    for target in write_targets:
+        for pat in settings_patterns:
+            if re.search(pat, target):
+                return (
+                    f"BLOCKED: Bash write to '{target}' during active pipeline. "
+                    f"Settings files are protected during /implement sessions. (Issue #557)"
+                )
+
+    # Also check sed -i and python -c patterns
+    for pat in settings_patterns:
+        if re.search(r'\bsed\s+.*-i.*' + pat, command):
+            return (
+                f"BLOCKED: In-place edit of settings file during active pipeline. "
+                f"Settings files are protected during /implement sessions. (Issue #557)"
+            )
+
+    return None
+
+
 def _extract_bash_file_writes(command: str) -> list:
     """Extract file paths being written to by Bash command."""
     import re
@@ -680,9 +817,21 @@ def _extract_bash_file_writes(command: str) -> list:
     for match in re.finditer(tee_pattern, command):
         file_paths.append(match.group(1).strip())
 
-    # Heredoc redirect
+    # Heredoc redirect (heredoc >> file)
     heredoc_pattern = r'<<\s*[\'"]?\w+[\'"]?\s*[>]{1,2}\s+([^\s;&|]+)'
     for match in re.finditer(heredoc_pattern, command):
+        file_paths.append(match.group(1).strip())
+
+    # cat redirect before heredoc: cat > file << 'EOF' (Issue #558)
+    cat_heredoc_pattern = r'\bcat\s+[>]{1,2}\s+([^\s;&|]+)\s+<<'
+    for match in re.finditer(cat_heredoc_pattern, command):
+        fp = match.group(1).strip()
+        if fp not in {'/dev/null', '/dev/stderr', '/dev/stdout', '&1', '&2'}:
+            file_paths.append(fp)
+
+    # dd of=FILE (Issue #558)
+    dd_pattern = r'\bdd\s+.*?\bof=([^\s;&|]+)'
+    for match in re.finditer(dd_pattern, command):
         file_paths.append(match.group(1).strip())
 
     return file_paths
@@ -987,6 +1136,90 @@ def output_decision(decision: str, reason: str, *, system_message: str = ""):
     print(json.dumps(output))
 
 
+DENY_CACHE_PATH = "/tmp/.claude_deny_cache.jsonl"
+
+
+def _update_deny_cache(file_path: str) -> None:
+    """Record a denied file path in the deny cache for escalation tracking.
+
+    Appends a JSON line with the path and current timestamp.
+    Prunes stale entries (>300s) on every 10th write, capped at 500 lines.
+    Failures are silently ignored — deny cache must never block legitimate commands.
+
+    Args:
+        file_path: The file path that was denied.
+    """
+    import json as _json
+    import time as _time
+    _PRUNE_MAX_AGE = 300  # seconds
+    _PRUNE_MAX_LINES = 500
+    try:
+        with open(DENY_CACHE_PATH, "a") as f:
+            entry = {"path": file_path, "timestamp": _time.time()}
+            f.write(_json.dumps(entry) + "\n")
+        # Prune on every 10th write (check line count to decide)
+        cache_p = Path(DENY_CACHE_PATH)
+        if cache_p.exists():
+            all_lines = cache_p.read_text().splitlines()
+            if len(all_lines) % 10 == 0 or len(all_lines) > _PRUNE_MAX_LINES:
+                now = _time.time()
+                cutoff = now - _PRUNE_MAX_AGE
+                kept = []
+                for raw_line in all_lines:
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        parsed = _json.loads(raw_line)
+                        if parsed.get("timestamp", 0) >= cutoff:
+                            kept.append(raw_line)
+                    except (ValueError, KeyError):
+                        continue
+                # Cap at max lines (keep most recent)
+                if len(kept) > _PRUNE_MAX_LINES:
+                    kept = kept[-_PRUNE_MAX_LINES:]
+                cache_p.write_text("\n".join(kept) + "\n" if kept else "")
+    except Exception:
+        pass  # Never fail the hook for cache writes
+
+
+def _check_deny_cache(file_path: str, *, window_seconds: int = 60) -> bool:
+    """Check if a file path was denied within the recent time window.
+
+    Used to detect repeated bypass attempts and escalate messaging.
+    Failures return False — deny cache must never block legitimate commands.
+
+    Args:
+        file_path: The file path to check.
+        window_seconds: How far back to look in seconds (default: 60).
+
+    Returns:
+        True if the path was denied within the window, False otherwise.
+    """
+    import json as _json
+    import time as _time
+    try:
+        cache_path = Path(DENY_CACHE_PATH)
+        if not cache_path.exists():
+            return False
+        now = _time.time()
+        cutoff = now - window_seconds
+        with open(cache_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = _json.loads(line)
+                    if entry.get("path") == file_path and entry.get("timestamp", 0) >= cutoff:
+                        return True
+                except (ValueError, KeyError):
+                    continue
+    except Exception:
+        pass  # Never fail the hook for cache reads
+    return False
+
+
 def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
     """Check if a Bash command writes to protected infrastructure paths.
 
@@ -994,7 +1227,10 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
     Returns None if allowed, or (file_name, block_reason) if blocked.
 
     Detects: sed -i, cp/mv to protected paths, shell redirects (>, >>),
-    tee to protected paths, python3 -c with open(..., 'w').
+    tee to protected paths, python3 -c with open(..., 'w'),
+    cat heredoc (cat > file << EOF), dd of=FILE,
+    Path.write_text/write_bytes in python3 -c,
+    python3 heredoc with open()/Path.write_text inside (Issue #558).
 
     Args:
         command: The Bash command string to inspect.
@@ -1032,13 +1268,48 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
 
     # 4. python3 -c with open() writing — very conservative, only match explicit paths
     # Only flag if the python -c snippet contains open(...) with a protected path literal
-    py_c_pattern = r'python3?\s+-c\s+[\'"]([^\'"]+)[\'"]'
-    for match in re.finditer(py_c_pattern, command):
-        snippet = match.group(1)
+    # Use two patterns: double-quoted outer (allows single quotes inside) and vice versa
+    py_c_patterns = [
+        r'python3?\s+-c\s+"([^"]+)"',   # double-quoted: python3 -c "..."
+        r"python3?\s+-c\s+'([^']+)'",   # single-quoted: python3 -c '...'
+    ]
+    py_c_snippets = []
+    for py_c_pattern in py_c_patterns:
+        for match in re.finditer(py_c_pattern, command):
+            py_c_snippets.append(match.group(1))
+    for snippet in py_c_snippets:
         # Look for open('path', 'w') patterns with protected paths
         open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
         for open_match in re.finditer(open_pattern, snippet):
             target_paths.append(open_match.group(1))
+        # Path.write_text / Path.write_bytes (Issue #558)
+        path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
+        for path_match in re.finditer(path_write_pattern, snippet):
+            target_paths.append(path_match.group(1))
+
+    # 5. python3 heredoc — python3 << 'EOF' with file writes inside (Issue #558)
+    py_heredoc_pattern = r'python3?\s+.*?<<\s*[\'"]?(\w+)[\'"]?'
+    for match in re.finditer(py_heredoc_pattern, command):
+        # Extract everything after the heredoc marker as potential Python code
+        marker = match.group(1)
+        heredoc_start = match.end()
+        remaining = command[heredoc_start:]
+        # Look for the closing marker (line-start-aware to avoid collision with substrings)
+        import re as _re
+        _end_match = _re.search(r'(?:^|\n)' + _re.escape(marker) + r'(?:\n|$)', remaining)
+        end_idx = _end_match.start() if _end_match else -1
+        if end_idx >= 0:
+            heredoc_body = remaining[:end_idx]
+        else:
+            # No closing marker found — use rest of command (conservative)
+            heredoc_body = remaining
+        # Scan heredoc body for open() and Path.write_text/write_bytes
+        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
+        for open_match in re.finditer(open_pattern, heredoc_body):
+            target_paths.append(open_match.group(1))
+        path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
+        for path_match in re.finditer(path_write_pattern, heredoc_body):
+            target_paths.append(path_match.group(1))
 
     # Check each target path against protected infrastructure
     for fp in target_paths:
@@ -1048,11 +1319,22 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
         try:
             if _is_protected_infrastructure(fp):
                 file_name = Path(fp).name
-                block_reason = (
-                    f"BLOCKED: Bash command writes to protected file '{file_name}'. "
-                    f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
-                    f"require the /implement pipeline. Run: /implement \"description\""
-                )
+                # Check deny cache for escalation (Issue #558)
+                repeated = _check_deny_cache(fp)
+                if repeated:
+                    block_reason = (
+                        f"BLOCKED (repeated attempt): Bash command writes to protected "
+                        f"file '{file_name}'. This path was already denied recently. "
+                        f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
+                        f"require the /implement pipeline. Run: /implement \"description\""
+                    )
+                else:
+                    block_reason = (
+                        f"BLOCKED: Bash command writes to protected file '{file_name}'. "
+                        f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
+                        f"require the /implement pipeline. Run: /implement \"description\""
+                    )
+                _update_deny_cache(fp)
                 return (file_name, block_reason)
         except Exception:
             continue  # Skip paths that can't be resolved
@@ -1206,6 +1488,24 @@ def main():
                     output_decision("deny", block_reason, system_message=block_reason)
                     sys.exit(0)
 
+                # Issue #557: Block settings.json writes during active pipeline
+                if file_path:
+                    fname = Path(file_path).name
+                    if fname in ("settings.json", "settings.local.json"):
+                        try:
+                            if _is_pipeline_active():
+                                block_reason = (
+                                    f"BLOCKED: Write to '{fname}' denied during active pipeline. "
+                                    f"Settings files are protected during /implement sessions. "
+                                    f"(Issue #557)"
+                                )
+                                _log_deviation(fname, tool_name, "settings_json_write_block")
+                                _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
+                                output_decision("deny", block_reason, system_message=block_reason)
+                                sys.exit(0)
+                        except Exception:
+                            pass  # Don't block on check failure
+
             # Bash command inspection: detect writes to protected paths (#502)
             if tool_name == "Bash":
                 command = tool_input.get("command", "")
@@ -1216,6 +1516,26 @@ def main():
                         _log_pretool_activity(tool_name, tool_input, "deny", bash_block[1])
                         output_decision("deny", bash_block[1], system_message=bash_block[1])
                         sys.exit(0)
+
+                    # Issue #557: Detect inline env var spoofing
+                    spoof_reason = _detect_env_spoofing(command)
+                    if spoof_reason is not None:
+                        _log_deviation("env_spoofing", tool_name, "env_var_spoofing_block")
+                        _log_pretool_activity(tool_name, tool_input, "deny", spoof_reason)
+                        output_decision("deny", spoof_reason, system_message=spoof_reason)
+                        sys.exit(0)
+
+                    # Issue #557: Block settings.json writes during active pipeline
+                    try:
+                        if _is_pipeline_active():
+                            settings_block = _detect_settings_json_write(command)
+                            if settings_block is not None:
+                                _log_deviation("settings.json", tool_name, "settings_json_write_block")
+                                _log_pretool_activity(tool_name, tool_input, "deny", settings_block)
+                                output_decision("deny", settings_block, system_message=settings_block)
+                                sys.exit(0)
+                    except Exception:
+                        pass  # Don't block on check failure
 
             # Issue #528: Block coordinator code writes when /implement explicitly active
             # This is CRITICAL for external repo coverage — native tools bypass all

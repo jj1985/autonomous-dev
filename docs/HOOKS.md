@@ -48,7 +48,7 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval) + hook extensions. 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). Blocks direct Write/Edit to infrastructure files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) outside `/implement` pipeline — scoped to autonomous-dev repos only. Also inspects Bash command bodies for shell file-write patterns (sed -i, cp/mv, redirects, tee, python3 -c writes) to the same protected paths, closing the bypass gap where wrapping a write in Bash would evade the gate. | SANDBOX_ENABLED, MCP_AUTO_APPROVE, HOOK_EXTENSIONS_ENABLED |
+| **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval) + hook extensions. 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). Blocks direct Write/Edit to infrastructure files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) outside `/implement` pipeline — scoped to autonomous-dev repos only. Also inspects Bash command bodies for shell file-write patterns (sed -i, cp/mv, redirects, tee, python3 -c writes, cat heredoc `cat > file << EOF`, `dd of=FILE`, `Path.write_text/write_bytes` in python3 -c, python3 heredoc with open()/Path.write_text inside) to the same protected paths, closing the bypass gap where wrapping a write in Bash would evade the gate (Issue #558). Deny cache at `/tmp/.claude_deny_cache.jsonl` tracks repeated bypass attempts within a 60-second window and escalates the block message on second attempt (Issue #558). Detects inline env var spoofing in Bash commands (e.g. `VAR=value cmd` or `export VAR=value`) for protected pipeline variables (CLAUDE_AGENT_NAME, CLAUDE_AGENT_ROLE, PIPELINE_STATE_FILE, ENFORCEMENT_LEVEL, CLAUDE_SESSION_ID) — blocks attempts to forge agent identity or downgrade enforcement level. Blocks Write/Edit to `settings.json` and `settings.local.json` during active `/implement` pipeline sessions. Verifies HMAC integrity of pipeline state files to detect tampering. (Issue #557) | SANDBOX_ENABLED, MCP_AUTO_APPROVE, HOOK_EXTENSIONS_ENABLED |
 
 **unified_pre_tool.py Native Tool Fast Path** (v4.1.0+):
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip the 4-layer validation
@@ -273,10 +273,11 @@ Extensions are loaded in **alphabetical order** within each directory. The first
 
 ### How Extensions Survive Updates
 
-The `extensions/` directory is **never overwritten** by `/sync` or `/install`. Both operations explicitly create (or preserve) the directory:
+The `extensions/` directory is **never overwritten** by `/sync`, `/install`, or `deploy-all.sh`. All operations explicitly create or preserve the directory:
 
 - `install.sh`: `mkdir -p ~/.claude/hooks/extensions`
 - `sync_dispatcher.py`: `(hooks_dst / "extensions").mkdir(exist_ok=True)`
+- `scripts/deploy-all.sh`: rsync uses `--exclude=extensions/` to prevent deletion during `--delete` syncs (Issue #560)
 
 ### Environment Variable
 

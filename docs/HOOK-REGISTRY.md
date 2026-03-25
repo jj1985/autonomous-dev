@@ -33,7 +33,7 @@ The plugin uses 17 active hooks (files on disk in `plugins/autonomous-dev/hooks/
 
 | Hook File | Lifecycle/Trigger | Status | Purpose |
 |-----------|------------------|--------|---------|
-| unified_pre_tool | PreToolUse | Enabled | Native tool fast path + 4-layer permission validation (sandbox, MCP security, agent auth, batch approval) + hook extensions. Infrastructure file protection scoped to autonomous-dev repos. |
+| unified_pre_tool | PreToolUse | Enabled | Native tool fast path + 4-layer permission validation (sandbox, MCP security, agent auth, batch approval) + hook extensions. Infrastructure file protection scoped to autonomous-dev repos. Env var spoofing detection blocks forged agent identity in Bash commands. settings.json write protection during /implement sessions. HMAC pipeline state integrity verification. (Issue #557) |
 | unified_prompt_validator | UserPromptSubmit | Enabled | Validate user prompts and provide quality nudges |
 | unified_session_tracker | SubagentStop | Enabled | Track agent execution and pipeline state |
 | auto_fix_docs | PreCommit, PostToolUse | Enabled | Auto-fix documentation issues |

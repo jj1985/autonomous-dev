@@ -686,6 +686,76 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
     return findings
 
 
+
+def detect_batch_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
+    """Detect batch issues where continuous-improvement-analyst was not invoked.
+
+    Identifies batch sessions by looking for events with batch_issue_number > 0,
+    groups events by issue_number, and checks whether the continuous-improvement-analyst
+    agent was invoked for each issue. The last issue missing CIA is flagged as WARNING
+    (known regression pattern, Issue #505); non-last issues are flagged as INFO.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of findings for batch CIA skip violations.
+    """
+    findings: List[Finding] = []
+
+    # Filter to batch agent invocations with valid batch_issue_number
+    batch_events = [
+        e for e in events
+        if e.tool in AGENT_TOOL_NAMES
+        and e.subagent_type
+        and e.batch_issue_number > 0
+    ]
+
+    if not batch_events:
+        return findings
+
+    # Group by issue number -> set of agent types that ran
+    issue_agents: dict[int, set[str]] = {}
+    for e in batch_events:
+        issue_num = e.batch_issue_number
+        if issue_num not in issue_agents:
+            issue_agents[issue_num] = set()
+        issue_agents[issue_num].add(e.subagent_type)
+
+    if not issue_agents:
+        return findings
+
+    sorted_issues = sorted(issue_agents.keys())
+    last_issue = sorted_issues[-1]
+
+    for issue_num in sorted_issues:
+        agents_ran = issue_agents[issue_num]
+        if "continuous-improvement-analyst" not in agents_ran:
+            is_last = issue_num == last_issue
+            severity = "WARNING" if is_last else "INFO"
+            pattern_id = (
+                "batch_last_issue_cia_skip" if is_last
+                else "batch_issue_cia_skip"
+            )
+
+            findings.append(Finding(
+                finding_type="batch_cia_skip",
+                severity=severity,
+                pattern_id=pattern_id,
+                description=(
+                    f"Batch issue #{issue_num} missing continuous-improvement-analyst "
+                    f"invocation{' (LAST ISSUE — known regression, Issue #505)' if is_last else ''}"
+                ),
+                evidence=[
+                    f"issue_number: {issue_num}",
+                    f"agents_ran: {sorted(agents_ran)}",
+                    f"is_last_issue: {is_last}",
+                    f"total_batch_issues: {len(sorted_issues)}",
+                ],
+            ))
+
+    return findings
+
 def validate_pipeline_intent(
     log_path: Path,
     *,
@@ -713,4 +783,5 @@ def validate_pipeline_intent(
     findings.extend(detect_progressive_compression(events))
     findings.extend(detect_minimum_prompt_violation(events))
     findings.extend(detect_doc_verdict_missing(events))
+    findings.extend(detect_batch_cia_skip(events))
     return findings

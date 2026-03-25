@@ -123,7 +123,7 @@ deploy_repo() {
     for subdir in $SUBDIRS; do
         if [ -d "$PLUGIN_SRC/$subdir" ]; then
             mkdir -p "$target/$subdir"
-            rsync -a --delete "$PLUGIN_SRC/$subdir/" "$target/$subdir/"
+            rsync -a --delete --exclude=extensions/ "$PLUGIN_SRC/$subdir/" "$target/$subdir/"
         fi
     done
     fix_permissions "$target"

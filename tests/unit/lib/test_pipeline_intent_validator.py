@@ -31,6 +31,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "plugins" / "autonomous-dev" / "lib"))
 from pipeline_intent_validator import (
     Finding,
     PipelineEvent,
+    detect_batch_cia_skip,
     detect_context_dropping,
     detect_doc_verdict_missing,
     detect_ghost_invocations,
@@ -826,3 +827,88 @@ class TestDetectDocVerdictMissing:
         doc_findings = [f for f in findings if f.finding_type == "doc_verdict_missing"]
         assert len(doc_findings) == 1
         assert "[DOC-VERDICT-MISSING]" in doc_findings[0].description
+
+class TestDetectBatchCiaSkip:
+    """Tests for detect_batch_cia_skip function (Issue #559)."""
+
+    def _make_batch_event(
+        self,
+        subagent_type: str,
+        issue_number: int,
+        timestamp: str = "2026-03-25T10:00:00+00:00",
+    ) -> PipelineEvent:
+        """Helper to create a batch PipelineEvent with issue number."""
+        return PipelineEvent(
+            timestamp=timestamp,
+            tool="Agent",
+            agent="main",
+            subagent_type=subagent_type,
+            pipeline_action="agent_invocation",
+            prompt_word_count=500,
+            result_word_count=2000,
+            success=True,
+            batch_issue_number=issue_number,
+        )
+
+    def test_no_batch_events_returns_empty(self):
+        """No batch events (batch_issue_number=0) should return no findings."""
+        events = [
+            _make_event(subagent_type="implementer"),
+            _make_event(subagent_type="reviewer"),
+        ]
+        findings = detect_batch_cia_skip(events)
+        assert findings == [], "#559: non-batch events should return empty"
+
+    def test_all_issues_have_cia_returns_empty(self):
+        """All batch issues with CIA invoked should return no findings."""
+        events = [
+            self._make_batch_event("implementer", 100, "2026-03-25T10:00:00+00:00"),
+            self._make_batch_event("continuous-improvement-analyst", 100, "2026-03-25T10:05:00+00:00"),
+            self._make_batch_event("implementer", 200, "2026-03-25T10:10:00+00:00"),
+            self._make_batch_event("continuous-improvement-analyst", 200, "2026-03-25T10:15:00+00:00"),
+        ]
+        findings = detect_batch_cia_skip(events)
+        assert findings == [], "#559: all issues have CIA, no findings"
+
+    def test_last_issue_missing_cia_flagged(self):
+        """Last issue missing CIA should be flagged as WARNING with batch_last_issue_cia_skip."""
+        events = [
+            self._make_batch_event("implementer", 100, "2026-03-25T10:00:00+00:00"),
+            self._make_batch_event("continuous-improvement-analyst", 100, "2026-03-25T10:05:00+00:00"),
+            self._make_batch_event("implementer", 200, "2026-03-25T10:10:00+00:00"),
+            self._make_batch_event("reviewer", 200, "2026-03-25T10:15:00+00:00"),
+            # Issue 200 has no CIA
+        ]
+        findings = detect_batch_cia_skip(events)
+        assert len(findings) == 1, "#559: last issue missing CIA should produce one finding"
+        assert findings[0].severity == "WARNING"
+        assert findings[0].pattern_id == "batch_last_issue_cia_skip"
+        assert "200" in findings[0].description
+        assert "LAST ISSUE" in findings[0].description
+
+    def test_middle_issue_missing_cia_flagged(self):
+        """Non-last issue missing CIA should be flagged as INFO with batch_issue_cia_skip."""
+        events = [
+            self._make_batch_event("implementer", 100, "2026-03-25T10:00:00+00:00"),
+            # Issue 100 has no CIA
+            self._make_batch_event("implementer", 200, "2026-03-25T10:10:00+00:00"),
+            self._make_batch_event("continuous-improvement-analyst", 200, "2026-03-25T10:15:00+00:00"),
+        ]
+        findings = detect_batch_cia_skip(events)
+        assert len(findings) == 1, "#559: middle issue missing CIA should produce one finding"
+        assert findings[0].severity == "INFO"
+        assert findings[0].pattern_id == "batch_issue_cia_skip"
+        assert "100" in findings[0].description
+
+    def test_single_issue_batch_missing_cia(self):
+        """Single-issue batch missing CIA should flag as WARNING (it is both first and last)."""
+        events = [
+            self._make_batch_event("implementer", 42, "2026-03-25T10:00:00+00:00"),
+            self._make_batch_event("reviewer", 42, "2026-03-25T10:05:00+00:00"),
+        ]
+        findings = detect_batch_cia_skip(events)
+        assert len(findings) == 1, "#559: single issue batch missing CIA"
+        assert findings[0].severity == "WARNING"
+        assert findings[0].pattern_id == "batch_last_issue_cia_skip"
+        assert "42" in findings[0].description
+
