@@ -81,6 +81,48 @@ The researcher agent automatically bootstraps the knowledge base on first use:
 
 ## Template Contents
 
+### global-claude.md.template
+
+**NEW in v3.40.0**: Global CLAUDE.md template for `~/.claude/CLAUDE.md`.
+
+**Purpose**: Universal instructions that apply to ALL projects using Claude Code with autonomous-dev.
+
+**Contents** (8KB):
+- Documentation alignment validation
+- Git automation best practices
+- Claude Code restart requirements (critical!)
+- Core philosophy for autonomous development
+- Code quality standards (Python, API design)
+- Testing requirements
+- Problem-solving approach
+
+**Section Markers**:
+```markdown
+<!-- autonomous-dev:start -->
+## Documentation Alignment
+...
+<!-- autonomous-dev:end -->
+```
+
+Content between markers is updated when plugin updates. User content outside markers is preserved.
+
+**Installation**:
+```bash
+# Via setup wizard (interactive)
+python3 .claude/hooks/setup.py
+# Choose: "Setup global CLAUDE.md"
+
+# Via command line (automated)
+python3 .claude/hooks/setup.py --auto --global-claude
+
+# Standalone
+python3 plugins/autonomous-dev/lib/claude_merger.py --template templates/global-claude.md.template
+```
+
+**Merge Library**: `lib/claude_merger.py` handles section-based merging with backup.
+
+---
+
 ### knowledge/
 
 Knowledge base template with:
@@ -111,6 +153,7 @@ Knowledge base template with:
 | Component | Location | Ownership | Lifecycle |
 |-----------|----------|-----------|-----------|
 | **Template** | `plugins/.../templates/` | Plugin developer | Updated with plugin |
+| **Global CLAUDE.md** | `~/.claude/CLAUDE.md` | User (merged) | Section-based updates |
 | **Workspace** | `.claude/knowledge/` | User | User adds research |
 | **Cache** | `.claude/cache/` | User | Auto-expire (ephemeral) |
 
@@ -348,5 +391,5 @@ Agent:
 
 ---
 
-**Last Updated**: 2025-10-24
-**Version**: 1.0
+**Last Updated**: 2025-12-09
+**Version**: 1.1

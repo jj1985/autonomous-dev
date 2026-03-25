@@ -42,6 +42,16 @@ Pick the installation tier that matches your workflow:
 
 **Done!** All commands immediately work.
 
+### Optional: Global CLAUDE.md
+
+The plugin includes a global CLAUDE.md template with universal instructions for ALL your projects:
+```bash
+# Run setup wizard with global flag
+python3 ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/hooks/setup.py --global-claude
+```
+
+This is optional for Basic tier but recommended for Standard/Team tiers.
+
 ### What You Get
 
 **8 Slash Commands**:
@@ -275,6 +285,7 @@ echo "GITHUB_TOKEN=ghp_your_token_here" > .env
 | **Auto-format on save** | ❌ Manual | ✅ Automatic | ✅ Automatic |
 | **Auto-test before commit** | ❌ Manual | ✅ Automatic | ✅ Automatic |
 | **Security scan** | ❌ Manual | ✅ Automatic | ✅ Automatic |
+| **Global CLAUDE.md** | ❌ Optional | ✅ Recommended | ✅ Recommended |
 | **PROJECT.md governance** | ❌ Optional | ❌ Optional | ✅ Required |
 | **GitHub integration** | ❌ No | ❌ No | ✅ Yes |
 | **Sprint tracking** | ❌ No | ❌ No | ✅ Milestones |
