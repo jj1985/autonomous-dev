@@ -51,6 +51,7 @@ class Finding:
     pattern_id: str  # e.g. "implementer_before_planner"
     description: str
     evidence: list = field(default_factory=list)
+    recommended_action: Optional[str] = None
 
 
 # Canonical step ordering: agent type → step index
@@ -104,6 +105,42 @@ MAX_PROMPT_SHRINKAGE_RATIO = 0.25
 
 # Minimum prompt word count for security-critical agents
 MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
+
+# Minimum word count for doc-master output to be considered a valid verdict
+MIN_DOC_VERDICT_WORDS = 30
+
+# Known valid agent types for file path construction (security whitelist)
+VALID_AGENT_TYPES = set(STEP_ORDER.keys())
+
+
+def get_minimum_prompt_content(agent_type: str, agents_dir: Path) -> Optional[str]:
+    """Read minimum prompt content from an agent's .md file on disk.
+
+    Validates agent_type against VALID_AGENT_TYPES whitelist before
+    constructing file paths. Returns the first ~200 words of the file
+    as a minimum prompt baseline.
+
+    Args:
+        agent_type: Agent type string (must be in VALID_AGENT_TYPES).
+        agents_dir: Path to the agents directory.
+
+    Returns:
+        First ~200 words of the agent's .md file, or None if invalid/missing.
+    """
+    if agent_type not in VALID_AGENT_TYPES:
+        return None
+
+    try:
+        agent_file = agents_dir / f"{agent_type}.md"
+        if not agent_file.exists():
+            return None
+        content = agent_file.read_text().strip()
+        if not content:
+            return None
+        words = content.split()
+        return " ".join(words[:200])
+    except (OSError, IOError):
+        return None
 
 
 def parse_session_logs(
@@ -496,7 +533,7 @@ def detect_ghost_invocations(
     return findings
 
 
-def detect_progressive_compression(events: List[PipelineEvent]) -> List[Finding]:
+def detect_progressive_compression(events: List[PipelineEvent], *, agents_dir: Optional[Path] = None) -> List[Finding]:
     """Detect progressive prompt compression across batch issues.
 
     Groups agent events by batch_issue_number and compares prompt_word_count
@@ -559,6 +596,19 @@ def detect_progressive_compression(events: List[PipelineEvent]) -> List[Finding]
                     else "WARNING"
                 )
 
+                recommended_action = (
+                    f"Reload prompt from agents/{agent_type}.md before "
+                    f"processing issue #{issue_num}. Re-read the agent prompt "
+                    f"file from disk instead of reusing compressed context."
+                )
+                evidence_list = [
+                    f"baseline (issue #{baseline_issue}): {baseline_words} words",
+                    f"current (issue #{issue_num}): {current_words} words",
+                    f"ratio: {ratio:.3f} (threshold: {1 - MAX_PROMPT_SHRINKAGE_RATIO})",
+                    f"agent_type: {agent_type}",
+                ]
+                if agents_dir is not None:
+                    evidence_list.append(f"prompt_source: {agents_dir / f'{agent_type}.md'}")
                 findings.append(Finding(
                     finding_type="progressive_compression",
                     severity=severity,
@@ -570,12 +620,8 @@ def detect_progressive_compression(events: List[PipelineEvent]) -> List[Finding]
                         f"— progressive compression detected "
                         f"(threshold: {MAX_PROMPT_SHRINKAGE_RATIO:.0%} shrinkage)"
                     ),
-                    evidence=[
-                        f"baseline (issue #{baseline_issue}): {baseline_words} words",
-                        f"current (issue #{issue_num}): {current_words} words",
-                        f"ratio: {ratio:.3f} (threshold: {1 - MAX_PROMPT_SHRINKAGE_RATIO})",
-                        f"agent_type: {agent_type}",
-                    ],
+                    evidence=evidence_list,
+                    recommended_action=recommended_action,
                 ))
 
     return findings
@@ -627,12 +673,87 @@ def detect_minimum_prompt_violation(events: List[PipelineEvent]) -> List[Finding
     return findings
 
 
+def _correlate_invocation_completion(
+    events: List[PipelineEvent],
+    *,
+    max_window_seconds: float = 600,
+) -> List[tuple]:
+    """Pair agent invocation events with their completion events.
+
+    Matches PostToolUse agent_invocation events with SubagentStop
+    agent_completion events by subagent_type and temporal proximity.
+    Each invocation is paired with the closest subsequent completion
+    of the same subagent_type within max_window_seconds.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+        max_window_seconds: Maximum seconds between invocation and completion
+            to consider them a pair.
+
+    Returns:
+        List of (invocation_event, completion_event_or_None) tuples.
+    """
+    invocations = [
+        e for e in events
+        if e.pipeline_action == "agent_invocation" and e.subagent_type
+    ]
+    completions = [
+        e for e in events
+        if e.pipeline_action == "agent_completion" and e.subagent_type
+    ]
+
+    used_completions: set[int] = set()  # indices into completions list
+    pairs: List[tuple] = []
+
+    for inv in invocations:
+        best_completion = None
+        best_idx = -1
+        best_gap = float("inf")
+
+        for idx, comp in enumerate(completions):
+            if idx in used_completions:
+                continue
+            if comp.subagent_type != inv.subagent_type:
+                continue
+
+            gap = _seconds_between(inv.timestamp, comp.timestamp)
+            if gap is None:
+                continue
+
+            # Completion must be AFTER invocation (or very close)
+            inv_dt = _parse_timestamp(inv.timestamp)
+            comp_dt = _parse_timestamp(comp.timestamp)
+            if inv_dt is None or comp_dt is None:
+                continue
+            if comp_dt < inv_dt:
+                continue
+
+            if gap <= max_window_seconds and gap < best_gap:
+                best_gap = gap
+                best_completion = comp
+                best_idx = idx
+
+        if best_completion is not None:
+            used_completions.add(best_idx)
+            pairs.append((inv, best_completion))
+        else:
+            pairs.append((inv, None))
+
+    return pairs
+
+
 def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
     """Detect doc-master invocations that produced no output or failed.
 
-    Flags doc-master events where result_word_count == 0 (empty output / timeout)
-    or success == False (crash / error). These indicate the doc-master did not
-    produce a DOC-DRIFT-VERDICT, which means documentation drift may go undetected.
+    Correlates doc-master agent_invocation events with their matching
+    agent_completion (SubagentStop) events to get actual result word counts.
+    PostToolUse invocation events always have result_word_count=0, so this
+    function uses the completion event's word count instead.
+
+    Flags when:
+    - No completion event exists for a doc-master invocation
+    - Completion result_word_count < MIN_DOC_VERDICT_WORDS (too short for verdict)
+    - Completion success is False
 
     Args:
         events: List of PipelineEvent sorted by timestamp.
@@ -642,50 +763,74 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
     """
     findings: List[Finding] = []
 
-    doc_master_events = [
-        e for e in events
-        if e.tool in AGENT_TOOL_NAMES and e.subagent_type == "doc-master"
-    ]
+    # Get all correlated pairs
+    pairs = _correlate_invocation_completion(events)
 
-    for event in doc_master_events:
-        if event.result_word_count == 0:
+    # Filter to doc-master pairs
+    doc_pairs = [(inv, comp) for inv, comp in pairs if inv.subagent_type == "doc-master"]
+
+    for inv, comp in doc_pairs:
+        if comp is None:
+            # No completion event found — doc-master may have timed out or crashed
             findings.append(Finding(
                 finding_type="doc_verdict_missing",
                 severity="WARNING",
                 pattern_id="doc_verdict_missing",
                 description=(
-                    f"[DOC-VERDICT-MISSING] doc-master produced 0 result words "
-                    f"at {event.timestamp} — no DOC-DRIFT-VERDICT generated. "
+                    f"[DOC-VERDICT-MISSING] doc-master invocation at {inv.timestamp} "
+                    f"has no matching completion event — agent may have timed out or crashed. "
                     f"Documentation drift may go undetected."
                 ),
                 evidence=[
-                    f"subagent_type: {event.subagent_type}",
-                    f"result_word_count: {event.result_word_count}",
-                    f"timestamp: {event.timestamp}",
-                    f"success: {event.success}",
+                    f"subagent_type: {inv.subagent_type}",
+                    f"invocation_timestamp: {inv.timestamp}",
+                    f"completion: not found",
+                    f"success: unknown",
                 ],
             ))
-        elif not event.success:
+        elif not comp.success:
+            # Completion exists but failed
             findings.append(Finding(
                 finding_type="doc_verdict_missing",
                 severity="WARNING",
                 pattern_id="doc_verdict_missing",
                 description=(
                     f"[DOC-VERDICT-MISSING] doc-master failed (success=False) "
-                    f"at {event.timestamp} — no DOC-DRIFT-VERDICT generated. "
+                    f"at {comp.timestamp} — no DOC-DRIFT-VERDICT generated. "
                     f"Documentation drift may go undetected."
                 ),
                 evidence=[
-                    f"subagent_type: {event.subagent_type}",
-                    f"result_word_count: {event.result_word_count}",
-                    f"timestamp: {event.timestamp}",
-                    f"success: {event.success}",
+                    f"subagent_type: {comp.subagent_type}",
+                    f"result_word_count: {comp.result_word_count}",
+                    f"invocation_timestamp: {inv.timestamp}",
+                    f"completion_timestamp: {comp.timestamp}",
+                    f"success: {comp.success}",
                 ],
             ))
+        elif comp.result_word_count < MIN_DOC_VERDICT_WORDS:
+            # Completion exists but output too short for a meaningful verdict
+            findings.append(Finding(
+                finding_type="doc_verdict_missing",
+                severity="WARNING",
+                pattern_id="doc_verdict_missing",
+                description=(
+                    f"[DOC-VERDICT-MISSING] doc-master produced only "
+                    f"{comp.result_word_count} result words at {comp.timestamp} "
+                    f"(minimum: {MIN_DOC_VERDICT_WORDS}) — output too short for "
+                    f"meaningful DOC-DRIFT-VERDICT. Documentation drift may go undetected."
+                ),
+                evidence=[
+                    f"subagent_type: {comp.subagent_type}",
+                    f"result_word_count: {comp.result_word_count}",
+                    f"minimum_required: {MIN_DOC_VERDICT_WORDS}",
+                    f"invocation_timestamp: {inv.timestamp}",
+                    f"completion_timestamp: {comp.timestamp}",
+                    f"success: {comp.success}",
+                ],
+            ))
+        # else: completion has sufficient output and success=True — no finding
 
     return findings
-
-
 
 def detect_batch_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
     """Detect batch issues where continuous-improvement-analyst was not invoked.

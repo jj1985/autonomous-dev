@@ -514,3 +514,77 @@ class TestParseSessionLogsBatchIssueNumber:
         events = parse_session_logs(log_file)
         assert len(events) == 1
         assert events[0].batch_issue_number == 0
+
+
+class TestCompressionPrevention:
+    """Tests for compression prevention -- recommended_action field (Issue #561)."""
+
+    def test_compression_finding_has_recommended_action(self):
+        """Compression findings must include non-None recommended_action."""
+        events = [
+            _make_batch_event(
+                subagent_type="reviewer",
+                batch_issue_number=1,
+                prompt_word_count=1000,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            _make_batch_event(
+                subagent_type="reviewer",
+                batch_issue_number=3,
+                prompt_word_count=500,  # 50% shrinkage
+                timestamp="2026-03-22T10:30:00+00:00",
+            ),
+        ]
+        findings = detect_progressive_compression(events)
+        assert len(findings) == 1
+        assert findings[0].recommended_action is not None
+        assert "agents/reviewer.md" in findings[0].recommended_action
+        assert "Reload" in findings[0].recommended_action
+
+    def test_compression_with_agents_dir_includes_prompt_path(self, tmp_path):
+        """When agents_dir is provided, evidence includes prompt source path."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "implementer.md").write_text("agent prompt content here")
+
+        events = [
+            _make_batch_event(
+                subagent_type="implementer",
+                batch_issue_number=1,
+                prompt_word_count=1000,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            _make_batch_event(
+                subagent_type="implementer",
+                batch_issue_number=2,
+                prompt_word_count=500,  # 50% shrinkage
+                timestamp="2026-03-22T10:10:00+00:00",
+            ),
+        ]
+        findings = detect_progressive_compression(events, agents_dir=agents_dir)
+        assert len(findings) == 1
+        prompt_source_evidence = [e for e in findings[0].evidence if "prompt_source" in e]
+        assert len(prompt_source_evidence) == 1
+        assert "implementer.md" in prompt_source_evidence[0]
+
+    def test_no_agents_dir_no_prompt_path(self):
+        """Without agents_dir, evidence does not include prompt source path."""
+        events = [
+            _make_batch_event(
+                subagent_type="implementer",
+                batch_issue_number=1,
+                prompt_word_count=1000,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            _make_batch_event(
+                subagent_type="implementer",
+                batch_issue_number=2,
+                prompt_word_count=500,
+                timestamp="2026-03-22T10:10:00+00:00",
+            ),
+        ]
+        findings = detect_progressive_compression(events)
+        assert len(findings) == 1
+        prompt_source_evidence = [e for e in findings[0].evidence if "prompt_source" in e]
+        assert len(prompt_source_evidence) == 0
+

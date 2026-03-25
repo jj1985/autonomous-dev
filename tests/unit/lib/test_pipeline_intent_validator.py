@@ -30,13 +30,18 @@ sys.path.insert(0, str(PROJECT_ROOT / "plugins" / "autonomous-dev" / "lib"))
 
 from pipeline_intent_validator import (
     Finding,
+    MIN_DOC_VERDICT_WORDS,
     PipelineEvent,
+    VALID_AGENT_TYPES,
+    _correlate_invocation_completion,
     detect_batch_cia_skip,
     detect_context_dropping,
     detect_doc_verdict_missing,
     detect_ghost_invocations,
     detect_hard_gate_ordering,
     detect_parallelization_violations,
+    detect_progressive_compression,
+    get_minimum_prompt_content,
     parse_session_logs,
     validate_pipeline_intent,
     validate_step_ordering,
@@ -52,6 +57,7 @@ def _make_event(
     prompt_word_count: int = 500,
     result_word_count: int = 2000,
     success: bool = True,
+    batch_issue_number: int = 0,
 ) -> PipelineEvent:
     """Helper to create PipelineEvent for tests."""
     return PipelineEvent(
@@ -63,6 +69,7 @@ def _make_event(
         prompt_word_count=prompt_word_count,
         result_word_count=result_word_count,
         success=success,
+        batch_issue_number=batch_issue_number,
     )
 
 
@@ -112,8 +119,23 @@ def _make_jsonl_line(
 
 
 def _write_clean_pipeline(log_file: Path, session_id: str = "test-session") -> None:
-    """Write a clean pipeline JSONL with correct ordering."""
+    """Write a clean pipeline JSONL with correct ordering.
+
+    Includes SubagentStop entries for doc-master (and other STEP 6 agents) so
+    that detect_doc_verdict_missing can correlate invocations with completions
+    without producing false positives. (Issue #562)
+    """
     base = datetime(2026, 2, 28, 10, 0, 0)
+    # Build a SubagentStop entry for doc-master (simulates real pipeline behavior)
+    doc_master_completion = json.dumps({
+        "timestamp": (base + timedelta(minutes=14)).isoformat(),
+        "hook": "SubagentStop",
+        "subagent_type": "doc-master",
+        "duration_ms": 180000,
+        "result_word_count": 200,
+        "session_id": session_id,
+        "success": True,
+    })
     lines = [
         _make_jsonl_line(subagent_type="researcher-local", timestamp=(base).isoformat(), session_id=session_id),
         _make_jsonl_line(subagent_type="researcher", timestamp=(base + timedelta(seconds=2)).isoformat(), session_id=session_id),
@@ -124,6 +146,7 @@ def _write_clean_pipeline(log_file: Path, session_id: str = "test-session") -> N
         _make_jsonl_line(subagent_type="reviewer", timestamp=(base + timedelta(minutes=10)).isoformat(), session_id=session_id),
         _make_jsonl_line(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=12)).isoformat(), session_id=session_id),
         _make_jsonl_line(subagent_type="doc-master", timestamp=(base + timedelta(minutes=10, seconds=4)).isoformat(), session_id=session_id),
+        doc_master_completion,
     ]
     log_file.write_text("\n".join(lines) + "\n")
 
@@ -746,17 +769,51 @@ class TestDataStructures:
         assert f.severity == "CRITICAL"
         assert f.finding_type == "step_ordering"
         assert len(f.evidence) == 2
+        assert f.recommended_action is None  # default is None
+        f2 = Finding(
+            finding_type="test",
+            severity="INFO",
+            pattern_id="test",
+            description="test",
+            recommended_action="Reload from agents/reviewer.md",
+        )
+        assert f2.recommended_action == "Reload from agents/reviewer.md"
 
 
 class TestDetectDocVerdictMissing:
-    """Tests for detect_doc_verdict_missing function (Issue #543)."""
+    """Tests for detect_doc_verdict_missing function (Issues #543, #562)."""
 
-    def test_doc_master_zero_output_flagged(self):
-        """doc-master with result_word_count=0 produces WARNING finding."""
+    def test_doc_master_with_completion_passes(self):
+        """doc-master invocation paired with healthy completion produces NO findings."""
         events = [
             _make_event(
                 subagent_type="doc-master",
                 tool="Agent",
+                pipeline_action="agent_invocation",
+                result_word_count=0,  # PostToolUse always 0
+                success=True,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:02:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=200,  # SubagentStop has actual output
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 0, "#562: healthy completion should produce no findings"
+
+    def test_doc_master_no_completion_flagged(self):
+        """doc-master invocation with no matching completion is flagged."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
                 result_word_count=0,
                 success=True,
             ),
@@ -765,28 +822,51 @@ class TestDetectDocVerdictMissing:
         assert len(findings) == 1
         assert findings[0].finding_type == "doc_verdict_missing"
         assert findings[0].severity == "WARNING"
-        assert findings[0].pattern_id == "doc_verdict_missing"
         assert "[DOC-VERDICT-MISSING]" in findings[0].description
 
-    def test_doc_master_normal_output_passes(self):
-        """doc-master with result_word_count=500 produces no findings."""
+    def test_doc_master_completion_low_output_flagged(self):
+        """doc-master completion with very low word count is flagged."""
         events = [
             _make_event(
                 subagent_type="doc-master",
                 tool="Agent",
-                result_word_count=500,
+                pipeline_action="agent_invocation",
+                result_word_count=0,
+                success=True,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:02:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=10,  # Below MIN_DOC_VERDICT_WORDS
                 success=True,
             ),
         ]
         findings = detect_doc_verdict_missing(events)
-        assert len(findings) == 0
+        assert len(findings) == 1
+        assert findings[0].finding_type == "doc_verdict_missing"
+        assert "[DOC-VERDICT-MISSING]" in findings[0].description
 
-    def test_doc_master_failed_flagged(self):
-        """doc-master with success=False produces a finding."""
+    def test_doc_master_completion_failed_flagged(self):
+        """doc-master completion with success=False is flagged."""
         events = [
             _make_event(
                 subagent_type="doc-master",
                 tool="Agent",
+                pipeline_action="agent_invocation",
+                result_word_count=0,
+                success=True,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:02:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
                 result_word_count=200,
                 success=False,
             ),
@@ -794,7 +874,6 @@ class TestDetectDocVerdictMissing:
         findings = detect_doc_verdict_missing(events)
         assert len(findings) == 1
         assert findings[0].finding_type == "doc_verdict_missing"
-        assert findings[0].severity == "WARNING"
         assert "[DOC-VERDICT-MISSING]" in findings[0].description
 
     def test_no_doc_master_events_no_findings(self):
@@ -802,14 +881,53 @@ class TestDetectDocVerdictMissing:
         events = [
             _make_event(subagent_type="researcher", tool="Agent", result_word_count=500),
             _make_event(subagent_type="implementer", tool="Agent", result_word_count=1000),
-            _make_event(subagent_type="reviewer", tool="Agent", result_word_count=300),
         ]
         findings = detect_doc_verdict_missing(events)
         assert len(findings) == 0
 
     def test_integrated_in_validate_pipeline_intent(self, tmp_path):
-        """Verify detect_doc_verdict_missing is wired into validate_pipeline_intent."""
+        """Verify detect_doc_verdict_missing works through validate_pipeline_intent.
+
+        When a doc-master invocation has result_word_count=0 (PostToolUse) but
+        a matching SubagentStop has result_word_count=200, no finding should be produced.
+        This is the false positive that Issue #562 fixes.
+        """
         log_file = tmp_path / "doc_missing.jsonl"
+        # PostToolUse entry (invocation with result_word_count=0)
+        invocation_entry = {
+            "timestamp": "2026-03-22T10:00:00+00:00",
+            "tool": "Agent",
+            "input_summary": {
+                "subagent_type": "doc-master",
+                "pipeline_action": "agent_invocation",
+                "prompt_word_count": 500,
+            },
+            "output_summary": {"success": True, "result_word_count": 0},
+            "session_id": "test-session",
+            "agent": "main",
+        }
+        # SubagentStop entry (completion with actual word count)
+        completion_entry = {
+            "timestamp": "2026-03-22T10:02:00+00:00",
+            "hook": "SubagentStop",
+            "subagent_type": "doc-master",
+            "duration_ms": 30000,
+            "result_word_count": 200,
+            "session_id": "test-session",
+            "success": True,
+        }
+        log_file.write_text(
+            json.dumps(invocation_entry) + "\n" + json.dumps(completion_entry) + "\n"
+        )
+        findings = validate_pipeline_intent(log_file, session_id="test-session")
+        doc_findings = [f for f in findings if f.finding_type == "doc_verdict_missing"]
+        assert len(doc_findings) == 0, (
+            "#562: doc-master with healthy SubagentStop should NOT produce false positive"
+        )
+
+    def test_invocation_only_no_completion_flagged_via_log(self, tmp_path):
+        """Verify that an invocation-only log (no SubagentStop) is flagged."""
+        log_file = tmp_path / "doc_missing_no_completion.jsonl"
         entry = {
             "timestamp": "2026-03-22T10:00:00+00:00",
             "tool": "Agent",
@@ -827,6 +945,7 @@ class TestDetectDocVerdictMissing:
         doc_findings = [f for f in findings if f.finding_type == "doc_verdict_missing"]
         assert len(doc_findings) == 1
         assert "[DOC-VERDICT-MISSING]" in doc_findings[0].description
+
 
 class TestDetectBatchCiaSkip:
     """Tests for detect_batch_cia_skip function (Issue #559)."""
@@ -911,4 +1030,209 @@ class TestDetectBatchCiaSkip:
         assert findings[0].severity == "WARNING"
         assert findings[0].pattern_id == "batch_last_issue_cia_skip"
         assert "42" in findings[0].description
+
+
+class TestCorrelateInvocationCompletion:
+    """Tests for _correlate_invocation_completion helper (Issue #562)."""
+
+    def test_pairs_invocation_with_completion(self):
+        """Basic pairing: invocation + completion of same type."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:02:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=200,
+                success=True,
+            ),
+        ]
+        pairs = _correlate_invocation_completion(events)
+        assert len(pairs) == 1
+        inv, comp = pairs[0]
+        assert inv.pipeline_action == "agent_invocation"
+        assert comp is not None
+        assert comp.pipeline_action == "agent_completion"
+        assert comp.result_word_count == 200
+
+    def test_unmatched_invocation_returns_none(self):
+        """Invocation with no matching completion returns (inv, None)."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+        ]
+        pairs = _correlate_invocation_completion(events)
+        assert len(pairs) == 1
+        inv, comp = pairs[0]
+        assert inv.subagent_type == "doc-master"
+        assert comp is None
+
+    def test_multiple_agents_paired_correctly(self):
+        """Multiple agent types are paired independently."""
+        events = [
+            _make_event(
+                subagent_type="reviewer",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:00:01+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:02:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="reviewer",
+                pipeline_action="agent_completion",
+                result_word_count=300,
+                success=True,
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:03:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=200,
+                success=True,
+            ),
+        ]
+        pairs = _correlate_invocation_completion(events)
+        assert len(pairs) == 2
+        reviewer_pairs = [(i, c) for i, c in pairs if i.subagent_type == "reviewer"]
+        doc_pairs = [(i, c) for i, c in pairs if i.subagent_type == "doc-master"]
+        assert len(reviewer_pairs) == 1
+        assert len(doc_pairs) == 1
+        assert reviewer_pairs[0][1].result_word_count == 300
+        assert doc_pairs[0][1].result_word_count == 200
+
+    def test_completion_before_invocation_not_matched(self):
+        """Completion that occurs before invocation should not be matched."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-03-22T09:58:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=200,
+                success=True,
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+        ]
+        pairs = _correlate_invocation_completion(events)
+        assert len(pairs) == 1
+        inv, comp = pairs[0]
+        assert comp is None  # The completion was BEFORE the invocation
+
+    def test_multiple_invocations_of_same_type(self):
+        """Multiple invocations of same agent type are each paired with distinct completions."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:02:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=150,
+                success=True,
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-03-22T10:05:00+00:00",
+            ),
+            PipelineEvent(
+                timestamp="2026-03-22T10:07:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=180,
+                success=True,
+            ),
+        ]
+        pairs = _correlate_invocation_completion(events)
+        assert len(pairs) == 2
+        assert pairs[0][1].result_word_count == 150
+        assert pairs[1][1].result_word_count == 180
+
+
+class TestGetMinimumPromptContent:
+    """Tests for get_minimum_prompt_content function (Issue #561)."""
+
+    def test_valid_agent_type_returns_content(self, tmp_path):
+        """Valid agent type with existing file returns first 200 words."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        content = " ".join(f"word{i}" for i in range(300))
+        (agents_dir / "reviewer.md").write_text(content)
+        result = get_minimum_prompt_content("reviewer", agents_dir)
+        assert result is not None
+        assert len(result.split()) == 200
+
+    def test_invalid_agent_type_returns_none(self, tmp_path):
+        """Invalid agent type (not in whitelist) returns None."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        result = get_minimum_prompt_content("../../etc/passwd", agents_dir)
+        assert result is None
+
+    def test_unknown_agent_type_returns_none(self, tmp_path):
+        """Unknown agent type not in STEP_ORDER returns None."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        result = get_minimum_prompt_content("not-a-real-agent", agents_dir)
+        assert result is None
+
+    def test_missing_file_returns_none(self, tmp_path):
+        """Valid agent type but missing file returns None."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        result = get_minimum_prompt_content("reviewer", agents_dir)
+        assert result is None
+
+    def test_empty_file_returns_none(self, tmp_path):
+        """Valid agent type but empty file returns None."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "reviewer.md").write_text("")
+        result = get_minimum_prompt_content("reviewer", agents_dir)
+        assert result is None
+
+    def test_short_file_returns_all_content(self, tmp_path):
+        """File with fewer than 200 words returns all words."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        file_content = "This is a short agent prompt file."
+        (agents_dir / "planner.md").write_text(file_content)
+        result = get_minimum_prompt_content("planner", agents_dir)
+        assert result == file_content
 
