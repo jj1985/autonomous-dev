@@ -64,6 +64,20 @@ After all agents complete:
 
 **The difference**: Claude stops guessing and starts following your project's rules.
 
+### How It Stays Honest
+
+Claude is brilliant at execution but unreliable at process. It skips tests, declares "good enough" on failing code, bypasses security reviews, and drifts from intent — not out of malice, but because it's trained to complete tasks, not follow engineering discipline. Prompt-level instructions ("please run tests") get ignored under context pressure.
+
+autonomous-dev solves this with three layers that keep Claude honest:
+
+- **Hooks** (deterministic, can't be bypassed) — Run on every tool call, commit, and prompt. They enforce hard gates: tests must pass with 0 failures before code review starts, no stubs or placeholders allowed, security scan is mandatory, documentation must stay in sync. Claude can't argue with a hook — it blocks or it doesn't.
+
+- **Agents** (specialist AI, scoped authority) — Each pipeline step is handled by a specialist agent with a specific job and constrained tools. The researcher only researches. The implementer only implements. The security auditor only audits. No single agent can skip steps or declare its own work "done" — the coordinator enforces the sequence.
+
+- **Skills** (domain knowledge, injected at the right time) — Instead of stuffing the context window with every rule upfront, skills inject relevant knowledge only when needed. Testing standards load during test writing. Security patterns load during security review. This keeps Claude focused and reduces the drift that comes from context overload.
+
+**The result**: Every feature goes through every step. Not because Claude remembers to, but because the system won't let it skip.
+
 ---
 
 ## What's PROJECT.md?
