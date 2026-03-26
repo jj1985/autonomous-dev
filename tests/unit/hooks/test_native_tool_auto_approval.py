@@ -567,3 +567,92 @@ class TestNativeToolMainBypass:
             f"Write-capable native tool '{tool_name}' got '{decision}' at block level.\n"
             f"Reason: {reason}"
         )
+
+
+
+# ---------------------------------------------------------------------------
+# 6. Schema validation: prevent policy file regression (Issue: 9b42c0d)
+# ---------------------------------------------------------------------------
+
+class TestPolicyFileSchema:
+    """Regression tests for auto_approve_policy.json v2.0 schema.
+
+    Commit 9b42c0d replaced both policy files with an older v1.1 schema
+    that lacked the 'tools' key, causing KeyError during pytest collection
+    in test_native_tool_auto_approval.py and test_command_allowed_tools.py.
+
+    These tests ensure the schema regression can never happen silently again.
+    """
+
+    REQUIRED_TOP_LEVEL_KEYS = {"version", "bash", "file_paths", "agents", "web_tools", "tools"}
+    POLICY_FILES = [
+        Path(__file__).resolve().parents[3] / "plugins" / "autonomous-dev" / "config" / "auto_approve_policy.json",
+        Path(__file__).resolve().parents[3] / ".claude" / "config" / "auto_approve_policy.json",
+    ]
+
+    @pytest.mark.parametrize("policy_path", POLICY_FILES, ids=["source", "installed"])
+    def test_policy_file_has_tools_key(self, policy_path: Path):
+        """Policy file must contain the 'tools' top-level key (v2.0 schema).
+
+        Without this key, test_command_allowed_tools.py fails at collection
+        with KeyError: 'tools'.
+        """
+        assert policy_path.exists(), f"Policy file missing: {policy_path}"
+        with open(policy_path) as f:
+            policy = json.load(f)
+        assert "tools" in policy, (
+            f"Policy file {policy_path.name} is missing 'tools' key. "
+            f"Found keys: {sorted(policy.keys())}. "
+            f"This is the v1.1 schema regression from commit 9b42c0d."
+        )
+
+    @pytest.mark.parametrize("policy_path", POLICY_FILES, ids=["source", "installed"])
+    def test_policy_file_has_all_required_keys(self, policy_path: Path):
+        """Policy file must have all v2.0 required top-level keys."""
+        assert policy_path.exists(), f"Policy file missing: {policy_path}"
+        with open(policy_path) as f:
+            policy = json.load(f)
+        missing = self.REQUIRED_TOP_LEVEL_KEYS - set(policy.keys())
+        assert not missing, (
+            f"Policy file {policy_path.name} missing required keys: {sorted(missing)}. "
+            f"Found: {sorted(policy.keys())}"
+        )
+
+    @pytest.mark.parametrize("policy_path", POLICY_FILES, ids=["source", "installed"])
+    def test_policy_file_tools_has_always_allowed(self, policy_path: Path):
+        """The 'tools' section must contain 'always_allowed' list."""
+        with open(policy_path) as f:
+            policy = json.load(f)
+        assert "always_allowed" in policy.get("tools", {}), (
+            f"Policy file {policy_path.name} 'tools' section missing 'always_allowed' list."
+        )
+        assert isinstance(policy["tools"]["always_allowed"], list), (
+            f"'tools.always_allowed' must be a list, got {type(policy['tools']['always_allowed'])}"
+        )
+        assert len(policy["tools"]["always_allowed"]) > 0, (
+            "'tools.always_allowed' must not be empty"
+        )
+
+    @pytest.mark.parametrize("policy_path", POLICY_FILES, ids=["source", "installed"])
+    def test_policy_version_is_2_0(self, policy_path: Path):
+        """Policy file must be v2.0 schema, not v1.1."""
+        with open(policy_path) as f:
+            policy = json.load(f)
+        assert policy.get("version") == "2.0", (
+            f"Policy file {policy_path.name} has version {policy.get('version')!r}, expected '2.0'. "
+            f"The v1.1 schema is missing critical keys."
+        )
+
+    def test_source_and_installed_are_identical(self):
+        """Source and installed policy files must have identical content."""
+        source = self.POLICY_FILES[0]
+        installed = self.POLICY_FILES[1]
+        assert source.exists() and installed.exists()
+        with open(source) as f:
+            source_data = json.load(f)
+        with open(installed) as f:
+            installed_data = json.load(f)
+        assert source_data == installed_data, (
+            "Source and installed policy files have diverged. "
+            "Run install or sync to reconcile."
+        )

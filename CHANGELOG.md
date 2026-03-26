@@ -1,6 +1,8 @@
 ## [Unreleased]
 
 ### Fixed
+- **Policy schema regression restored to v2.0** (#561, #562): `auto_approve_policy.json` was reverted to v1.0 (whitelist-first) schema during conflict resolution in commit 9b42c0d. Restored to v2.0 (blacklist-first, permissive mode) in both `plugins/autonomous-dev/config/` and `.claude/config/`. Schema validation tests added to `test_native_tool_auto_approval.py` to prevent future regressions. `allowed-tools` frontmatter added to `implement-fix.md`, `refactor.md`, and `sweep.md` command files for enforcement compatibility.
+- **TOOL-AUTO-APPROVAL.md Configuration section** updated: Policy File "Structure" example now shows v2.0 blacklist-first schema instead of stale v1.0 whitelist-first schema.
 - **Deploy script no longer deletes hook extensions** (#560): `scripts/deploy-all.sh` rsync `--delete` runs on the hooks directory previously wiped the `extensions/` subdirectory on every deploy, destroying user-authored and project-specific hook extensions. Fixed by adding `--exclude=extensions/` to all rsync `--delete` commands and adding `plugins/autonomous-dev/hooks/extensions/.gitkeep` so the directory is tracked in source and treated as a valid sync target rather than an orphan.
 
 ### Added

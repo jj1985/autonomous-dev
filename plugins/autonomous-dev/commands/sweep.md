@@ -3,6 +3,7 @@ name: sweep
 description: "Alias for /refactor --quick — codebase hygiene sweep"
 argument-hint: "[--fix]"
 user-invocable: true
+allowed-tools: [Read, Bash, Grep, Glob, Agent]
 ---
 
 # Codebase Hygiene Sweep (Alias)

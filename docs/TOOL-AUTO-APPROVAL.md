@@ -391,34 +391,24 @@ AUTO_APPROVE_POLICY_FILE=/path/to/custom_policy.json  # Default: plugins/autonom
 
 Default location: `plugins/autonomous-dev/config/auto_approve_policy.json`
 
-**Structure**:
+**Structure** (v2.0 - Permissive/Blacklist-First):
 ```json
 {
-  "version": "1.0",
-  "description": "MCP Auto-Approval Policy - Whitelist/Blacklist for Safe Tool Execution",
+  "version": "2.0",
+  "description": "MCP Auto-Approval Policy - PERMISSIVE mode with dangerous command blacklist",
   "bash": {
-    "whitelist": [
-      "pytest*",
-      "git status",
-      "git diff*",
-      "git log*",
-      "ls*",
-      "cat*",
-      "grep*"
-    ],
+    "mode": "blacklist",
+    "whitelist": ["*"],
     "blacklist": [
-      "rm -rf*",
-      "sudo*",
+      "rm -rf /*",
+      "sudo *",
       "chmod 777*",
-      "curl*|*bash",
-      "eval*"
+      "eval *",
+      "git push --force origin main"
     ]
   },
   "file_paths": {
-    "whitelist": [
-      "/Users/*/Documents/GitHub/*",
-      "/tmp/pytest-*"
-    ],
+    "whitelist": ["*"],
     "blacklist": [
       "/etc/*",
       "/var/*",
