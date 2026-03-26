@@ -12,8 +12,8 @@
 
 1. **You define your project** in a file called PROJECT.md - your goals, what's in/out of scope, constraints, architecture
 2. **You track work in GitHub Issues** - each feature or bug is an issue
-3. **You run one command** - `/auto-implement "issue #72"`
-4. **Claude executes a full development pipeline** - research, planning, TDD, implementation, code review, security scan, documentation
+3. **You run one command** - `/implement "#72"`
+4. **Claude executes a full development pipeline** - research, planning, acceptance tests, implementation, code review, security scan, documentation
 5. **Claude stays aligned** - if a feature doesn't fit your PROJECT.md scope, it's blocked before any code is written
 
 **In short**: You define the rules once. Claude follows them for every feature.
@@ -22,23 +22,22 @@
 
 ## What Does It Actually Do?
 
-When you type `/auto-implement "issue #72"`, Claude runs 7 specialized agents in sequence:
+When you type `/implement "#72"`, Claude coordinates specialist agents through an 8-step pipeline:
 
 | Step | Agent | What It Does |
 |------|-------|--------------|
-| 1 | **alignment-validator** | Checks if the feature fits your PROJECT.md goals and scope. Blocks if it doesn't. |
-| 2 | **researcher** | Searches for best practices, patterns, and existing solutions |
-| 3 | **planner** | Designs the architecture and creates an implementation plan |
-| 4 | **test-master** | Writes tests FIRST (TDD) - the tests define what "done" means |
-| 5 | **implementer** | Writes code to make the tests pass |
-| 6 | **reviewer** | Reviews code quality, checks it follows your patterns |
+| 1 | **alignment check** | Checks if the feature fits your PROJECT.md goals and scope. Blocks if it doesn't. |
+| 2 | **researcher** (x2) | Searches codebase + web for patterns, best practices, existing solutions |
+| 3 | **planner** | Designs the architecture and creates a file-by-file implementation plan |
+| 4 | **acceptance tests** | Writes acceptance tests that define what "done" means |
+| 5 | **implementer** | Writes code + unit tests to make the acceptance tests pass |
+| 6 | **reviewer** | Reviews code quality, checks patterns, flags issues |
 | 7 | **security-auditor** | Scans for vulnerabilities (OWASP top 10) |
 | 8 | **doc-master** | Updates documentation to match the new code |
 
 After all agents complete:
 - Code is committed with a descriptive message
 - Changes are pushed to your branch
-- A pull request is created
 - The GitHub issue is closed with a summary
 
 **One command. Full software development lifecycle. Aligned to your project.**
@@ -59,9 +58,9 @@ After all agents complete:
 **With autonomous-dev**:
 - You define your project once (PROJECT.md)
 - You create a GitHub issue for each feature
-- You run `/auto-implement "issue #X"`
-- Claude follows your rules, writes tests first, reviews its own work, scans for security, updates docs
-- You review a complete, tested, documented pull request
+- You run `/implement "#X"`
+- Claude follows your rules, writes tests, reviews its own work, scans for security, updates docs
+- You review a complete, tested, documented result
 
 **The difference**: Claude stops guessing and starts following your project's rules.
 
@@ -96,13 +95,13 @@ OUT: Admin dashboard, analytics, billing
 - tests/ - Pytest test suite
 ```
 
-When you run `/auto-implement "Add user registration"`:
-- ✅ Allowed - user registration is IN scope
+When you run `/implement "Add user registration"`:
+- Allowed - user registration is IN scope
 - Claude follows your FastAPI + PostgreSQL + JWT constraints
 - Tests go in `tests/`, code follows your architecture
 
-When you run `/auto-implement "Add analytics dashboard"`:
-- ❌ Blocked - analytics is OUT of scope
+When you run `/implement "Add analytics dashboard"`:
+- Blocked - analytics is OUT of scope
 - No code written, no time wasted
 - You're asked to either change the request or update PROJECT.md
 
@@ -120,35 +119,15 @@ When you run `/auto-implement "Add analytics dashboard"`:
 | **Python 3.9+** | `python3 --version` to verify |
 | **gh CLI** (GitHub) | `brew install gh && gh auth login` |
 
-### Step 1: Install the Plugin (One Time)
+### One-Line Install
 
-Open Claude Code anywhere and run:
-```
-/plugin marketplace add akaszubski/autonomous-dev
-/plugin install autonomous-dev
+```bash
+bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/master/install.sh)
 ```
 
 Then **fully quit Claude Code** (Cmd+Q on Mac, Ctrl+Q on Windows/Linux) and reopen it.
 
-### Step 1.5: Set Up Global CLAUDE.md (Optional but Recommended)
-
-The plugin includes a global CLAUDE.md template with universal instructions that apply to ALL your projects. This includes:
-- Documentation alignment validation
-- Git automation best practices
-- Claude Code restart requirements
-- Core philosophy for autonomous development
-
-**To set up:**
-```bash
-# Interactive (recommended for first-time setup)
-python3 ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/hooks/setup.py --global-claude
-
-# Or use the setup wizard in your project which will offer this option
-```
-
-This creates/updates `~/.claude/CLAUDE.md` with autonomous-dev specific sections (marked with `<!-- autonomous-dev:start/end -->` comments). Your existing content outside these markers is preserved.
-
-### Step 2: Set Up Your Project
+### Set Up Your Project
 
 **Open your project folder in terminal**, then start Claude Code:
 ```bash
@@ -156,122 +135,84 @@ cd /path/to/your/project
 claude
 ```
 
-Now paste one of the prompts below.
-
----
-
-### New Project (Greenfield)
-
-Copy and paste into Claude Code:
-
+Run the setup wizard:
 ```
-I want to set up autonomous-dev for this project. Please help me:
-
-1. Verify plugin is installed in THIS project:
-   - Check if .claude/hooks/ and .claude/commands/ exist in the current directory
-   - If NOT: The plugin was installed elsewhere. Copy files from the marketplace:
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/hooks .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/commands .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/agents .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/skills .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/templates .claude/
-   - If YES: Good, continue
-
-2. Run setup wizard:
-   - Run: python3 .claude/hooks/setup.py
-   - Walk me through the options
-
-3. Help me create PROJECT.md:
-   - Create .claude/PROJECT.md with GOALS, SCOPE, CONSTRAINTS, ARCHITECTURE
-   - Ask me about my project goals, what's in/out of scope, technical constraints
-
-4. Set up GitHub integration:
-   - Verify gh CLI: gh --version
-   - Help me create initial GitHub issues
-
-5. Run /health-check to verify everything works
-
-6. Show me my first feature with /auto-implement "issue #1"
-
-My project is: [DESCRIBE YOUR PROJECT HERE]
+/setup
 ```
 
-### Existing Project (Brownfield)
+This will walk you through creating PROJECT.md and configuring the plugin for your project.
 
-Copy and paste into Claude Code:
-
+For existing projects, use:
 ```
-I want to add autonomous-dev to this existing project. Please help me:
+/align --retrofit
+```
 
-1. Verify plugin is installed in THIS project:
-   - Check if .claude/hooks/ and .claude/commands/ exist in the current directory
-   - If NOT: The plugin was installed elsewhere. Copy files from the marketplace:
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/hooks .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/commands .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/agents .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/skills .claude/
-     cp -r ~/.claude/plugins/marketplaces/autonomous-dev/plugins/autonomous-dev/templates .claude/
-   - If YES: Good, continue
+### Update
 
-2. Run setup wizard:
-   - Run: python3 .claude/hooks/setup.py
-   - Walk me through the options
+```bash
+/sync
+```
 
-3. Analyze my existing project:
-   - Run /align-project-retrofit --dry-run
-   - Show me what changes would be made
+### Uninstall
 
-4. Help me create PROJECT.md based on my existing code:
-   - Infer GOALS, SCOPE, CONSTRAINTS, ARCHITECTURE from what exists
-
-5. Run the retrofit:
-   - Run /align-project-retrofit (step-by-step mode)
-
-6. Run /health-check to verify everything works
+```bash
+/sync --uninstall
 ```
 
 ---
 
 ## Usage
 
-### Single Feature (from GitHub Issue)
+### Single Feature
 
 ```bash
-/auto-implement "issue #72"
+/implement "#72"              # From GitHub issue
+/implement "Add user auth"    # From description
 ```
 
-### Multiple Features (Batch)
+### Pipeline Modes
 
 ```bash
-# From GitHub issues
-/batch-implement --issues 72 73 74 75
-
-# From a file (one feature per line)
-/batch-implement sprint-backlog.txt
-
-# Resume after context reset
-/batch-implement --resume batch-20251209-143022
+/implement "#72"              # Full pipeline (default) - 7 agents, acceptance-first
+/implement --light "#72"      # Light pipeline - docs/config/simple changes
+/implement --tdd-first "#72"  # TDD-first - unit tests before implementation
+/implement --fix "#72"        # Fix mode - minimal pipeline for test fixes
 ```
 
-### Individual Pipeline Stages
+### Batch Processing
 
 ```bash
-/research "JWT authentication patterns"   # Research best practices
-/plan "Add JWT to API"                     # Plan architecture
-/test-feature "JWT authentication"         # Write tests (TDD)
-/implement "Make JWT tests pass"           # Implement code
-/review                                    # Review quality
-/security-scan                             # Scan vulnerabilities
-/update-docs                               # Sync documentation
+/implement --issues 72 73 74 75    # Multiple GitHub issues with worktree isolation
+/implement --batch backlog.txt     # From a file (one feature per line)
+/implement --resume <batch-id>     # Resume after context reset
 ```
 
 ### Project Management
 
 ```bash
-/status              # View PROJECT.md alignment and progress
-/align-project       # Fix alignment issues
-/create-issue "..."  # Create GitHub issue with research
-/health-check        # Verify plugin installation
+/status                  # View PROJECT.md goal progress
+/align                   # Check alignment (--project, --docs, --retrofit)
+/create-issue "..."      # Create GitHub issue with automated research
+/plan-to-issues          # Batch-convert plan mode output into GitHub issues
+/health-check            # Verify plugin installation
+```
+
+### Quality & Analysis
+
+```bash
+/refactor                # Code, docs, and test optimization (--tests, --docs, --code, --fix)
+/sweep                   # Quick codebase hygiene (alias for /refactor --quick)
+/audit                   # Quality audit (--quick, --security, --docs, --code, --tests)
+/advise                  # Critical thinking analysis
+/improve                 # Automation health analysis
+```
+
+### Other Commands
+
+```bash
+/sync                    # Update plugin (--github, --env, --marketplace, --all)
+/worktree                # Git worktrees (--list, --status, --merge, --discard)
+/scaffold-genai-uat      # Scaffold LLM-as-judge tests into any repo
 ```
 
 ---
@@ -280,94 +221,49 @@ I want to add autonomous-dev to this existing project. Please help me:
 
 ### The Agent Pipeline
 
-Every `/auto-implement` runs this 7-agent sequence:
+Every `/implement` runs this pipeline:
 
-| Agent | Purpose | Output |
-|-------|---------|--------|
-| **researcher** | Find patterns, best practices | Research summary |
-| **planner** | Design architecture, integration | Implementation plan |
-| **test-master** | Write tests FIRST (TDD) | Failing test suite |
-| **implementer** | Write code to pass tests | Working implementation |
-| **reviewer** | Check code quality, patterns | Review feedback |
-| **security-auditor** | OWASP vulnerability scan | Security report |
-| **doc-master** | Update documentation | Synced docs |
+```
+/implement "feature"
+     |
+PROJECT.md Alignment Check (blocks if misaligned)
+     |
++------------------+------------------+
+| Research-Local   | Research-Web     |  <- Parallel research
+| (Haiku)          | (Sonnet)         |
++------------------+------------------+
+     |
+Planning (Opus)
+     |
+Acceptance Tests (Coordinator)
+     |
+Implementation (Opus) -> HARD GATE: 0 test failures
+     |                 -> HARD GATE: No stubs/placeholders
+     |                 -> HARD GATE: Hook registration verified
+     |
++----------+------------+-----------+
+| Review   | Security   | Docs      |  <- Ordered validation
+| (Sonnet) | (Sonnet)   | (Sonnet)  |
++----------+------------+-----------+
+     |
+Git Operations (commit, push, close issue)
+     |
+Continuous Improvement (background analysis)
+```
 
 ### PROJECT.md Alignment
 
-Features validate against your PROJECT.md before work starts:
+Features validate against your PROJECT.md before work starts. If you request something OUT of scope, it's blocked - not implemented wrong.
 
-```markdown
-# .claude/PROJECT.md
+### Context Management
 
-## GOALS
-- Build a REST API for user management
-- Achieve 80% test coverage
-
-## SCOPE
-IN: User CRUD, authentication, authorization
-OUT: Admin dashboard, analytics, reporting
-
-## CONSTRAINTS
-- Python 3.11+ with FastAPI
-- PostgreSQL database
-- JWT authentication only
-
-## ARCHITECTURE
-- src/api/ - FastAPI routes
-- src/models/ - SQLAlchemy models
-- src/services/ - Business logic
-- tests/ - Pytest test suite
-```
-
-**If you request something OUT of scope, it's blocked - not implemented wrong.**
-
-### GitHub-First Workflow
-
-```
-1. Create GitHub Issue → "Add password reset flow"
-2. Run /auto-implement "issue #42"
-3. Pipeline executes (research → plan → TDD → implement → review → security → docs)
-4. Code committed, pushed, PR created
-5. Issue #42 auto-closed with summary
-```
-
----
-
-## Context Management
-
-Each feature uses ~25-35K tokens. After 4-5 features (~150K tokens):
+Each feature uses ~25-35K tokens. After 4-5 features:
 
 1. System pauses automatically
 2. Run `/clear` to reset context
-3. Run `/batch-implement --resume <batch-id>` to continue
+3. Run `/implement --resume <batch-id>` to continue
 
 **This is by design** - forces review checkpoints and prevents degraded performance.
-
----
-
-## Documentation
-
-### Core Concepts
-- [Architecture](docs/ARCHITECTURE.md) - Two-layer system (hooks + agents)
-- [Agents](docs/AGENTS.md) - 20 specialized AI agents
-- [PROJECT.md Philosophy](docs/MAINTAINING-PHILOSOPHY.md) - Why alignment-first works
-
-### Workflows
-- [Batch Processing](docs/BATCH-PROCESSING.md) - Multi-feature workflows
-- [Git Automation](docs/GIT-AUTOMATION.md) - Auto-commit, push, PR, issue close
-- [Brownfield Adoption](docs/BROWNFIELD-ADOPTION.md) - Retrofit existing projects
-
-### Reference
-- [Commands](plugins/autonomous-dev/commands/) - All 21 commands
-- [Hooks](docs/HOOKS.md) - 44 automation hooks
-- [Skills](docs/SKILLS-AGENTS-INTEGRATION.md) - 28 knowledge packages
-- [Libraries](docs/LIBRARIES.md) - 29 Python utilities
-
-### Troubleshooting
-- [Troubleshooting Guide](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) - Common issues
-- [Development Guide](docs/DEVELOPMENT.md) - Contributing
-
-**[Full Documentation Index](docs/DOCUMENTATION_INDEX.md)**
 
 ---
 
@@ -375,11 +271,33 @@ Each feature uses ~25-35K tokens. After 4-5 features (~150K tokens):
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| Commands | 21 | Slash commands for workflows |
-| Agents | 20 | Specialized AI for each SDLC stage |
-| Skills | 28 | Domain knowledge (progressive disclosure) |
-| Hooks | 44 | Automatic validation on commits |
-| Libraries | 29 | Reusable Python utilities |
+| Commands | 19 | Slash commands for workflows |
+| Agents | 11 | Specialized AI for each SDLC stage |
+| Skills | 17 | Domain knowledge (progressive disclosure) |
+| Hooks | 25 | Automatic validation and enforcement |
+| Libraries | 172 | Python utilities |
+
+---
+
+## Documentation
+
+### Core Concepts
+- [Architecture](docs/ARCHITECTURE-OVERVIEW.md) - Three-layer system (hooks + agents + continuous improvement)
+- [Maintaining Philosophy](docs/MAINTAINING-PHILOSOPHY.md) - Why alignment-first works
+
+### Workflows
+- [Batch Processing](docs/BATCH-PROCESSING.md) - Multi-feature workflows
+- [Git Automation](docs/GIT-AUTOMATION.md) - Auto-commit, push, issue close
+- [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) - Pipeline enforcement
+
+### Reference
+- [Commands](plugins/autonomous-dev/commands/) - All 19 commands
+- [Hooks](docs/HOOKS.md) - 25 active hooks
+- [Libraries](docs/LIBRARIES.md) - 172 Python utilities
+- [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model
+
+### Troubleshooting
+- [Troubleshooting Guide](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) - Common issues
 
 ---
 
@@ -387,21 +305,21 @@ Each feature uses ~25-35K tokens. After 4-5 features (~150K tokens):
 
 ```bash
 # Install
-/plugin marketplace add akaszubski/autonomous-dev
-/plugin install autonomous-dev
+bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/master/install.sh)
 # Restart Claude Code (Cmd+Q / Ctrl+Q)
 
 # Daily workflow
-/auto-implement "issue #72"    # Single feature
-/batch-implement --issues 1 2 3 # Multiple features
-/clear                          # Reset context between batches
+/implement "#72"                    # Single feature
+/implement --issues 1 2 3           # Multiple features
+/implement --fix "#99"              # Fix a failing test
+/clear                              # Reset context between features
 
 # Check status
-/health-check                   # Verify installation
-/status                         # View alignment
+/health-check                       # Verify installation
+/status                             # View alignment
 
 # Update
-/update-plugin                  # Get latest version
+/sync                               # Get latest version
 ```
 
 ---
