@@ -80,7 +80,7 @@ The autonomous-dev plugin includes shared libraries organized into the following
 62. **test_routing.py** - Smart test routing: classifies changed files into categories and computes minimal pytest marker expression to skip irrelevant test tiers; `--full-tests` override runs complete suite (Issue #508)
 63. **refactor_analyzer.py** - `RefactorAnalyzer` class: deep analysis of test shape (Quality Diamond), test waste, doc redundancy, dead code, and unused libraries; composes `SweepAnalyzer` for quick-sweep mode; `ConfidenceLevel` enum for findings; word-boundary regex to reduce false positives (Issue #513)
 64. **genai_refactor_analyzer.py** - `GenAIRefactorAnalyzer`: hybrid static-candidate + LLM-semantic analysis wrapper around `RefactorAnalyzer`; three-pass analysis (doc-code drift via `covers:` frontmatter, hollow test detection, dead code verification with dynamic dispatch context); Haiku for first-pass classification, Sonnet escalation for HIGH findings; SHA-256 content hash caching; Anthropic Batch API support for 50% cost reduction (Issue #515)
-65. **reviewer_benchmark.py** - Harness effectiveness benchmark for the reviewer agent: loads labeled diff datasets with ground-truth verdicts, constructs reviewer prompts, parses APPROVE/REQUEST_CHANGES/BLOCKING verdicts, computes balanced accuracy/FPR/FNR/consistency scoring, and persists reports via `skill_evaluator.BenchmarkStore`. CLI runner at `scripts/run_reviewer_benchmark.py`. Dataset at `tests/benchmarks/reviewer/dataset.json` (Issue #567)
+65. **reviewer_benchmark.py** - Harness effectiveness benchmark for the reviewer agent: loads labeled diff datasets with ground-truth verdicts, constructs reviewer prompts, parses APPROVE/REQUEST_CHANGES/BLOCKING verdicts, computes balanced accuracy/FPR/FNR/consistency scoring with per-difficulty and per-defect-category breakdowns, and persists reports via `skill_evaluator.BenchmarkStore`. CLI runner at `scripts/run_reviewer_benchmark.py`. Dataset expanded to 146 samples with 91-category taxonomy at `tests/benchmarks/reviewer/`. Mining scripts: `scripts/mine_git_samples.py`, `scripts/mine_session_logs.py` (Issue #567, #573)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
@@ -15605,13 +15605,13 @@ __all__ = [
 
 ---
 
-## reviewer_benchmark.py (416 lines, v1.0.0 - Issue #567)
+## reviewer_benchmark.py (525 lines, v1.1.0 - Issue #573)
 
 **Purpose**: Harness effectiveness benchmark for the reviewer agent. Loads labeled datasets of real diffs with ground-truth verdicts, constructs reviewer prompts, parses model verdicts, and computes scoring metrics.
 
 **Problem**: No objective way to measure whether the reviewer agent correctly identifies defective code vs. clean code, or whether its verdicts are consistent across repeated invocations.
 
-**Solution**: A standalone benchmark library that drives the reviewer against labeled diff samples and reports balanced accuracy, false positive rate, false negative rate, and inter-trial consistency.
+**Solution**: A standalone benchmark library that drives the reviewer against labeled diff samples and reports balanced accuracy, false positive rate, false negative rate, inter-trial consistency, and per-difficulty/per-defect-category breakdowns.
 
 **Location**: `plugins/autonomous-dev/lib/reviewer_benchmark.py`
 
@@ -15620,6 +15620,8 @@ __all__ = [
 - Balanced accuracy = (TPR + TNR) / 2 — accounts for class imbalance
 - Consistency rate = average fraction of trials matching majority verdict across samples
 - PARSE_ERROR results are excluded from accuracy calculations but counted in consistency
+- Difficulty stratification: easy/medium/hard tiers with per-tier accuracy breakdowns
+- Defect taxonomy: 91-category taxonomy with per-category accuracy breakdowns
 
 **Data Structures**:
 
@@ -15634,6 +15636,9 @@ class BenchmarkSample:
     expected_categories: List[str]
     category_tags: List[str]
     description: str
+    difficulty: str = "medium"     # easy | medium | hard
+    commit_sha: str = ""           # git commit SHA for provenance
+    defect_category: str = ""      # primary category from taxonomy
 
 @dataclass
 class BenchmarkResult:
@@ -15654,6 +15659,8 @@ class ScoringReport:
     total_samples: int
     trials_per_sample: int
     consistency_rate: float
+    per_difficulty: Dict[str, Dict[str, Any]]      # accuracy by easy/medium/hard
+    per_defect_category: Dict[str, Dict[str, Any]] # accuracy by taxonomy category
     timestamp: str
 ```
 
@@ -15661,7 +15668,7 @@ class ScoringReport:
 - `load_dataset(path: Path) -> List[BenchmarkSample]` — loads and validates a JSON dataset; raises `FileNotFoundError` or `ValueError` on invalid input
 - `build_reviewer_prompt(sample, reviewer_instructions) -> str` — constructs full reviewer prompt from a sample
 - `parse_verdict(response: str) -> Tuple[str, List[Dict]]` — extracts verdict and findings; looks for `## Verdict: VERDICT` heading first, falls back to bare keyword in last 200 characters; returns `"PARSE_ERROR"` when no verdict found
-- `score_results(results: List[BenchmarkResult]) -> ScoringReport` — computes all metrics from a list of results
+- `score_results(results: List[BenchmarkResult], *, samples: Optional[List[BenchmarkSample]] = None) -> ScoringReport` — computes all metrics; pass `samples` to enable `per_difficulty` and `per_defect_category` breakdowns
 - `store_benchmark_run(store, report: ScoringReport) -> None` — persists report to a `BenchmarkStore` under key `"reviewer-effectiveness"`
 
 **Dataset Format** (`tests/benchmarks/reviewer/dataset.json`):
@@ -15676,16 +15683,29 @@ class ScoringReport:
       "expected_verdict": "APPROVE|REQUEST_CHANGES|BLOCKING",
       "expected_categories": ["category"],
       "category_tags": ["tag"],
-      "description": "Human-readable description"
+      "description": "Human-readable description",
+      "difficulty": "easy|medium|hard",
+      "commit_sha": "optional git sha",
+      "defect_category": "optional taxonomy category"
     }
   ]
 }
 ```
 
-**CLI Runner**: `scripts/run_reviewer_benchmark.py` — drives the full benchmark loop against an Anthropic model, collects results across trials, and saves the report.
+**CLI Runner**: `scripts/run_reviewer_benchmark.py` — drives the full benchmark loop against an Anthropic model, collects results across trials, and saves the report. Supports `--filter-difficulty` (easy/medium/hard), `--filter-category` (taxonomy category name), and `--validate-dataset` (report stats without API calls).
 
-**Testing**: `tests/unit/lib/test_reviewer_benchmark.py`
+**Mining Scripts** (Issue #573):
+- `scripts/mine_git_samples.py` — scans fix commits and clean commits in a git repository to generate labeled diff sample candidates; uses `tests/benchmarks/reviewer/taxonomy.json` for defect classification
+- `scripts/mine_session_logs.py` — parses Claude Code session activity JSONL logs to identify reviewer-related events and potential missed defects for benchmark expansion
 
-**Version History**: v1.0.0 (2026-03-28) - Initial release for harness effectiveness benchmark suite (Issue #567)
+**Dataset**: `tests/benchmarks/reviewer/dataset.json` — expanded from 14 to 146 labeled samples (Issue #573)
+
+**Taxonomy**: `tests/benchmarks/reviewer/taxonomy.json` — 91 defect categories used for sample classification and `--filter-category` filtering (Issue #573)
+
+**Testing**: `tests/unit/lib/test_reviewer_benchmark.py`, `tests/unit/scripts/test_mine_git_samples.py`, `tests/unit/scripts/test_mine_session_logs.py`, `tests/genai/test_acceptance_benchmark_expansion.py`
+
+**Version History**:
+- v1.1.0 (2026-03-28) - Expanded to 146 samples, 91-category taxonomy, difficulty stratification, per-difficulty/per-defect-category scoring, mining scripts (Issue #573)
+- v1.0.0 (2026-03-28) - Initial release for harness effectiveness benchmark suite (Issue #567)
 
 **Version History**: v1.0.0 (2026-01-19) - Initial release for strict PROJECT.md alignment validation (Issue #251)

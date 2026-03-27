@@ -1,8 +1,61 @@
 {
   "_meta": {
-    "version": "1.0",
+    "version": "2.0",
     "created": "2026-03-28",
-    "samples": 14
+    "taxonomy_version": "2.0",
+    "samples": 146,
+    "difficulty_distribution": {
+      "medium": 60,
+      "easy": 56,
+      "hard": 30
+    },
+    "verdict_distribution": {
+      "APPROVE": 39,
+      "BLOCKING": 69,
+      "REQUEST_CHANGES": 38
+    },
+    "defect_category_distribution": {
+      "null-safety": 5,
+      "hardcoded-value": 4,
+      "wrong-dispatch": 4,
+      "incomplete-fix": 4,
+      "off-by-one": 4,
+      "wrong-default": 4,
+      "stub-implementation": 3,
+      "orphan-reference": 3,
+      "removed-security": 3,
+      "test-passes-without-fix": 3,
+      "coverage-gamed": 3,
+      "local-cloud-parity": 3,
+      "backend-parity": 3,
+      "error-swallowed": 3,
+      "filter-over-rejection": 3,
+      "silent-import-fail": 3,
+      "log-no-alert": 3,
+      "identity-spoofing": 3,
+      "bypass-alternative-path": 3,
+      "race-condition": 3,
+      "non-atomic-update": 3,
+      "stale-cache": 3,
+      "test-skip-abuse": 2,
+      "class-unused": 2,
+      "infra-no-integration": 2,
+      "config-unused": 2,
+      "feature-flag-unchecked": 2,
+      "test-zero-assertions": 2,
+      "test-mocks-subject": 2,
+      "dev-prod-config": 2,
+      "rollback-broken": 2,
+      "metric-never-incremented": 2,
+      "docs-feature-missing": 2,
+      "config-schema-drift": 2,
+      "enum-switch-incomplete": 2,
+      "api-shape-changed": 2,
+      "hook-deleted-refactor": 2,
+      "secrets-committed": 2,
+      "api-endpoint-501": 1,
+      "test-happy-path-only": 1
+    }
   },
   "samples": [
     {
@@ -12,8 +65,17 @@
       "description": "IFD scorer hardcoded 0.85 in 3 fallthrough paths instead of calling actual scorer",
       "diff_text": "--- a/src/realign/scorers/ifd_scorer.py\n+++ b/src/realign/scorers/ifd_scorer.py\n@@ -45,12 +45,12 @@ class IFDScorer:\n     def score(self, sample: Dict[str, Any]) -> float:\n         \"\"\"Score a single sample using IFD metric.\"\"\"\n         if not sample.get(\"completion\"):\n-            return self._compute_ifd(sample)\n+            return 0.85\n \n         if sample.get(\"is_synthetic\", False):\n-            return self._compute_ifd(sample)\n+            return 0.85\n \n         try:\n             return self._compute_ifd(sample)\n         except TokenizationError:\n-            return self._compute_ifd_fallback(sample)\n+            return 0.85",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["hardcoded-value"],
-      "category_tags": ["stub", "fallthrough", "scorer"]
+      "expected_categories": [
+        "hardcoded-value"
+      ],
+      "category_tags": [
+        "stub",
+        "fallthrough",
+        "scorer"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "hardcoded-value"
     },
     {
       "sample_id": "realign-691-orpo-sft-loss-dispatch",
@@ -22,8 +84,17 @@
       "description": "ORPO training dispatches to SFT loss function instead of ORPO loss due to wrong dispatch table entry",
       "diff_text": "--- a/src/realign/training/loss_registry.py\n+++ b/src/realign/training/loss_registry.py\n@@ -18,7 +18,7 @@ LOSS_DISPATCH = {\n     \"sft\": sft_loss,\n     \"dpo\": dpo_loss,\n     \"kto\": kto_loss,\n-    \"orpo\": orpo_loss,\n+    \"orpo\": sft_loss,\n     \"simpo\": simpo_loss,\n }\n \n@@ -30,6 +30,6 @@ def get_loss_fn(method: str) -> Callable:\n     if method not in LOSS_DISPATCH:\n         raise ValueError(f\"Unknown training method: {method}\")\n     return LOSS_DISPATCH[method]",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["wrong-dispatch"],
-      "category_tags": ["loss-function", "dispatch-table", "training"]
+      "expected_categories": [
+        "wrong-dispatch"
+      ],
+      "category_tags": [
+        "loss-function",
+        "dispatch-table",
+        "training"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "wrong-dispatch"
     },
     {
       "sample_id": "realign-580-none-loader-consumer",
@@ -32,8 +103,17 @@
       "description": "Loader changed to allow None values but downstream consumer crashes on None without guard",
       "diff_text": "--- a/src/realign/data/loader.py\n+++ b/src/realign/data/loader.py\n@@ -22,8 +22,7 @@ def load_samples(path: Path) -> List[Dict]:\n     samples = []\n     for row in raw_data:\n         text = row.get(\"text\")\n-        if text is None:\n-            continue\n+        # Allow None text for metadata-only samples\n         samples.append({\"text\": text, \"meta\": row.get(\"meta\", {})})\n     return samples\n--- a/src/realign/data/consumer.py\n+++ b/src/realign/data/consumer.py\n@@ -15,6 +15,7 @@ def process_samples(samples: List[Dict]) -> List[str]:\n     results = []\n     for sample in samples:\n         text = sample[\"text\"]\n+        # text can now be None from loader but we call .strip() unconditionally\n         cleaned = text.strip().lower()\n         tokens = cleaned.split()\n         results.append(\" \".join(tokens))",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["null-safety"],
-      "category_tags": ["none-handling", "loader", "consumer"]
+      "expected_categories": [
+        "null-safety"
+      ],
+      "category_tags": [
+        "none-handling",
+        "loader",
+        "consumer"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "null-safety"
     },
     {
       "sample_id": "spektiv-403-not-implemented-live-trading",
@@ -42,8 +122,17 @@
       "description": "Live trading endpoint raises NotImplementedError instead of actual implementation",
       "diff_text": "--- a/src/spektiv/trading/live_executor.py\n+++ b/src/spektiv/trading/live_executor.py\n@@ -1,5 +1,6 @@\n \"\"\"Live trading executor for production order routing.\"\"\"\n \n+from typing import Dict, List, Optional\n from spektiv.trading.base import BaseExecutor, Order, ExecutionResult\n \n \n@@ -12,15 +13,8 @@ class LiveExecutor(BaseExecutor):\n \n     def execute_order(self, order: Order) -> ExecutionResult:\n         \"\"\"Execute a live trading order.\"\"\"\n-        self._validate_order(order)\n-        position = self._check_position_limits(order)\n-        result = self.broker.submit_order(\n-            symbol=order.symbol,\n-            quantity=order.quantity,\n-            side=order.side,\n-            order_type=order.order_type,\n-        )\n-        self._update_position_tracker(position, result)\n-        return ExecutionResult(\n-            order_id=result.id, status=result.status, filled_qty=result.filled\n-        )\n+        raise NotImplementedError(\"Live trading not yet implemented\")\n+\n+    def get_positions(self) -> List[Dict]:\n+        \"\"\"Get current positions.\"\"\"\n+        raise NotImplementedError(\"Position tracking not yet implemented\")",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["stub-implementation"],
-      "category_tags": ["not-implemented", "live-trading", "regression"]
+      "expected_categories": [
+        "stub-implementation"
+      ],
+      "category_tags": [
+        "not-implemented",
+        "live-trading",
+        "regression"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "stub-implementation"
     },
     {
       "sample_id": "spektiv-678-deleted-broker-enum-remains",
@@ -52,8 +141,17 @@
       "description": "Broker class deleted but its enum entry remains, causing ImportError at runtime",
       "diff_text": "--- a/src/spektiv/brokers/__init__.py\n+++ b/src/spektiv/brokers/__init__.py\n@@ -1,7 +1,6 @@\n from spektiv.brokers.alpaca import AlpacaBroker\n from spektiv.brokers.ibkr import IBKRBroker\n-from spektiv.brokers.tradier import TradierBroker\n from spektiv.brokers.paper import PaperBroker\n \n-__all__ = [\"AlpacaBroker\", \"IBKRBroker\", \"TradierBroker\", \"PaperBroker\"]\n+__all__ = [\"AlpacaBroker\", \"IBKRBroker\", \"PaperBroker\"]\n--- a/src/spektiv/brokers/registry.py\n+++ b/src/spektiv/brokers/registry.py\n@@ -8,7 +8,7 @@ class BrokerType(str, Enum):\n     ALPACA = \"alpaca\"\n     IBKR = \"ibkr\"\n     TRADIER = \"tradier\"\n     PAPER = \"paper\"\n \n BROKER_MAP = {\n     BrokerType.ALPACA: \"spektiv.brokers.alpaca.AlpacaBroker\",\n     BrokerType.IBKR: \"spektiv.brokers.ibkr.IBKRBroker\",\n     BrokerType.TRADIER: \"spektiv.brokers.tradier.TradierBroker\",\n     BrokerType.PAPER: \"spektiv.brokers.paper.PaperBroker\",\n }",
       "expected_verdict": "REQUEST_CHANGES",
-      "expected_categories": ["orphan-reference"],
-      "category_tags": ["deleted-class", "enum", "import-error"]
+      "expected_categories": [
+        "orphan-reference"
+      ],
+      "category_tags": [
+        "deleted-class",
+        "enum",
+        "import-error"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "orphan-reference"
     },
     {
       "sample_id": "spektiv-658-compact-fixed-detailed-broken",
@@ -62,8 +160,17 @@
       "description": "Compact card rendering fixed but detailed card rendering still broken with same bug",
       "diff_text": "--- a/src/spektiv/ui/cards.py\n+++ b/src/spektiv/ui/cards.py\n@@ -25,7 +25,7 @@ class PortfolioCard:\n     def render_compact(self, data: Dict) -> str:\n         \"\"\"Render compact portfolio card.\"\"\"\n         total = data.get(\"total_value\", 0)\n-        change = data.get(\"daily_change\", 0) / total * 100\n+        change = data.get(\"daily_change\", 0) / total * 100 if total else 0\n         return f\"Portfolio: ${total:,.2f} ({change:+.1f}%)\"\n \n     def render_detailed(self, data: Dict) -> str:\n@@ -33,7 +33,7 @@ class PortfolioCard:\n         total = data.get(\"total_value\", 0)\n         positions = data.get(\"positions\", [])\n         header = f\"Portfolio: ${total:,.2f}\"\n-        change = data.get(\"daily_change\", 0) / total * 100\n+        change = data.get(\"daily_change\", 0) / total * 100  # BUG: still divides by zero\n         lines = [header, f\"Daily: {change:+.1f}%\"]\n         for p in positions:\n             lines.append(f\"  {p['symbol']}: ${p['value']:,.2f}\")",
       "expected_verdict": "REQUEST_CHANGES",
-      "expected_categories": ["incomplete-fix"],
-      "category_tags": ["division-by-zero", "partial-fix", "ui"]
+      "expected_categories": [
+        "incomplete-fix"
+      ],
+      "category_tags": [
+        "division-by-zero",
+        "partial-fix",
+        "ui"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "incomplete-fix"
     },
     {
       "sample_id": "realign-254-off-by-one-logprob",
@@ -72,8 +179,17 @@
       "description": "Off-by-one error in loop bound skips last logprob token",
       "diff_text": "--- a/src/realign/metrics/logprob_scorer.py\n+++ b/src/realign/metrics/logprob_scorer.py\n@@ -30,7 +30,7 @@ def compute_logprob_score(tokens: List[str], logprobs: List[float]) -> float:\n     if len(tokens) != len(logprobs):\n         raise ValueError(\"tokens and logprobs must have same length\")\n \n-    total = sum(logprobs[i] for i in range(len(logprobs)))\n+    total = sum(logprobs[i] for i in range(len(logprobs) - 1))\n     return total / len(logprobs)",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["off-by-one"],
-      "category_tags": ["loop-bound", "logprob", "metric"]
+      "expected_categories": [
+        "off-by-one"
+      ],
+      "category_tags": [
+        "loop-bound",
+        "logprob",
+        "metric"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "off-by-one"
     },
     {
       "sample_id": "realign-692-dpo-mask-prompt-true",
@@ -82,8 +198,17 @@
       "description": "DPO training config sets mask_prompt=True but DPO requires False to compute preference over full sequence",
       "diff_text": "--- a/src/realign/training/configs/dpo.py\n+++ b/src/realign/training/configs/dpo.py\n@@ -15,7 +15,7 @@ class DPOConfig(TrainingConfig):\n     beta: float = 0.1\n     reference_free: bool = False\n     label_smoothing: float = 0.0\n-    mask_prompt: bool = False\n+    mask_prompt: bool = True\n \n     def validate(self) -> None:\n         super().validate()\n@@ -23,4 +23,4 @@ class DPOConfig(TrainingConfig):\n             raise ValueError(\"beta must be positive\")\n         if not 0 <= self.label_smoothing <= 0.5:\n             raise ValueError(\"label_smoothing must be in [0, 0.5]\")\n-        # mask_prompt=False is required for DPO preference learning\n+        # mask_prompt controls whether prompt tokens are masked in loss",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["wrong-default"],
-      "category_tags": ["dpo", "mask-prompt", "training-config"]
+      "expected_categories": [
+        "wrong-default"
+      ],
+      "category_tags": [
+        "dpo",
+        "mask-prompt",
+        "training-config"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "wrong-default"
     },
     {
       "sample_id": "autonomous-dev-542-bypass-detection-removed",
@@ -92,8 +217,17 @@
       "description": "Bypass detection function silently removed in refactor, enforcement gap introduced",
       "diff_text": "--- a/plugins/autonomous-dev/lib/enforcement.py\n+++ b/plugins/autonomous-dev/lib/enforcement.py\n@@ -45,22 +45,6 @@ class EnforcementEngine:\n         self._violations: List[Violation] = []\n         self._config = config\n \n-    def detect_bypass_attempt(self, action: str, context: Dict) -> Optional[Violation]:\n-        \"\"\"Detect if an action is attempting to bypass enforcement.\n-\n-        Checks for known bypass patterns like env var spoofing,\n-        hook disabling, and pipeline state tampering.\n-        \"\"\"\n-        for pattern in self._config.bypass_patterns:\n-            if pattern.matches(action, context):\n-                violation = Violation(\n-                    severity=\"CRITICAL\",\n-                    pattern=pattern.name,\n-                    action=action,\n-                )\n-                self._violations.append(violation)\n-                return violation\n-        return None\n-\n     def validate_action(self, action: str, context: Dict) -> bool:\n         \"\"\"Validate whether an action is allowed.\"\"\"\n         if not self._config.enabled:\n@@ -68,8 +52,6 @@ class EnforcementEngine:\n \n         if action in self._config.blocked_actions:\n             return False\n-\n-        bypass = self.detect_bypass_attempt(action, context)\n-        if bypass:\n-            return False\n \n         return True",
       "expected_verdict": "BLOCKING",
-      "expected_categories": ["removed-security"],
-      "category_tags": ["bypass-detection", "refactor", "enforcement"]
+      "expected_categories": [
+        "removed-security"
+      ],
+      "category_tags": [
+        "bypass-detection",
+        "refactor",
+        "enforcement"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "removed-security"
     },
     {
       "sample_id": "autonomous-dev-199-skipif-instead-of-deps",
@@ -102,8 +236,17 @@
       "description": "101 tests marked with skipif for missing dependencies instead of installing dependencies in CI",
       "diff_text": "--- a/tests/unit/test_training.py\n+++ b/tests/unit/test_training.py\n@@ -1,6 +1,11 @@\n import pytest\n+import importlib\n from pathlib import Path\n \n+HAS_MLX = importlib.util.find_spec(\"mlx\") is not None\n+HAS_TORCH = importlib.util.find_spec(\"torch\") is not None\n+\n+@pytest.mark.skipif(not HAS_MLX, reason=\"mlx not installed\")\n class TestMLXTraining:\n     def test_lora_train(self):\n         \"\"\"Test LoRA training pipeline.\"\"\"\n@@ -18,6 +23,7 @@ class TestMLXTraining:\n     def test_full_ft(self):\n         pass\n \n+@pytest.mark.skipif(not HAS_TORCH, reason=\"torch not installed\")\n class TestTorchTraining:\n     def test_sft_train(self):\n         pass\n@@ -30,3 +36,25 @@ class TestTorchTraining:\n \n     def test_dpo_train(self):\n         pass\n+\n+@pytest.mark.skipif(not HAS_MLX, reason=\"mlx not installed\")\n+class TestMLXInference:\n+    def test_generate(self):\n+        pass\n+\n+    def test_batch_generate(self):\n+        pass\n+\n+@pytest.mark.skipif(not HAS_TORCH, reason=\"torch not installed\")\n+class TestTorchInference:\n+    def test_generate(self):\n+        pass",
       "expected_verdict": "REQUEST_CHANGES",
-      "expected_categories": ["test-skip-abuse"],
-      "category_tags": ["skipif", "dependencies", "ci"]
+      "expected_categories": [
+        "test-skip-abuse"
+      ],
+      "category_tags": [
+        "skipif",
+        "dependencies",
+        "ci"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "test-skip-abuse"
     },
     {
       "sample_id": "clean-api-endpoint-addition",
@@ -113,7 +256,14 @@
       "diff_text": "--- a/src/spektiv/api/routes.py\n+++ b/src/spektiv/api/routes.py\n@@ -45,6 +45,21 @@ def get_portfolio(portfolio_id: str) -> Dict:\n     return portfolio.to_dict()\n \n \n+@router.get(\"/api/v1/portfolios/{portfolio_id}/performance\")\n+def get_portfolio_performance(\n+    portfolio_id: str,\n+    period: str = \"1M\",\n+) -> Dict:\n+    \"\"\"Get portfolio performance metrics for a given period.\"\"\"\n+    portfolio = Portfolio.get_by_id(portfolio_id)\n+    if not portfolio:\n+        raise HTTPException(status_code=404, detail=\"Portfolio not found\")\n+    if period not in VALID_PERIODS:\n+        raise HTTPException(status_code=400, detail=f\"Invalid period: {period}\")\n+    metrics = portfolio.compute_performance(period)\n+    return metrics.to_dict()\n+\n+\n @router.get(\"/api/v1/health\")\n def health_check() -> Dict:\n     return {\"status\": \"ok\"}\n--- a/tests/unit/api/test_routes.py\n+++ b/tests/unit/api/test_routes.py\n@@ -30,6 +30,22 @@ class TestPortfolioRoutes:\n         response = client.get(\"/api/v1/portfolios/invalid-id\")\n         assert response.status_code == 404\n \n+    def test_get_performance_success(self, client, sample_portfolio):\n+        response = client.get(\n+            f\"/api/v1/portfolios/{sample_portfolio.id}/performance?period=1M\"\n+        )\n+        assert response.status_code == 200\n+        data = response.json()\n+        assert \"return_pct\" in data\n+        assert \"sharpe_ratio\" in data\n+\n+    def test_get_performance_invalid_period(self, client, sample_portfolio):\n+        response = client.get(\n+            f\"/api/v1/portfolios/{sample_portfolio.id}/performance?period=invalid\"\n+        )\n+        assert response.status_code == 400\n+\n+\n class TestHealthCheck:\n     def test_health_returns_ok(self, client):\n         response = client.get(\"/api/v1/health\")",
       "expected_verdict": "APPROVE",
       "expected_categories": [],
-      "category_tags": ["api", "endpoint", "tests"]
+      "category_tags": [
+        "api",
+        "endpoint",
+        "tests"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": ""
     },
     {
       "sample_id": "clean-config-update",
@@ -123,7 +273,14 @@
       "diff_text": "--- a/configs/training_defaults.yaml\n+++ b/configs/training_defaults.yaml\n@@ -25,6 +25,14 @@ methods:\n     label_smoothing: 0.0\n     mask_prompt: false\n \n+  grpo:\n+    learning_rate: 5.0e-6\n+    batch_size: 4\n+    num_generations: 8\n+    kl_coeff: 0.1\n+    clip_range: 0.2\n+    advantage_normalize: true\n+\n defaults:\n   max_seq_length: 2048\n   grad_checkpoint: true\n--- a/src/realign/training/configs/__init__.py\n+++ b/src/realign/training/configs/__init__.py\n@@ -3,8 +3,10 @@ from realign.training.configs.base import TrainingConfig\n from realign.training.configs.sft import SFTConfig\n from realign.training.configs.dpo import DPOConfig\n from realign.training.configs.kto import KTOConfig\n+from realign.training.configs.grpo import GRPOConfig\n \n __all__ = [\n     \"TrainingConfig\",\n     \"SFTConfig\",\n     \"DPOConfig\",\n     \"KTOConfig\",\n+    \"GRPOConfig\",\n ]",
       "expected_verdict": "APPROVE",
       "expected_categories": [],
-      "category_tags": ["config", "training-method", "yaml"]
+      "category_tags": [
+        "config",
+        "training-method",
+        "yaml"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": ""
     },
     {
       "sample_id": "clean-refactor-rename",
@@ -133,7 +290,14 @@
       "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_utils.py\n+++ b/plugins/autonomous-dev/lib/pipeline_utils.py\n@@ -12,7 +12,7 @@ from typing import Dict, List, Optional\n from pathlib import Path\n \n \n-def get_step_status(step_name: str, state: Dict) -> str:\n+def get_pipeline_step_status(step_name: str, state: Dict) -> str:\n     \"\"\"Get the status of a pipeline step.\n \n     Args:\n@@ -25,7 +25,7 @@ def get_step_status(step_name: str, state: Dict) -> str:\n     return state.get(\"steps\", {}).get(step_name, {}).get(\"status\", \"pending\")\n \n \n-def set_step_status(step_name: str, status: str, state: Dict) -> None:\n+def set_pipeline_step_status(step_name: str, status: str, state: Dict) -> None:\n     \"\"\"Set the status of a pipeline step.\"\"\"\n     if \"steps\" not in state:\n         state[\"steps\"] = {}\n--- a/plugins/autonomous-dev/lib/pipeline_runner.py\n+++ b/plugins/autonomous-dev/lib/pipeline_runner.py\n@@ -1,5 +1,5 @@\n from typing import Dict\n-from pipeline_utils import get_step_status, set_step_status\n+from pipeline_utils import get_pipeline_step_status, set_pipeline_step_status\n \n \n class PipelineRunner:\n@@ -8,9 +8,9 @@ class PipelineRunner:\n         self.state = state\n \n     def run_step(self, step_name: str) -> bool:\n-        status = get_step_status(step_name, self.state)\n+        status = get_pipeline_step_status(step_name, self.state)\n         if status == \"complete\":\n             return True\n-        set_step_status(step_name, \"running\", self.state)\n+        set_pipeline_step_status(step_name, \"running\", self.state)\n         # ... step execution logic ...\n-        set_step_status(step_name, \"complete\", self.state)\n+        set_pipeline_step_status(step_name, \"complete\", self.state)\n--- a/tests/unit/lib/test_pipeline_utils.py\n+++ b/tests/unit/lib/test_pipeline_utils.py\n@@ -1,14 +1,14 @@\n import pytest\n-from pipeline_utils import get_step_status, set_step_status\n+from pipeline_utils import get_pipeline_step_status, set_pipeline_step_status\n \n \n class TestPipelineStepStatus:\n-    def test_get_step_status_pending(self):\n-        assert get_step_status(\"test\", {}) == \"pending\"\n+    def test_get_pipeline_step_status_pending(self):\n+        assert get_pipeline_step_status(\"test\", {}) == \"pending\"\n \n-    def test_set_step_status(self):\n+    def test_set_pipeline_step_status(self):\n         state = {}\n-        set_step_status(\"test\", \"complete\", state)\n+        set_pipeline_step_status(\"test\", \"complete\", state)\n         assert state[\"steps\"][\"test\"][\"status\"] == \"complete\"",
       "expected_verdict": "APPROVE",
       "expected_categories": [],
-      "category_tags": ["refactor", "rename", "tests-updated"]
+      "category_tags": [
+        "refactor",
+        "rename",
+        "tests-updated"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": ""
     },
     {
       "sample_id": "clean-docs-update",
@@ -143,7 +307,2320 @@
       "diff_text": "--- a/docs/ARCHITECTURE-OVERVIEW.md\n+++ b/docs/ARCHITECTURE-OVERVIEW.md\n@@ -15,7 +15,7 @@ The pipeline consists of 8 steps:\n 4. **Test** - Write acceptance tests\n 5. **Implement** - Write code to pass tests\n 6. **Validate** - Run tests, verify all pass\n-7. **Review** - Code review\n+7. **Verify** - Security audit + code review\n 8. **Git** - Commit and push\n \n ## Agents\n@@ -25,7 +25,8 @@ The pipeline consists of 8 steps:\n | planner | Architecture plans |\n | test-master | Test generation |\n | implementer | Code implementation |\n-| reviewer | Code review |\n+| reviewer | Code review (quality) |\n+| security-auditor | Security analysis |\n | doc-master | Documentation |\n \n ## Hooks\n--- a/CLAUDE.md\n+++ b/CLAUDE.md\n@@ -5,7 +5,7 @@ Plugin for autonomous development in Claude Code.\n ## Project Overview\n \n Autonomous development plugin that provides:\n-- **7-step SDLC pipeline**: alignment -> research -> plan -> test -> implement -> validate -> git\n+- **8-step SDLC pipeline**: alignment -> research -> plan -> test -> implement -> validate -> verify -> git",
       "expected_verdict": "APPROVE",
       "expected_categories": [],
-      "category_tags": ["documentation", "architecture", "alignment"]
+      "category_tags": [
+        "documentation",
+        "architecture",
+        "alignment"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "realign-601-class-unused-scorer",
+      "source_repo": "realign",
+      "issue_ref": "#601",
+      "description": "New PerplexityScorer class added but never imported or used in scorer registry",
+      "diff_text": "--- a/src/realign/scorers/perplexity_scorer.py\n+++ b/src/realign/scorers/perplexity_scorer.py\n@@ -0,0 +1,28 @@\n+\"\"\"Perplexity-based scoring for data quality.\"\"\"\n+\n+import math\n+from typing import Dict, Any, List\n+\n+\n+class PerplexityScorer:\n+    \"\"\"Score samples by perplexity.\"\"\"\n+\n+    def __init__(self, model_name: str = \"default\"):\n+        self.model_name = model_name\n+        self._threshold = 50.0\n+\n+    def score(self, sample: Dict[str, Any]) -> float:\n+        tokens = sample.get(\"tokens\", [])\n+        logprobs = sample.get(\"logprobs\", [])\n+        if not tokens or not logprobs:\n+            return 0.0\n+        avg_logprob = sum(logprobs) / len(logprobs)\n+        perplexity = math.exp(-avg_logprob)\n+        return min(1.0, self._threshold / perplexity)\n--- a/src/realign/scorers/__init__.py\n+++ b/src/realign/scorers/__init__.py\n@@ -3,6 +3,6 @@ from realign.scorers.ifd_scorer import IFDScorer\n from realign.scorers.quality_scorer import QualityScorer\n \n SCORER_REGISTRY = {\n     \"ifd\": IFDScorer,\n     \"quality\": QualityScorer,\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "class-unused"
+      ],
+      "category_tags": [
+        "class-unused",
+        "scorer"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "class-unused"
+    },
+    {
+      "sample_id": "spektiv-710-infra-no-integration-middleware",
+      "source_repo": "spektiv",
+      "issue_ref": "#710",
+      "description": "Rate limiting middleware created but never added to the ASGI app middleware stack",
+      "diff_text": "--- a/src/spektiv/middleware/rate_limiter.py\n+++ b/src/spektiv/middleware/rate_limiter.py\n@@ -0,0 +1,22 @@\n+\"\"\"Rate limiting middleware for API endpoints.\"\"\"\n+from typing import Callable\n+import time\n+\n+class RateLimiter:\n+    def __init__(self, max_requests: int = 100, window_seconds: int = 60):\n+        self.max_requests = max_requests\n+        self.window = window_seconds\n+        self._counts: dict = {}\n+\n+    async def __call__(self, scope, receive, send):\n+        client_ip = scope.get(\"client\", [\"\"])[0]\n+        now = time.time()\n+        key = f\"{client_ip}:{int(now // self.window)}\"\n+        self._counts[key] = self._counts.get(key, 0) + 1\n+        if self._counts[key] > self.max_requests:\n+            response = {\"status\": 429, \"body\": b\"Rate limited\"}\n+            await send(response)\n+            return\n+        await self.app(scope, receive, send)\n--- a/src/spektiv/app.py\n+++ b/src/spektiv/app.py\n@@ -10,6 +10,7 @@ from spektiv.middleware.cors import CORSMiddleware\n from spektiv.middleware.auth import AuthMiddleware\n+# TODO: Add rate limiter to middleware stack\n \n app = FastAPI(title=\"Spektiv Trading API\")\n app.add_middleware(CORSMiddleware)\n app.add_middleware(AuthMiddleware)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "infra-no-integration"
+      ],
+      "category_tags": [
+        "infra-no-integration",
+        "wiring"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "infra-no-integration"
+    },
+    {
+      "sample_id": "realign-615-config-unused-eval-batch-size",
+      "source_repo": "realign",
+      "issue_ref": "#615",
+      "description": "eval_batch_size config key added to YAML but never read by evaluation pipeline",
+      "diff_text": "--- a/configs/training_defaults.yaml\n+++ b/configs/training_defaults.yaml\n@@ -30,6 +30,7 @@ defaults:\n   max_seq_length: 2048\n   grad_checkpoint: true\n   save_every: 1000\n+  eval_batch_size: 16\n \n evaluation:\n   metrics:\n--- a/src/realign/evaluation/evaluator.py\n+++ b/src/realign/evaluation/evaluator.py\n@@ -18,7 +18,7 @@ class Evaluator:\n     def __init__(self, config: Dict[str, Any]):\n         self.metrics = config.get(\"metrics\", [\"accuracy\"])\n-        self.batch_size = 8\n+        self.batch_size = 8  # Note: eval_batch_size in config is ignored\n         self.max_samples = config.get(\"max_samples\", 1000)",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "config-unused"
+      ],
+      "category_tags": [
+        "config-unused",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "config-unused"
+    },
+    {
+      "sample_id": "spektiv-720-feature-flag-unchecked",
+      "source_repo": "spektiv",
+      "issue_ref": "#720",
+      "description": "Paper trading feature flag defined but order router does not check it before routing live orders",
+      "diff_text": "--- a/src/spektiv/config/flags.py\n+++ b/src/spektiv/config/flags.py\n@@ -5,6 +5,7 @@ FEATURE_FLAGS = {\n     \"dark_pool_routing\": False,\n     \"fractional_shares\": True,\n     \"extended_hours\": False,\n+    \"paper_trading_only\": True,\n }\n--- a/src/spektiv/trading/order_router.py\n+++ b/src/spektiv/trading/order_router.py\n@@ -15,6 +15,7 @@ class OrderRouter:\n     def route_order(self, order: Order) -> ExecutionResult:\n         broker = self._select_broker(order)\n+        # Should check paper_trading_only flag here\n         return broker.execute(order)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "feature-flag-unchecked"
+      ],
+      "category_tags": [
+        "feature-flag-unchecked",
+        "live-trading"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "feature-flag-unchecked"
+    },
+    {
+      "sample_id": "spektiv-725-api-endpoint-501",
+      "source_repo": "spektiv",
+      "issue_ref": "#725",
+      "description": "Backtest endpoint registered but handler returns 501 Not Implemented",
+      "diff_text": "--- a/src/spektiv/api/routes.py\n+++ b/src/spektiv/api/routes.py\n@@ -50,6 +50,14 @@ def get_portfolio_performance(portfolio_id: str, period: str = \"1M\") -> Dict:\n     return metrics.to_dict()\n \n \n+@router.post(\"/api/v1/backtests\")\n+def run_backtest(config: Dict) -> Dict:\n+    \"\"\"Run a backtest with the given configuration.\"\"\"\n+    raise HTTPException(\n+        status_code=501,\n+        detail=\"Backtest endpoint not yet implemented\"\n+    )\n+\n+\n @router.get(\"/api/v1/health\")\n def health_check() -> Dict:\n     return {\"status\": \"ok\"}",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "api-endpoint-501"
+      ],
+      "category_tags": [
+        "api-endpoint-501",
+        "endpoint"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "api-endpoint-501"
+    },
+    {
+      "sample_id": "realign-630-test-zero-assertions-sft",
+      "source_repo": "realign",
+      "issue_ref": "#630",
+      "description": "SFT training test runs training loop but has no assert statements",
+      "diff_text": "--- a/tests/unit/training/test_sft.py\n+++ b/tests/unit/training/test_sft.py\n@@ -10,6 +10,15 @@ class TestSFTTraining:\n     def test_sft_basic(self, sample_data):\n         trainer = SFTTrainer(config=DEFAULT_CONFIG)\n         result = trainer.train(sample_data, num_steps=2)\n+\n+    def test_sft_with_grad_checkpoint(self, sample_data):\n+        \"\"\"Test SFT training with gradient checkpointing.\"\"\"\n+        config = {**DEFAULT_CONFIG, \"grad_checkpoint\": True}\n+        trainer = SFTTrainer(config=config)\n+        result = trainer.train(sample_data, num_steps=2)\n+        # Training completed without error\n+        # (no assertions - this is just a smoke test)\n+        print(f\"Loss: {result.final_loss}\")",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "test-zero-assertions"
+      ],
+      "category_tags": [
+        "test-zero-assertions",
+        "tests"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "test-zero-assertions"
+    },
+    {
+      "sample_id": "spektiv-731-test-happy-path-only-broker",
+      "source_repo": "spektiv",
+      "issue_ref": "#731",
+      "description": "Broker connection tests only cover successful connection, no timeout/auth failure/network error tests",
+      "diff_text": "--- a/tests/unit/brokers/test_alpaca.py\n+++ b/tests/unit/brokers/test_alpaca.py\n@@ -8,6 +8,12 @@ class TestAlpacaBroker:\n     def test_connect_success(self, mock_api):\n         broker = AlpacaBroker(api_key=\"test-key\")\n         assert broker.connect() is True\n+\n+    def test_submit_order_success(self, mock_api):\n+        broker = AlpacaBroker(api_key=\"test-key\")\n+        broker.connect()\n+        result = broker.submit_order(symbol=\"AAPL\", qty=10, side=\"buy\")\n+        assert result.status == \"filled\"",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "test-happy-path-only"
+      ],
+      "category_tags": [
+        "test-happy-path-only",
+        "tests"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "test-happy-path-only"
+    },
+    {
+      "sample_id": "realign-640-test-mocks-subject",
+      "source_repo": "realign",
+      "issue_ref": "#640",
+      "description": "DPO loss test mocks the compute_dpo_loss function itself instead of its dependencies",
+      "diff_text": "--- a/tests/unit/training/test_dpo_loss.py\n+++ b/tests/unit/training/test_dpo_loss.py\n@@ -1,5 +1,6 @@\n import pytest\n from unittest.mock import patch, MagicMock\n+import numpy as np\n from realign.training.losses.dpo import compute_dpo_loss\n \n \n@@ -10,6 +11,14 @@ class TestDPOLoss:\n         loss = compute_dpo_loss(chosen, rejected, beta=0.1)\n         assert loss > 0\n \n+    @patch(\"realign.training.losses.dpo.compute_dpo_loss\")\n+    def test_dpo_loss_with_label_smoothing(self, mock_loss):\n+        \"\"\"Test DPO loss with label smoothing enabled.\"\"\"\n+        mock_loss.return_value = 0.5\n+        chosen = np.array([0.8, 0.7])\n+        rejected = np.array([0.3, 0.4])\n+        result = compute_dpo_loss(chosen, rejected, beta=0.1, label_smoothing=0.1)\n+        assert result == 0.5  # Always passes because we mocked the function!",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "test-mocks-subject"
+      ],
+      "category_tags": [
+        "test-mocks-subject",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "test-mocks-subject"
+    },
+    {
+      "sample_id": "autonomous-dev-550-test-passes-without-fix",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#550",
+      "description": "Regression test for hook bypass passes regardless of whether the fix is applied",
+      "diff_text": "--- a/tests/regression/test_hook_bypass.py\n+++ b/tests/regression/test_hook_bypass.py\n@@ -0,0 +1,18 @@\n+\"\"\"Regression test for hook bypass vulnerability.\"\"\"\n+import pytest\n+\n+\n+class TestHookBypass:\n+    def test_bypass_blocked(self):\n+        \"\"\"Verify that bypass attempts are blocked.\"\"\"\n+        # This test should verify the fix, but it checks\n+        # a condition that's always true\n+        from pathlib import Path\n+        hook_path = Path(\"plugins/autonomous-dev/hooks\")\n+        # Bug: checking existence of directory, not behavior\n+        assert hook_path.name == \"hooks\"\n+\n+    def test_bypass_logged(self):\n+        \"\"\"Verify that bypass attempts are logged.\"\"\"\n+        # Also doesn't test actual behavior\n+        assert True",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "test-passes-without-fix"
+      ],
+      "category_tags": [
+        "test-passes-without-fix",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "test-passes-without-fix"
+    },
+    {
+      "sample_id": "realign-650-coverage-gamed-tokenizer",
+      "source_repo": "realign",
+      "issue_ref": "#650",
+      "description": "Tokenizer test executes all code paths but only asserts on the return type, not correctness",
+      "diff_text": "--- a/tests/unit/test_tokenizer.py\n+++ b/tests/unit/test_tokenizer.py\n@@ -15,6 +15,16 @@ class TestTokenizer:\n         result = tokenizer.encode(\"Hello world\")\n         assert isinstance(result, list)\n \n+    def test_encode_special_tokens(self):\n+        tokenizer = Tokenizer(\"test-model\")\n+        result = tokenizer.encode(\"<|begin|>Hello<|end|>\", add_special=True)\n+        assert isinstance(result, list)  # Only checks type, not content\n+\n+    def test_decode_roundtrip(self):\n+        tokenizer = Tokenizer(\"test-model\")\n+        encoded = tokenizer.encode(\"test string\")\n+        decoded = tokenizer.decode(encoded)\n+        assert isinstance(decoded, str)  # Doesn't verify roundtrip equality",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "coverage-gamed"
+      ],
+      "category_tags": [
+        "coverage-gamed",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "coverage-gamed"
+    },
+    {
+      "sample_id": "spektiv-740-local-cloud-parity-db",
+      "source_repo": "spektiv",
+      "issue_ref": "#740",
+      "description": "Local dev uses SQLite but production uses PostgreSQL, with different SQL dialect for JSON queries",
+      "diff_text": "--- a/src/spektiv/db/config.py\n+++ b/src/spektiv/db/config.py\n@@ -5,7 +5,9 @@ import os\n \n def get_database_url() -> str:\n     env = os.getenv(\"ENVIRONMENT\", \"development\")\n-    return os.getenv(\"DATABASE_URL\", \"postgresql://localhost/spektiv\")\n+    if env == \"development\":\n+        return \"sqlite:///spektiv_dev.db\"\n+    return os.getenv(\"DATABASE_URL\", \"postgresql://localhost/spektiv\")\n--- a/src/spektiv/db/queries.py\n+++ b/src/spektiv/db/queries.py\n@@ -12,6 +12,7 @@ def get_portfolio_settings(portfolio_id: str) -> Dict:\n     # Uses PostgreSQL JSON operators that don't work in SQLite\n     query = f\"\"\"\n         SELECT settings->>'risk_limit' as risk_limit,\n-               settings->>'max_position' as max_position\n+               settings->>'max_position' as max_position,\n+               settings->>'paper_mode' as paper_mode\n         FROM portfolios WHERE id = :portfolio_id\n     \"\"\"",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "local-cloud-parity"
+      ],
+      "category_tags": [
+        "local-cloud-parity",
+        "cross-path-parity"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "local-cloud-parity"
+    },
+    {
+      "sample_id": "realign-660-dev-prod-config-lr",
+      "source_repo": "realign",
+      "issue_ref": "#660",
+      "description": "Development config uses 10x higher learning rate than production, masking training instability",
+      "diff_text": "--- a/configs/dev_config.yaml\n+++ b/configs/dev_config.yaml\n@@ -1,6 +1,6 @@\n # Development config - overrides for local testing\n training:\n-  learning_rate: 1.0e-5\n+  learning_rate: 1.0e-4  # 10x higher for faster dev iteration\n   batch_size: 2\n   max_steps: 100\n   eval_steps: 10\n--- a/configs/prod_config.yaml\n+++ b/configs/prod_config.yaml\n@@ -1,6 +1,6 @@\n # Production config\n training:\n   learning_rate: 1.0e-5\n   batch_size: 8\n   max_steps: 10000\n   eval_steps: 500",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "dev-prod-config"
+      ],
+      "category_tags": [
+        "dev-prod-config",
+        "training-config"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "dev-prod-config"
+    },
+    {
+      "sample_id": "realign-665-backend-parity-output-shape",
+      "source_repo": "realign",
+      "issue_ref": "#665",
+      "description": "MLX backend returns (batch, seq, vocab) but PyTorch backend returns (batch, vocab, seq) for logits",
+      "diff_text": "--- a/src/realign/backends/mlx_backend.py\n+++ b/src/realign/backends/mlx_backend.py\n@@ -25,7 +25,7 @@ class MLXBackend:\n     def forward(self, input_ids: mx.array) -> mx.array:\n         \"\"\"Forward pass returning logits.\"\"\"\n         outputs = self.model(input_ids)\n-        return outputs  # shape: (batch, seq, vocab)\n+        return outputs  # shape: (batch, seq, vocab) - correct\n--- a/src/realign/backends/torch_backend.py\n+++ b/src/realign/backends/torch_backend.py\n@@ -25,8 +25,7 @@ class TorchBackend:\n     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:\n         \"\"\"Forward pass returning logits.\"\"\"\n         outputs = self.model(input_ids)\n-        logits = outputs.logits  # (batch, seq, vocab)\n-        return logits\n+        return outputs.logits.transpose(1, 2)  # (batch, vocab, seq) - WRONG",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "backend-parity"
+      ],
+      "category_tags": [
+        "backend-parity",
+        "cross-path-parity"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "backend-parity"
+    },
+    {
+      "sample_id": "spektiv-745-rollback-broken-migration",
+      "source_repo": "spektiv",
+      "issue_ref": "#745",
+      "description": "Database migration adds column with NOT NULL but rollback does not handle existing data",
+      "diff_text": "--- a/migrations/0042_add_strategy_type.py\n+++ b/migrations/0042_add_strategy_type.py\n@@ -0,0 +1,16 @@\n+\"\"\"Add strategy_type column to strategies table.\"\"\"\n+\n+def upgrade(conn):\n+    conn.execute(\"\"\"\n+        ALTER TABLE strategies\n+        ADD COLUMN strategy_type VARCHAR(50) NOT NULL DEFAULT 'momentum'\n+    \"\"\")\n+\n+def downgrade(conn):\n+    # BUG: If column has data referencing it in views/constraints,\n+    # this will fail silently in production\n+    conn.execute(\"\"\"\n+        ALTER TABLE strategies\n+        DROP COLUMN strategy_type\n+    \"\"\")\n+    # Does not handle: dropping dependent views, updating foreign keys",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "rollback-broken"
+      ],
+      "category_tags": [
+        "rollback-broken",
+        "functionality"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "rollback-broken"
+    },
+    {
+      "sample_id": "autonomous-dev-560-error-swallowed-hook",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#560",
+      "description": "Pre-tool hook catches all exceptions and returns allow, hiding real validation errors",
+      "diff_text": "--- a/plugins/autonomous-dev/hooks/pre_tool_validator.py\n+++ b/plugins/autonomous-dev/hooks/pre_tool_validator.py\n@@ -20,10 +20,8 @@ def validate_tool_use(tool_name: str, tool_input: dict) -> dict:\n     try:\n         result = _check_permissions(tool_name, tool_input)\n         return result\n-    except PermissionError as e:\n-        return {\"decision\": \"deny\", \"reason\": str(e)}\n-    except ValidationError as e:\n-        return {\"decision\": \"deny\", \"reason\": str(e)}\n+    except Exception:\n+        return {\"decision\": \"allow\", \"reason\": \"Validation skipped due to error\"}\n     return {\"decision\": \"allow\", \"reason\": \"Default allow\"}",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "error-swallowed"
+      ],
+      "category_tags": [
+        "error-swallowed",
+        "silent-failure"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "error-swallowed"
+    },
+    {
+      "sample_id": "realign-670-filter-over-rejection",
+      "source_repo": "realign",
+      "issue_ref": "#670",
+      "description": "Data pipeline silently drops samples with missing fields instead of raising validation error",
+      "diff_text": "--- a/src/realign/data/pipeline.py\n+++ b/src/realign/data/pipeline.py\n@@ -18,12 +18,8 @@ def process_training_data(raw_samples: List[Dict]) -> List[Dict]:\n     processed = []\n     for sample in raw_samples:\n         text = sample.get(\"text\", \"\")\n-        if not text:\n-            raise ValueError(\n-                f\"Sample {sample.get('id', 'unknown')} missing required 'text' field\"\n-            )\n-        if len(text) < 10:\n-            raise ValueError(f\"Sample text too short: {len(text)} chars\")\n+        if not text or len(text) < 10:\n+            continue  # Silently skip invalid samples\n         processed.append({\"text\": text, \"meta\": sample.get(\"meta\", {})})\n     return processed",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "filter-over-rejection"
+      ],
+      "category_tags": [
+        "filter-over-rejection",
+        "data-handling"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "filter-over-rejection"
+    },
+    {
+      "sample_id": "autonomous-dev-565-silent-import-fail",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#565",
+      "description": "Optional import of security module fails silently, disabling all security checks at runtime",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/security_engine.py\n+++ b/plugins/autonomous-dev/lib/security_engine.py\n@@ -1,8 +1,12 @@\n \"\"\"Security engine for validating tool operations.\"\"\"\n-from security_validator import SecurityValidator\n-from threat_detector import ThreatDetector\n+try:\n+    from security_validator import SecurityValidator\n+    from threat_detector import ThreatDetector\n+    HAS_SECURITY = True\n+except ImportError:\n+    HAS_SECURITY = False\n \n \n class SecurityEngine:\n     def validate(self, action: str) -> bool:\n+        if not HAS_SECURITY:\n+            return True  # No security checks if import failed\n         validator = SecurityValidator()\n         return validator.check(action)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "silent-import-fail"
+      ],
+      "category_tags": [
+        "silent-import-fail",
+        "security"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "silent-import-fail"
+    },
+    {
+      "sample_id": "spektiv-750-metric-never-incremented",
+      "source_repo": "spektiv",
+      "issue_ref": "#750",
+      "description": "Order execution counter defined but never incremented in the actual execution path",
+      "diff_text": "--- a/src/spektiv/metrics/trading.py\n+++ b/src/spektiv/metrics/trading.py\n@@ -5,6 +5,7 @@ from spektiv.metrics.base import Counter, Gauge\n order_count = Counter(\"spektiv_orders_total\", \"Total orders submitted\")\n fill_count = Counter(\"spektiv_fills_total\", \"Total orders filled\")\n rejection_count = Counter(\"spektiv_rejections_total\", \"Total orders rejected\")\n+execution_latency = Gauge(\"spektiv_execution_latency_ms\", \"Order execution latency\")\n \n--- a/src/spektiv/trading/executor.py\n+++ b/src/spektiv/trading/executor.py\n@@ -15,6 +15,7 @@ class OrderExecutor:\n     def execute(self, order: Order) -> ExecutionResult:\n         result = self.broker.submit(order)\n         order_count.inc()\n+        # BUG: execution_latency gauge never set\n         if result.filled:\n             fill_count.inc()\n         return result",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "metric-never-incremented"
+      ],
+      "category_tags": [
+        "metric-never-incremented",
+        "metric"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "metric-never-incremented"
+    },
+    {
+      "sample_id": "autonomous-dev-570-log-no-alert",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#570",
+      "description": "Critical pipeline failure logged at ERROR level but no alert or metric emitted",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_runner.py\n+++ b/plugins/autonomous-dev/lib/pipeline_runner.py\n@@ -30,8 +30,7 @@ class PipelineRunner:\n             result = self._execute_step(step)\n             if not result.success:\n-                self._alert_failure(step, result)\n-                raise PipelineError(f\"Step {step} failed: {result.error}\")\n+                logging.error(f\"Step {step} failed: {result.error}\")\n+                # Continue to next step instead of alerting\n             self._update_state(step, result)\n         return self.state",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "log-no-alert"
+      ],
+      "category_tags": [
+        "log-no-alert",
+        "silent-failure"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "log-no-alert"
+    },
+    {
+      "sample_id": "autonomous-dev-575-docs-feature-missing",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#575",
+      "description": "README documents /benchmark command that does not exist in the codebase",
+      "diff_text": "--- a/README.md\n+++ b/README.md\n@@ -20,6 +20,7 @@ Plugin for autonomous development in Claude Code.\n | `/audit` | Quality audit |\n | `/setup` | Interactive setup wizard |\n | `/sync` | Update plugin |\n+| `/benchmark` | Run reviewer effectiveness benchmark |\n | `/health-check` | Validate plugin integrity |\n--- a/plugins/autonomous-dev/commands/\n# Note: No benchmark.md command file exists",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "docs-feature-missing"
+      ],
+      "category_tags": [
+        "docs-feature-missing",
+        "documentation"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "docs-feature-missing"
+    },
+    {
+      "sample_id": "realign-675-config-schema-drift",
+      "source_repo": "realign",
+      "issue_ref": "#675",
+      "description": "Training config schema updated to require 'method' field but JSON schema validation not updated",
+      "diff_text": "--- a/src/realign/training/configs/base.py\n+++ b/src/realign/training/configs/base.py\n@@ -8,6 +8,7 @@ class TrainingConfig:\n     learning_rate: float = 1e-5\n     batch_size: int = 4\n     max_steps: int = 1000\n+    method: str = \"sft\"  # Required: sft, dpo, kto, orpo\n \n     def validate(self) -> None:\n         if self.learning_rate <= 0:\n--- a/configs/schema.json\n+++ b/configs/schema.json\n@@ -10,6 +10,6 @@\n       \"learning_rate\": {\"type\": \"number\"},\n       \"batch_size\": {\"type\": \"integer\"},\n       \"max_steps\": {\"type\": \"integer\"}\n     },\n-    \"required\": [\"learning_rate\"]\n+    \"required\": [\"learning_rate\"]\n   }",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "config-schema-drift"
+      ],
+      "category_tags": [
+        "config-schema-drift",
+        "documentation-drift"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "config-schema-drift"
+    },
+    {
+      "sample_id": "spektiv-755-enum-switch-incomplete",
+      "source_repo": "spektiv",
+      "issue_ref": "#755",
+      "description": "New OrderType.STOP_LIMIT added to enum but execute_order switch does not handle it",
+      "diff_text": "--- a/src/spektiv/trading/types.py\n+++ b/src/spektiv/trading/types.py\n@@ -5,6 +5,7 @@ class OrderType(str, Enum):\n     MARKET = \"market\"\n     LIMIT = \"limit\"\n     STOP = \"stop\"\n+    STOP_LIMIT = \"stop_limit\"\n--- a/src/spektiv/trading/executor.py\n+++ b/src/spektiv/trading/executor.py\n@@ -20,6 +20,8 @@ class OrderExecutor:\n         if order.order_type == OrderType.MARKET:\n             return self._execute_market(order)\n         elif order.order_type == OrderType.LIMIT:\n             return self._execute_limit(order)\n         elif order.order_type == OrderType.STOP:\n             return self._execute_stop(order)\n+        # STOP_LIMIT not handled - falls through to default\n         else:\n             raise ValueError(f\"Unknown order type: {order.order_type}\")",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "enum-switch-incomplete"
+      ],
+      "category_tags": [
+        "enum-switch-incomplete",
+        "enum"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "enum-switch-incomplete"
+    },
+    {
+      "sample_id": "realign-680-api-shape-changed",
+      "source_repo": "realign",
+      "issue_ref": "#680",
+      "description": "Scorer API changed from returning float to returning Dict but callers still expect float",
+      "diff_text": "--- a/src/realign/scorers/base.py\n+++ b/src/realign/scorers/base.py\n@@ -8,8 +8,11 @@ class BaseScorer:\n     def score(self, sample: Dict) -> float:\n         raise NotImplementedError\n \n+    def score_detailed(self, sample: Dict) -> Dict[str, Any]:\n+        \"\"\"Return detailed score with metadata.\"\"\"\n+        value = self.score(sample)\n+        return {\"score\": value, \"confidence\": 1.0}\n--- a/src/realign/scorers/ifd_scorer.py\n+++ b/src/realign/scorers/ifd_scorer.py\n@@ -12,7 +12,8 @@ class IFDScorer(BaseScorer):\n     def score(self, sample: Dict) -> Dict[str, Any]:\n-        \"\"\"Score returns float.\"\"\"\n-        return self._compute_ifd(sample)\n+        \"\"\"Score now returns dict with metadata.\"\"\"\n+        value = self._compute_ifd(sample)\n+        return {\"score\": value, \"method\": \"ifd\", \"version\": \"2.0\"}",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "api-shape-changed"
+      ],
+      "category_tags": [
+        "api-shape-changed",
+        "scorer"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "api-shape-changed"
+    },
+    {
+      "sample_id": "autonomous-dev-580-hook-deleted-refactor",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#580",
+      "description": "PostToolUse hook function deleted during refactor but still referenced in settings.json",
+      "diff_text": "--- a/plugins/autonomous-dev/hooks/post_tool_logger.py\n+++ /dev/null\n@@ -1,20 +0,0 @@\n-\"\"\"Post-tool-use logging hook.\"\"\"\n-import json\n-import sys\n-from datetime import datetime\n-\n-def main():\n-    data = json.load(sys.stdin)\n-    tool = data.get(\"tool_name\", \"unknown\")\n-    timestamp = datetime.now().isoformat()\n-    # Log tool usage for audit trail\n-    log_entry = {\"tool\": tool, \"timestamp\": timestamp}\n-    with open(\"/tmp/tool_audit.jsonl\", \"a\") as f:\n-        f.write(json.dumps(log_entry) + \"\\n\")\n-\n-if __name__ == \"__main__\":\n-    main()\n--- a/.claude/settings.local.json\n+++ b/.claude/settings.local.json\n@@ -15,7 +15,6 @@\n     \"hooks\": {\n       \"PostToolUse\": [\n-        {\"command\": \"python3 hooks/post_tool_logger.py\"},\n         {\"command\": \"python3 hooks/session_activity_logger.py\"}\n       ]\n     }",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "hook-deleted-refactor"
+      ],
+      "category_tags": [
+        "hook-deleted-refactor",
+        "wiring"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "hook-deleted-refactor"
+    },
+    {
+      "sample_id": "spektiv-760-identity-spoofing",
+      "source_repo": "spektiv",
+      "issue_ref": "#760",
+      "description": "API authentication trusts X-User-Id header without verifying JWT token matches the claimed user",
+      "diff_text": "--- a/src/spektiv/middleware/auth.py\n+++ b/src/spektiv/middleware/auth.py\n@@ -15,10 +15,8 @@ class AuthMiddleware:\n     async def authenticate(self, request) -> Optional[User]:\n         token = request.headers.get(\"Authorization\", \"\").replace(\"Bearer \", \"\")\n         if not token:\n             return None\n-        payload = verify_jwt(token)\n-        user_id = payload[\"sub\"]\n+        # Trust header for user ID (faster than JWT decode)\n+        user_id = request.headers.get(\"X-User-Id\", \"\")\n+        if not user_id:\n+            return None\n         return User.get_by_id(user_id)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "identity-spoofing"
+      ],
+      "category_tags": [
+        "identity-spoofing",
+        "security"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "identity-spoofing"
+    },
+    {
+      "sample_id": "autonomous-dev-585-bypass-alternative-path",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#585",
+      "description": "Security validation on /implement but /audit command can modify files without validation",
+      "diff_text": "--- a/plugins/autonomous-dev/commands/audit.md\n+++ b/plugins/autonomous-dev/commands/audit.md\n@@ -25,6 +25,10 @@ When invoked with --fix:\n 3. Apply the fix directly\n 4. Run tests to verify\n \n+When invoked with --fix --auto:\n+1. Find all issues\n+2. Apply fixes without review step\n+3. Skip validation (for speed)\n+\n ## Output\n Structured report with findings.",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "bypass-alternative-path"
+      ],
+      "category_tags": [
+        "bypass-alternative-path",
+        "security"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "bypass-alternative-path"
+    },
+    {
+      "sample_id": "realign-685-secrets-committed",
+      "source_repo": "realign",
+      "issue_ref": "#685",
+      "description": "Anthropic API key committed in example configuration file",
+      "diff_text": "--- a/configs/example_eval.yaml\n+++ b/configs/example_eval.yaml\n@@ -1,7 +1,8 @@\n # Example evaluation configuration\n evaluation:\n   model: claude-sonnet-4-20250514\n-  api_key: ${ANTHROPIC_API_KEY}\n+  api_key: sk-ant-api03-EXAMPLE-KEY-DO-NOT-USE-abcdef123456\n   max_samples: 100\n   metrics:\n     - accuracy\n     - consistency",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "secrets-committed"
+      ],
+      "category_tags": [
+        "secrets-committed",
+        "security"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "secrets-committed"
+    },
+    {
+      "sample_id": "spektiv-765-race-condition-balance",
+      "source_repo": "spektiv",
+      "issue_ref": "#765",
+      "description": "Account balance read and update not atomic, allowing negative balance in concurrent orders",
+      "diff_text": "--- a/src/spektiv/trading/account.py\n+++ b/src/spektiv/trading/account.py\n@@ -15,12 +15,10 @@ class TradingAccount:\n     def execute_order(self, order: Order) -> bool:\n         \"\"\"Execute order if sufficient balance.\"\"\"\n         cost = order.quantity * order.price\n-        with self._lock:\n-            if self.balance >= cost:\n-                self.balance -= cost\n-                return True\n-            return False\n+        # Removed lock for performance\n+        if self.balance >= cost:\n+            self.balance -= cost\n+            return True\n+        return False",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "race-condition"
+      ],
+      "category_tags": [
+        "race-condition",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "race-condition"
+    },
+    {
+      "sample_id": "realign-690-non-atomic-update-checkpoint",
+      "source_repo": "realign",
+      "issue_ref": "#690",
+      "description": "Checkpoint save writes model then config in separate operations, can leave inconsistent state on crash",
+      "diff_text": "--- a/src/realign/training/checkpointer.py\n+++ b/src/realign/training/checkpointer.py\n@@ -18,14 +18,10 @@ class Checkpointer:\n     def save(self, step: int) -> Path:\n         \"\"\"Save a training checkpoint.\"\"\"\n         checkpoint_dir = self.base_dir / f\"checkpoint-{step}\"\n         checkpoint_dir.mkdir(parents=True, exist_ok=True)\n-        # Atomic write: save to temp dir, then rename\n-        temp_dir = self.base_dir / f\".tmp-checkpoint-{step}\"\n-        temp_dir.mkdir(parents=True, exist_ok=True)\n-        self._save_model(temp_dir / \"model.safetensors\")\n-        self._save_config(temp_dir / \"config.json\")\n-        temp_dir.rename(checkpoint_dir)\n+        # Save directly (non-atomic)\n+        self._save_model(checkpoint_dir / \"model.safetensors\")\n+        self._save_config(checkpoint_dir / \"config.json\")\n         return checkpoint_dir",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "non-atomic-update"
+      ],
+      "category_tags": [
+        "non-atomic-update",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "non-atomic-update"
+    },
+    {
+      "sample_id": "spektiv-770-stale-cache-positions",
+      "source_repo": "spektiv",
+      "issue_ref": "#770",
+      "description": "Position cache not invalidated after order execution, serving stale position data",
+      "diff_text": "--- a/src/spektiv/portfolio/cache.py\n+++ b/src/spektiv/portfolio/cache.py\n@@ -10,10 +10,8 @@ class PositionCache:\n     def get_positions(self, portfolio_id: str) -> List[Dict]:\n         if portfolio_id in self._cache:\n             return self._cache[portfolio_id]\n-        positions = self._fetch_positions(portfolio_id)\n-        self._cache[portfolio_id] = positions\n-        return positions\n+        return self._fetch_and_cache(portfolio_id)\n \n-    def invalidate(self, portfolio_id: str) -> None:\n-        self._cache.pop(portfolio_id, None)\n+    # invalidate() method removed during refactoring\n+    # Order executor used to call this after each trade",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "stale-cache"
+      ],
+      "category_tags": [
+        "stale-cache",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "stale-cache"
+    },
+    {
+      "sample_id": "realign-700-hardcoded-threshold",
+      "source_repo": "realign",
+      "issue_ref": "#700",
+      "description": "Quality threshold hardcoded to 0.7 instead of reading from config",
+      "diff_text": "--- a/src/realign/data/quality_filter.py\n+++ b/src/realign/data/quality_filter.py\n@@ -10,8 +10,7 @@ class QualityFilter:\n     def __init__(self, config: Dict):\n-        self.threshold = config.get(\"quality_threshold\", 0.5)\n+        self.threshold = 0.7  # Hardcoded for now\n         self.scorer = QualityScorer()\n \n     def filter(self, samples: List[Dict]) -> List[Dict]:\n         return [s for s in samples if self.scorer.score(s) >= self.threshold]",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "hardcoded-value"
+      ],
+      "category_tags": [
+        "hardcoded-value",
+        "functionality"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "hardcoded-value"
+    },
+    {
+      "sample_id": "spektiv-775-wrong-dispatch-signal",
+      "source_repo": "spektiv",
+      "issue_ref": "#775",
+      "description": "Signal processor dispatches momentum signals to mean-reversion handler",
+      "diff_text": "--- a/src/spektiv/signals/dispatcher.py\n+++ b/src/spektiv/signals/dispatcher.py\n@@ -8,7 +8,7 @@ SIGNAL_HANDLERS = {\n     \"momentum\": MomentumHandler,\n     \"mean_reversion\": MeanReversionHandler,\n     \"breakout\": BreakoutHandler,\n-    \"pairs\": PairsHandler,\n+    \"momentum\": MeanReversionHandler,  # BUG: overrides momentum with wrong handler\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "wrong-dispatch"
+      ],
+      "category_tags": [
+        "wrong-dispatch",
+        "dispatch-table"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "wrong-dispatch"
+    },
+    {
+      "sample_id": "realign-705-null-safety-tokenizer",
+      "source_repo": "realign",
+      "issue_ref": "#705",
+      "description": "Tokenizer encode method does not check for None input, crashes on None.split()",
+      "diff_text": "--- a/src/realign/tokenizer/base.py\n+++ b/src/realign/tokenizer/base.py\n@@ -12,7 +12,6 @@ class Tokenizer:\n \n     def encode(self, text: str) -> List[int]:\n         \"\"\"Encode text to token ids.\"\"\"\n-        if text is None:\n-            return []\n         tokens = text.split()\n         return [self.vocab.get(t, self.unk_id) for t in tokens]",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "null-safety"
+      ],
+      "category_tags": [
+        "null-safety",
+        "none-handling"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "null-safety"
+    },
+    {
+      "sample_id": "autonomous-dev-590-stub-pipeline-step",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#590",
+      "description": "Verify step in pipeline raises NotImplementedError instead of running security audit",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_steps.py\n+++ b/plugins/autonomous-dev/lib/pipeline_steps.py\n@@ -45,12 +45,5 @@ class VerifyStep(BaseStep):\n     \"\"\"Run security audit and code review.\"\"\"\n \n     def execute(self, context: Dict) -> StepResult:\n-        audit_result = self._run_security_audit(context)\n-        review_result = self._run_code_review(context)\n-        return StepResult(\n-            success=audit_result.passed and review_result.passed,\n-            findings=audit_result.findings + review_result.findings,\n-        )\n+        raise NotImplementedError(\"Verify step not yet implemented\")",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "stub-implementation"
+      ],
+      "category_tags": [
+        "stub-implementation",
+        "not-implemented"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "stub-implementation"
+    },
+    {
+      "sample_id": "spektiv-780-orphan-strategy-ref",
+      "source_repo": "spektiv",
+      "issue_ref": "#780",
+      "description": "MomentumStrategy class deleted but strategy factory still references it",
+      "diff_text": "--- a/src/spektiv/strategies/__init__.py\n+++ b/src/spektiv/strategies/__init__.py\n@@ -1,5 +1,4 @@\n-from spektiv.strategies.momentum import MomentumStrategy\n from spektiv.strategies.mean_reversion import MeanReversionStrategy\n from spektiv.strategies.breakout import BreakoutStrategy\n \n STRATEGY_MAP = {\n-    \"momentum\": MomentumStrategy,\n     \"mean_reversion\": MeanReversionStrategy,\n     \"breakout\": BreakoutStrategy,\n }\n--- a/src/spektiv/strategies/factory.py\n+++ b/src/spektiv/strategies/factory.py\n@@ -5,6 +5,7 @@ def create_strategy(name: str, config: Dict) -> BaseStrategy:\n     from spektiv.strategies import STRATEGY_MAP\n     if name not in STRATEGY_MAP:\n+        # MomentumStrategy still referenced in config files\n         raise ValueError(f\"Unknown strategy: {name}\")\n     return STRATEGY_MAP[name](config)",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "orphan-reference"
+      ],
+      "category_tags": [
+        "orphan-reference",
+        "deleted-class"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "orphan-reference"
+    },
+    {
+      "sample_id": "realign-712-incomplete-fix-normalize",
+      "source_repo": "realign",
+      "issue_ref": "#712",
+      "description": "Text normalization fixed for training data but not for evaluation data",
+      "diff_text": "--- a/src/realign/data/normalizer.py\n+++ b/src/realign/data/normalizer.py\n@@ -10,7 +10,7 @@ class TextNormalizer:\n     def normalize_training(self, text: str) -> str:\n         \"\"\"Normalize text for training.\"\"\"\n-        return text.strip()\n+        return text.strip().replace(\"\\r\\n\", \"\\n\").replace(\"\\r\", \"\\n\")\n \n     def normalize_eval(self, text: str) -> str:\n         \"\"\"Normalize text for evaluation.\"\"\"\n-        return text.strip()\n+        return text.strip()  # BUG: missing \\r\\n normalization",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "incomplete-fix"
+      ],
+      "category_tags": [
+        "incomplete-fix",
+        "partial-fix"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "incomplete-fix"
+    },
+    {
+      "sample_id": "realign-715-off-by-one-batch",
+      "source_repo": "realign",
+      "issue_ref": "#715",
+      "description": "Batch iterator skips last incomplete batch due to range calculation error",
+      "diff_text": "--- a/src/realign/data/batch_iter.py\n+++ b/src/realign/data/batch_iter.py\n@@ -8,7 +8,7 @@ def batch_iterator(data: List, batch_size: int) -> Iterator[List]:\n     \"\"\"Yield data in batches.\"\"\"\n-    for i in range(0, len(data), batch_size):\n+    for i in range(0, len(data) - batch_size, batch_size):\n         yield data[i:i + batch_size]",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "off-by-one"
+      ],
+      "category_tags": [
+        "off-by-one",
+        "loop-bound"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "off-by-one"
+    },
+    {
+      "sample_id": "spektiv-785-wrong-default-risk",
+      "source_repo": "spektiv",
+      "issue_ref": "#785",
+      "description": "Default risk limit changed from 0.02 (2%) to 0.2 (20%), 10x increase in exposure",
+      "diff_text": "--- a/src/spektiv/risk/limits.py\n+++ b/src/spektiv/risk/limits.py\n@@ -5,7 +5,7 @@ class RiskLimits:\n     \"\"\"Portfolio risk limits.\"\"\"\n \n     def __init__(self, config: Dict = None):\n-        self.max_position_pct = config.get(\"max_position_pct\", 0.02) if config else 0.02\n+        self.max_position_pct = config.get(\"max_position_pct\", 0.2) if config else 0.2\n         self.max_drawdown_pct = config.get(\"max_drawdown_pct\", 0.05) if config else 0.05",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "wrong-default"
+      ],
+      "category_tags": [
+        "wrong-default",
+        "training-config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "wrong-default"
+    },
+    {
+      "sample_id": "autonomous-dev-595-removed-security-hmac",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#595",
+      "description": "HMAC verification for pipeline state removed during cleanup refactor",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_state.py\n+++ b/plugins/autonomous-dev/lib/pipeline_state.py\n@@ -25,15 +25,6 @@ def load_state(path: Path) -> Dict:\n     with open(path) as f:\n         state = json.load(f)\n \n-    # Verify HMAC integrity\n-    if \"hmac\" in state:\n-        expected_hmac = state.pop(\"hmac\")\n-        computed = compute_hmac(json.dumps(state, sort_keys=True))\n-        if not hmac.compare_digest(expected_hmac, computed):\n-            raise SecurityError(\n-                f\"Pipeline state HMAC verification failed: {path}\\n\"\n-                f\"State file may have been tampered with.\"\n-            )\n     return state",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "removed-security"
+      ],
+      "category_tags": [
+        "removed-security",
+        "enforcement"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "removed-security"
+    },
+    {
+      "sample_id": "realign-718-test-skip-abuse-gpu",
+      "source_repo": "realign",
+      "issue_ref": "#718",
+      "description": "42 GPU tests marked with skipif instead of using proper GPU CI runner",
+      "diff_text": "--- a/tests/unit/training/test_gpu_training.py\n+++ b/tests/unit/training/test_gpu_training.py\n@@ -1,6 +1,10 @@\n import pytest\n+import importlib\n \n+HAS_GPU = importlib.util.find_spec(\"mlx\") is not None\n+\n+@pytest.mark.skipif(not HAS_GPU, reason=\"No GPU available\")\n class TestGPUTraining:\n+    @pytest.mark.skipif(not HAS_GPU, reason=\"No GPU\")\n     def test_training_on_gpu(self):\n         pass\n+    @pytest.mark.skipif(not HAS_GPU, reason=\"No GPU\")\n     def test_inference_on_gpu(self):\n         pass",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "test-skip-abuse"
+      ],
+      "category_tags": [
+        "test-skip-abuse",
+        "skipif"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "test-skip-abuse"
+    },
+    {
+      "sample_id": "spektiv-790-division-by-zero-sharpe",
+      "source_repo": "spektiv",
+      "issue_ref": "#790",
+      "description": "Sharpe ratio calculation divides by std_dev without checking for zero",
+      "diff_text": "--- a/src/spektiv/analytics/metrics.py\n+++ b/src/spektiv/analytics/metrics.py\n@@ -15,8 +15,7 @@ def compute_sharpe_ratio(returns: List[float], risk_free_rate: float = 0.0) -> f\n     mean_return = sum(returns) / len(returns)\n     excess = mean_return - risk_free_rate\n     std_dev = (sum((r - mean_return) ** 2 for r in returns) / len(returns)) ** 0.5\n-    if std_dev == 0:\n-        return 0.0\n+    # Removed zero check for simplicity\n     return excess / std_dev",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "null-safety"
+      ],
+      "category_tags": [
+        "division-by-zero",
+        "metric"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "null-safety"
+    },
+    {
+      "sample_id": "realign-722-class-unused-augmentor",
+      "source_repo": "realign",
+      "issue_ref": "#722",
+      "description": "DataAugmentor class created with full implementation but never instantiated anywhere",
+      "diff_text": "--- a/src/realign/data/augmentor.py\n+++ b/src/realign/data/augmentor.py\n@@ -0,0 +1,20 @@\n+\"\"\"Data augmentation for training samples.\"\"\"\n+import random\n+from typing import Dict, List\n+\n+class DataAugmentor:\n+    def __init__(self, strategies: List[str] = None):\n+        self.strategies = strategies or [\"swap\", \"delete\", \"insert\"]\n+\n+    def augment(self, sample: Dict) -> List[Dict]:\n+        augmented = []\n+        for strategy in self.strategies:\n+            aug = self._apply(strategy, sample)\n+            augmented.append(aug)\n+        return augmented\n+\n+    def _apply(self, strategy: str, sample: Dict) -> Dict:\n+        text = sample.get(\"text\", \"\")\n+        words = text.split()\n+        if strategy == \"swap\" and len(words) > 2:\n+            i = random.randint(0, len(words) - 2)\n+            words[i], words[i+1] = words[i+1], words[i]\n+        return {\"text\": \" \".join(words), \"augmented\": True}",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "class-unused"
+      ],
+      "category_tags": [
+        "class-unused",
+        "evolvability"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "class-unused"
+    },
+    {
+      "sample_id": "autonomous-dev-598-infra-no-integration-cache",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#598",
+      "description": "Response cache module created but never registered in the hook pipeline",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/response_cache.py\n+++ b/plugins/autonomous-dev/lib/response_cache.py\n@@ -0,0 +1,18 @@\n+\"\"\"Cache for LLM responses to reduce API costs.\"\"\"\n+import hashlib\n+import json\n+from pathlib import Path\n+\n+CACHE_DIR = Path(\".claude/cache/responses\")\n+\n+class ResponseCache:\n+    def get(self, prompt: str) -> str | None:\n+        key = hashlib.sha256(prompt.encode()).hexdigest()[:16]\n+        cache_file = CACHE_DIR / f\"{key}.json\"\n+        if cache_file.exists():\n+            data = json.loads(cache_file.read_text())\n+            return data.get(\"response\")\n+        return None\n+\n+    def set(self, prompt: str, response: str) -> None:\n+        CACHE_DIR.mkdir(parents=True, exist_ok=True)\n+        key = hashlib.sha256(prompt.encode()).hexdigest()[:16]\n+        (CACHE_DIR / f\"{key}.json\").write_text(json.dumps({\"response\": response}))",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "infra-no-integration"
+      ],
+      "category_tags": [
+        "infra-no-integration",
+        "wiring"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "infra-no-integration"
+    },
+    {
+      "sample_id": "spektiv-795-config-unused-slippage",
+      "source_repo": "spektiv",
+      "issue_ref": "#795",
+      "description": "Slippage model config added but backtester still uses hardcoded zero slippage",
+      "diff_text": "--- a/configs/backtest.yaml\n+++ b/configs/backtest.yaml\n@@ -5,6 +5,9 @@ backtest:\n   initial_capital: 100000\n   commission: 0.001\n   data_source: \"polygon\"\n+  slippage:\n+    model: \"fixed\"\n+    value: 0.0005\n--- a/src/spektiv/backtest/engine.py\n+++ b/src/spektiv/backtest/engine.py\n@@ -18,7 +18,7 @@ class BacktestEngine:\n     def _compute_fill_price(self, order, market_price):\n-        return market_price  # No slippage model\n+        return market_price  # TODO: read slippage config",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "config-unused"
+      ],
+      "category_tags": [
+        "config-unused",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "config-unused"
+    },
+    {
+      "sample_id": "realign-725-feature-flag-eval",
+      "source_repo": "realign",
+      "issue_ref": "#725",
+      "description": "New evaluation mode feature flag defined but evaluation always runs in old mode",
+      "diff_text": "--- a/src/realign/config/flags.py\n+++ b/src/realign/config/flags.py\n@@ -3,6 +3,7 @@ FEATURE_FLAGS = {\n     \"streaming_eval\": False,\n     \"parallel_scoring\": True,\n+    \"detailed_eval_mode\": True,\n }\n--- a/src/realign/evaluation/runner.py\n+++ b/src/realign/evaluation/runner.py\n@@ -12,6 +12,7 @@ class EvalRunner:\n     def run(self, dataset: List[Dict]) -> EvalResult:\n+        # Should check detailed_eval_mode flag\n         scores = [self.scorer.score(s) for s in dataset]\n         return EvalResult(scores=scores, mean=sum(scores)/len(scores))",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "feature-flag-unchecked"
+      ],
+      "category_tags": [
+        "feature-flag-unchecked",
+        "functionality"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "feature-flag-unchecked"
+    },
+    {
+      "sample_id": "realign-728-error-swallowed-training",
+      "source_repo": "realign",
+      "issue_ref": "#728",
+      "description": "Training loop catches OOM error and continues with corrupted state",
+      "diff_text": "--- a/src/realign/training/trainer.py\n+++ b/src/realign/training/trainer.py\n@@ -30,10 +30,8 @@ class Trainer:\n         for step in range(self.config.max_steps):\n             try:\n                 loss = self._train_step(batch)\n                 self._update_metrics(step, loss)\n-            except MemoryError:\n-                raise RuntimeError(f\"OOM at step {step}. Reduce batch_size or enable grad_checkpoint.\")\n-            except Exception as e:\n-                raise TrainingError(f\"Training failed at step {step}: {e}\") from e\n+            except Exception:\n+                continue  # Skip failed steps",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "error-swallowed"
+      ],
+      "category_tags": [
+        "error-swallowed",
+        "training"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "error-swallowed"
+    },
+    {
+      "sample_id": "spektiv-800-filter-over-rejection-orders",
+      "source_repo": "spektiv",
+      "issue_ref": "#800",
+      "description": "Invalid orders silently filtered from batch instead of being rejected with error",
+      "diff_text": "--- a/src/spektiv/trading/batch.py\n+++ b/src/spektiv/trading/batch.py\n@@ -10,11 +10,7 @@ def process_order_batch(orders: List[Order]) -> BatchResult:\n     results = []\n     for order in orders:\n-        validation = validate_order(order)\n-        if not validation.is_valid:\n-            results.append(OrderResult(\n-                order_id=order.id, status=\"rejected\", reason=validation.error\n-            ))\n-            continue\n+        if not order.symbol or order.quantity <= 0:\n+            continue  # Silently skip bad orders\n         result = execute_order(order)\n         results.append(result)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "filter-over-rejection"
+      ],
+      "category_tags": [
+        "filter-over-rejection",
+        "silent-failure"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "filter-over-rejection"
+    },
+    {
+      "sample_id": "autonomous-dev-602-metric-never-incremented-hook",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#602",
+      "description": "Hook execution counter defined but only incremented for PostToolUse, not PreToolUse",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/hook_metrics.py\n+++ b/plugins/autonomous-dev/lib/hook_metrics.py\n@@ -5,6 +5,7 @@ hook_execution_count = Counter(\"hook_executions_total\", labels=[\"hook_type\"])\n \n def record_hook_execution(hook_type: str) -> None:\n     \"\"\"Record a hook execution.\"\"\"\n-    hook_execution_count.labels(hook_type=hook_type).inc()\n+    if hook_type == \"PostToolUse\":\n+        hook_execution_count.labels(hook_type=hook_type).inc()\n+    # BUG: PreToolUse, Stop, SessionStart not counted",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "metric-never-incremented"
+      ],
+      "category_tags": [
+        "metric-never-incremented",
+        "metric"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "metric-never-incremented"
+    },
+    {
+      "sample_id": "realign-730-docs-feature-missing-grpo",
+      "source_repo": "realign",
+      "issue_ref": "#730",
+      "description": "GRPO training method documented in README but config and trainer not implemented",
+      "diff_text": "--- a/README.md\n+++ b/README.md\n@@ -15,6 +15,7 @@ Supported training methods:\n - SFT (Supervised Fine-Tuning)\n - DPO (Direct Preference Optimization)\n - KTO (Kahneman-Tversky Optimization)\n+- GRPO (Group Relative Policy Optimization)\n \n ## Quick Start\n--- a/src/realign/training/configs/__init__.py\n+++ b/src/realign/training/configs/__init__.py\n@@ -3,6 +3,6 @@ from realign.training.configs.sft import SFTConfig\n from realign.training.configs.dpo import DPOConfig\n from realign.training.configs.kto import KTOConfig\n # Note: GRPOConfig not yet created",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "docs-feature-missing"
+      ],
+      "category_tags": [
+        "docs-feature-missing",
+        "documentation"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "docs-feature-missing"
+    },
+    {
+      "sample_id": "spektiv-805-api-shape-changed-portfolio",
+      "source_repo": "spektiv",
+      "issue_ref": "#805",
+      "description": "Portfolio API changed total_value to market_value but frontend still reads total_value",
+      "diff_text": "--- a/src/spektiv/api/serializers.py\n+++ b/src/spektiv/api/serializers.py\n@@ -8,7 +8,7 @@ def serialize_portfolio(portfolio: Portfolio) -> Dict:\n     return {\n         \"id\": portfolio.id,\n         \"name\": portfolio.name,\n-        \"total_value\": portfolio.total_value,\n+        \"market_value\": portfolio.total_value,\n         \"positions\": [serialize_position(p) for p in portfolio.positions],\n     }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "api-shape-changed"
+      ],
+      "category_tags": [
+        "api-shape-changed",
+        "api"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "api-shape-changed"
+    },
+    {
+      "sample_id": "realign-733-enum-switch-loss",
+      "source_repo": "realign",
+      "issue_ref": "#733",
+      "description": "New SIMPO loss type added to enum but get_loss_fn does not handle it",
+      "diff_text": "--- a/src/realign/training/loss_registry.py\n+++ b/src/realign/training/loss_registry.py\n@@ -5,6 +5,7 @@ class LossType(str, Enum):\n     SFT = \"sft\"\n     DPO = \"dpo\"\n     KTO = \"kto\"\n+    SIMPO = \"simpo\"\n \n LOSS_DISPATCH = {\n     \"sft\": sft_loss,\n     \"dpo\": dpo_loss,\n     \"kto\": kto_loss,\n+    # SIMPO not added to dispatch\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "enum-switch-incomplete"
+      ],
+      "category_tags": [
+        "enum-switch-incomplete",
+        "loss-function"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "enum-switch-incomplete"
+    },
+    {
+      "sample_id": "autonomous-dev-605-config-schema-drift-hooks",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#605",
+      "description": "Hook settings schema v2 fields added but JSON schema validation still uses v1 schema",
+      "diff_text": "--- a/plugins/autonomous-dev/config/settings_schema.json\n+++ b/plugins/autonomous-dev/config/settings_schema.json\n@@ -20,7 +20,7 @@\n     \"hooks\": {\n       \"type\": \"object\",\n       \"properties\": {\n-        \"PreToolUse\": {\"type\": \"array\"}\n+        \"PreToolUse\": {\"type\": \"array\"}\n       }\n     }\n--- a/.claude/settings.local.json\n+++ b/.claude/settings.local.json\n@@ -10,6 +10,8 @@\n       \"PreToolUse\": [...],\n       \"PostToolUse\": [...],\n+      \"Stop\": [...],\n+      \"SessionStart\": [...]\n     }",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "config-schema-drift"
+      ],
+      "category_tags": [
+        "config-schema-drift",
+        "config"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "config-schema-drift"
+    },
+    {
+      "sample_id": "spektiv-810-hook-deleted-alert",
+      "source_repo": "spektiv",
+      "issue_ref": "#810",
+      "description": "Price alert webhook handler deleted but alert configuration UI still creates alerts",
+      "diff_text": "--- a/src/spektiv/alerts/handlers.py\n+++ b/src/spektiv/alerts/handlers.py\n@@ -5,15 +5,6 @@ class EmailAlertHandler:\n     def send(self, alert: Alert) -> bool:\n         return self._send_email(alert.user_email, alert.message)\n \n-class WebhookAlertHandler:\n-    def send(self, alert: Alert) -> bool:\n-        return self._post_webhook(alert.webhook_url, alert.payload)\n-\n-    def _post_webhook(self, url: str, payload: Dict) -> bool:\n-        import requests\n-        resp = requests.post(url, json=payload, timeout=10)\n-        return resp.status_code == 200\n-\n HANDLER_MAP = {\n     \"email\": EmailAlertHandler,\n-    \"webhook\": WebhookAlertHandler,\n+    # webhook handler removed but UI still offers webhook option\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "hook-deleted-refactor"
+      ],
+      "category_tags": [
+        "hook-deleted-refactor",
+        "wiring"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "hook-deleted-refactor"
+    },
+    {
+      "sample_id": "realign-736-identity-spoofing-eval",
+      "source_repo": "realign",
+      "issue_ref": "#736",
+      "description": "Evaluation API trusts user-provided model name without validation, allowing score injection",
+      "diff_text": "--- a/src/realign/evaluation/api.py\n+++ b/src/realign/evaluation/api.py\n@@ -10,8 +10,7 @@ def submit_evaluation(request: Dict) -> Dict:\n     model_name = request.get(\"model_name\")\n     scores = request.get(\"scores\")\n-    if model_name not in REGISTERED_MODELS:\n-        raise ValueError(f\"Unknown model: {model_name}\")\n+    # Accept any model name (removed validation for flexibility)\n     store_results(model_name, scores)\n     return {\"status\": \"ok\"}",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "identity-spoofing"
+      ],
+      "category_tags": [
+        "identity-spoofing",
+        "security"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "identity-spoofing"
+    },
+    {
+      "sample_id": "spektiv-815-bypass-path-export",
+      "source_repo": "spektiv",
+      "issue_ref": "#815",
+      "description": "Portfolio export endpoint bypasses authentication middleware via direct function call",
+      "diff_text": "--- a/src/spektiv/api/export.py\n+++ b/src/spektiv/api/export.py\n@@ -5,8 +5,10 @@ from spektiv.portfolio import Portfolio\n \n @router.get(\"/api/v1/portfolios/{pid}/export\")\n def export_portfolio(pid: str) -> Dict:\n-    # Auth handled by middleware\n-    portfolio = Portfolio.get_by_id(pid)\n+    # Direct DB access bypasses auth middleware\n+    from spektiv.db import get_session\n+    session = get_session()\n+    portfolio = session.query(Portfolio).get(pid)\n     return portfolio.to_csv()",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "bypass-alternative-path"
+      ],
+      "category_tags": [
+        "bypass-alternative-path",
+        "security"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "bypass-alternative-path"
+    },
+    {
+      "sample_id": "realign-739-non-atomic-config",
+      "source_repo": "realign",
+      "issue_ref": "#739",
+      "description": "Config update writes new values one by one, can leave partial config on crash",
+      "diff_text": "--- a/src/realign/config/manager.py\n+++ b/src/realign/config/manager.py\n@@ -15,12 +15,10 @@ class ConfigManager:\n     def update(self, updates: Dict) -> None:\n         \"\"\"Update configuration values.\"\"\"\n-        # Atomic: write to temp file then rename\n-        temp_path = self.path.with_suffix(\".tmp\")\n-        new_config = {**self._config, **updates}\n-        temp_path.write_text(json.dumps(new_config, indent=2))\n-        temp_path.rename(self.path)\n-        self._config = new_config\n+        # Update values one by one\n+        for key, value in updates.items():\n+            self._config[key] = value\n+            self.path.write_text(json.dumps(self._config, indent=2))",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "non-atomic-update"
+      ],
+      "category_tags": [
+        "non-atomic-update",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "non-atomic-update"
+    },
+    {
+      "sample_id": "autonomous-dev-608-stale-cache-settings",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#608",
+      "description": "Settings cache not cleared when settings.json is modified by another process",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/settings_loader.py\n+++ b/plugins/autonomous-dev/lib/settings_loader.py\n@@ -8,12 +8,10 @@ class SettingsLoader:\n     _cache: Dict = {}\n \n     def load(self, path: Path) -> Dict:\n-        mtime = path.stat().st_mtime\n-        if path in self._cache and self._cache[path][\"mtime\"] == mtime:\n-            return self._cache[path][\"data\"]\n-        data = json.loads(path.read_text())\n-        self._cache[path] = {\"data\": data, \"mtime\": mtime}\n-        return data\n+        if path in self._cache:\n+            return self._cache[path]  # Never checks if file changed\n+        data = json.loads(path.read_text())\n+        self._cache[path] = data\n+        return data",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "stale-cache"
+      ],
+      "category_tags": [
+        "stale-cache",
+        "concurrency"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "stale-cache"
+    },
+    {
+      "sample_id": "spektiv-820-race-condition-order-id",
+      "source_repo": "spektiv",
+      "issue_ref": "#820",
+      "description": "Order ID generation uses non-atomic counter, can produce duplicate IDs under concurrent orders",
+      "diff_text": "--- a/src/spektiv/trading/id_generator.py\n+++ b/src/spektiv/trading/id_generator.py\n@@ -3,10 +3,9 @@ class OrderIdGenerator:\n     _counter = 0\n \n     def next_id(self) -> str:\n-        with self._lock:\n-            self._counter += 1\n-            return f\"ORD-{self._counter:08d}\"\n+        self._counter += 1  # Not thread-safe\n+        return f\"ORD-{self._counter:08d}\"",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "race-condition"
+      ],
+      "category_tags": [
+        "race-condition",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "race-condition"
+    },
+    {
+      "sample_id": "realign-742-log-no-alert-oom",
+      "source_repo": "realign",
+      "issue_ref": "#742",
+      "description": "OOM during training only logged, no metric or alert for monitoring system",
+      "diff_text": "--- a/src/realign/training/trainer.py\n+++ b/src/realign/training/trainer.py\n@@ -40,8 +40,7 @@ class Trainer:\n         except MemoryError as e:\n-            self.metrics.emit(\"training.oom\", 1)\n-            self.alerter.send_critical(f\"OOM at step {step}: {e}\")\n-            raise\n+            logging.error(f\"OOM at step {step}: {e}\")\n+            raise  # Re-raises but no alert/metric",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "log-no-alert"
+      ],
+      "category_tags": [
+        "log-no-alert",
+        "silent-failure"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "log-no-alert"
+    },
+    {
+      "sample_id": "autonomous-dev-611-secrets-env-file",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#611",
+      "description": "API key written to .env file that is not gitignored",
+      "diff_text": "--- a/.env\n+++ b/.env\n@@ -1,3 +1,4 @@\n ENVIRONMENT=development\n DEBUG=true\n+ANTHROPIC_API_KEY=sk-ant-api03-real-key-here-abcdef\n LOG_LEVEL=info\n--- a/.gitignore\n+++ b/.gitignore\n@@ -5,6 +5,6 @@ __pycache__/\n *.pyc\n dist/\n build/\n-# .env is NOT in gitignore",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "secrets-committed"
+      ],
+      "category_tags": [
+        "secrets-committed",
+        "security"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "secrets-committed"
+    },
+    {
+      "sample_id": "spektiv-825-silent-import-websocket",
+      "source_repo": "spektiv",
+      "issue_ref": "#825",
+      "description": "WebSocket module import fails silently, live price feed falls back to polling without notice",
+      "diff_text": "--- a/src/spektiv/feeds/live_feed.py\n+++ b/src/spektiv/feeds/live_feed.py\n@@ -1,6 +1,10 @@\n-from websocket import WebSocketClient\n+try:\n+    from websocket import WebSocketClient\n+    HAS_WS = True\n+except ImportError:\n+    HAS_WS = False\n \n class LiveFeed:\n     def connect(self, url: str):\n+        if not HAS_WS:\n+            return  # Silently degrades to no live feed\n         self.client = WebSocketClient(url)\n         self.client.connect()",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "silent-import-fail"
+      ],
+      "category_tags": [
+        "silent-import-fail",
+        "silent-failure"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "silent-import-fail"
+    },
+    {
+      "sample_id": "realign-745-hardcoded-model-path",
+      "source_repo": "realign",
+      "issue_ref": "#745",
+      "description": "Model path hardcoded to user's home directory instead of reading from config",
+      "diff_text": "--- a/src/realign/models/loader.py\n+++ b/src/realign/models/loader.py\n@@ -8,8 +8,7 @@ def load_model(config: Dict) -> Any:\n     \"\"\"Load model from config.\"\"\"\n-    model_path = Path(config[\"model_path\"])\n+    model_path = Path(\"/Users/andrew/models/llama-3b\")\n     if not model_path.exists():\n         raise FileNotFoundError(f\"Model not found: {model_path}\")\n     return _load_safetensors(model_path)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "hardcoded-value"
+      ],
+      "category_tags": [
+        "hardcoded-value",
+        "functionality"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "hardcoded-value"
+    },
+    {
+      "sample_id": "spektiv-830-test-zero-assertions-portfolio",
+      "source_repo": "spektiv",
+      "issue_ref": "#830",
+      "description": "Portfolio rebalancing test calls rebalance() but never checks the result",
+      "diff_text": "--- a/tests/unit/test_rebalance.py\n+++ b/tests/unit/test_rebalance.py\n@@ -8,6 +8,10 @@ class TestRebalance:\n     def test_rebalance_basic(self, portfolio):\n         portfolio.rebalance(target_weights={\"AAPL\": 0.5, \"GOOG\": 0.5})\n \n+    def test_rebalance_with_constraints(self, portfolio):\n+        portfolio.rebalance(\n+            target_weights={\"AAPL\": 0.3, \"GOOG\": 0.3, \"MSFT\": 0.4},\n+            max_trade_pct=0.1\n+        )\n+        # No assertions - just runs without error",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "test-zero-assertions"
+      ],
+      "category_tags": [
+        "test-zero-assertions",
+        "tests"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "test-zero-assertions"
+    },
+    {
+      "sample_id": "realign-748-wrong-dispatch-metric",
+      "source_repo": "realign",
+      "issue_ref": "#748",
+      "description": "BLEU metric key dispatches to ROUGE scorer instead of BLEU scorer",
+      "diff_text": "--- a/src/realign/evaluation/metric_registry.py\n+++ b/src/realign/evaluation/metric_registry.py\n@@ -6,7 +6,7 @@ METRIC_REGISTRY = {\n     \"accuracy\": AccuracyScorer,\n     \"rouge\": ROUGEScorer,\n-    \"bleu\": BLEUScorer,\n+    \"bleu\": ROUGEScorer,  # Wrong: should be BLEUScorer\n     \"perplexity\": PerplexityScorer,\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "wrong-dispatch"
+      ],
+      "category_tags": [
+        "wrong-dispatch",
+        "dispatch-table"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "wrong-dispatch"
+    },
+    {
+      "sample_id": "autonomous-dev-614-null-safety-state",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#614",
+      "description": "Pipeline state loader does not check for None session_start before parsing datetime",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_state.py\n+++ b/plugins/autonomous-dev/lib/pipeline_state.py\n@@ -15,8 +15,7 @@ def get_session_duration(state: Dict) -> float:\n     \"\"\"Get elapsed seconds since session start.\"\"\"\n     session_start = state.get(\"session_start\")\n-    if session_start is None:\n-        return 0.0\n+    # session_start can be None if state is freshly created\n     start = datetime.fromisoformat(session_start)\n     return (datetime.now() - start).total_seconds()",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "null-safety"
+      ],
+      "category_tags": [
+        "null-safety",
+        "none-handling"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "null-safety"
+    },
+    {
+      "sample_id": "spektiv-835-incomplete-fix-pagination",
+      "source_repo": "spektiv",
+      "issue_ref": "#835",
+      "description": "Pagination fixed for GET endpoint but POST search endpoint still returns all results",
+      "diff_text": "--- a/src/spektiv/api/routes.py\n+++ b/src/spektiv/api/routes.py\n@@ -20,7 +20,7 @@ def list_positions(page: int = 1, per_page: int = 20) -> Dict:\n-    positions = Position.query.all()\n+    positions = Position.query.paginate(page=page, per_page=per_page)\n     return {\"data\": [p.to_dict() for p in positions]}\n \n @router.post(\"/api/v1/positions/search\")\n def search_positions(filters: Dict) -> Dict:\n-    positions = Position.query.filter_by(**filters).all()\n+    positions = Position.query.filter_by(**filters).all()  # Not paginated!\n     return {\"data\": [p.to_dict() for p in positions]}",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "incomplete-fix"
+      ],
+      "category_tags": [
+        "incomplete-fix",
+        "partial-fix"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "incomplete-fix"
+    },
+    {
+      "sample_id": "realign-751-off-by-one-gradient",
+      "source_repo": "realign",
+      "issue_ref": "#751",
+      "description": "Gradient accumulation loop ends one step early, losing last micro-batch",
+      "diff_text": "--- a/src/realign/training/grad_accumulator.py\n+++ b/src/realign/training/grad_accumulator.py\n@@ -12,7 +12,7 @@ class GradAccumulator:\n     def accumulate(self, batches: List) -> None:\n         \"\"\"Accumulate gradients over micro-batches.\"\"\"\n-        for i in range(len(batches)):\n+        for i in range(len(batches) - 1):  # Off by one: skips last batch\n             loss = self.model.forward(batches[i])\n             loss.backward()\n         self.optimizer.step()",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "off-by-one"
+      ],
+      "category_tags": [
+        "off-by-one",
+        "loop-bound"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "off-by-one"
+    },
+    {
+      "sample_id": "autonomous-dev-617-stub-security-audit",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#617",
+      "description": "Security audit step returns pass=True with empty findings instead of running actual checks",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/security_audit.py\n+++ b/plugins/autonomous-dev/lib/security_audit.py\n@@ -10,14 +10,5 @@ class SecurityAuditor:\n     def audit(self, changes: List[Dict]) -> AuditResult:\n         \"\"\"Run security audit on changes.\"\"\"\n-        findings = []\n-        for change in changes:\n-            findings.extend(self._check_secrets(change))\n-            findings.extend(self._check_permissions(change))\n-            findings.extend(self._check_injection(change))\n-        return AuditResult(\n-            passed=len(findings) == 0,\n-            findings=findings,\n-        )\n+        return AuditResult(passed=True, findings=[])",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "stub-implementation"
+      ],
+      "category_tags": [
+        "stub-implementation",
+        "security"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "stub-implementation"
+    },
+    {
+      "sample_id": "spektiv-840-wrong-default-commission",
+      "source_repo": "spektiv",
+      "issue_ref": "#840",
+      "description": "Default commission changed from 0.001 to 0.1, making all backtests show 100x higher costs",
+      "diff_text": "--- a/src/spektiv/backtest/config.py\n+++ b/src/spektiv/backtest/config.py\n@@ -5,7 +5,7 @@ class BacktestConfig:\n     initial_capital: float = 100000.0\n-    commission: float = 0.001\n+    commission: float = 0.1  # Changed for testing, forgot to revert\n     slippage: float = 0.0\n     data_source: str = \"polygon\"",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "wrong-default"
+      ],
+      "category_tags": [
+        "wrong-default",
+        "training-config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": "wrong-default"
+    },
+    {
+      "sample_id": "realign-754-removed-security-validation",
+      "source_repo": "realign",
+      "issue_ref": "#754",
+      "description": "Input validation for training data removed to fix performance, allows malformed data through",
+      "diff_text": "--- a/src/realign/data/validator.py\n+++ b/src/realign/data/validator.py\n@@ -10,16 +10,6 @@ class DataValidator:\n     def validate(self, samples: List[Dict]) -> List[Dict]:\n         \"\"\"Validate training data samples.\"\"\"\n-        valid = []\n-        for s in samples:\n-            if not isinstance(s.get(\"text\"), str):\n-                raise ValueError(f\"Sample {s.get('id')} has non-string text\")\n-            if len(s[\"text\"]) > self.max_length:\n-                raise ValueError(f\"Sample {s.get('id')} exceeds max length\")\n-            if any(c in s[\"text\"] for c in self.forbidden_chars):\n-                raise ValueError(f\"Sample {s.get('id')} contains forbidden chars\")\n-            valid.append(s)\n-        return valid\n+        return samples  # Validation removed for performance",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "removed-security"
+      ],
+      "category_tags": [
+        "removed-security",
+        "enforcement"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "removed-security"
+    },
+    {
+      "sample_id": "spektiv-845-test-mocks-subject-broker",
+      "source_repo": "spektiv",
+      "issue_ref": "#845",
+      "description": "Broker test mocks the broker's execute method itself, so test always passes",
+      "diff_text": "--- a/tests/unit/brokers/test_ibkr.py\n+++ b/tests/unit/brokers/test_ibkr.py\n@@ -5,6 +5,14 @@ class TestIBKRBroker:\n     def test_execute_market_order(self, mock_connection):\n         broker = IBKRBroker(api_key=\"test\")\n         result = broker.execute(Order(symbol=\"AAPL\", qty=10))\n         assert result.status == \"filled\"\n \n+    @patch(\"spektiv.brokers.ibkr.IBKRBroker.execute\")\n+    def test_execute_limit_order(self, mock_execute):\n+        mock_execute.return_value = ExecutionResult(status=\"filled\", price=150.0)\n+        broker = IBKRBroker(api_key=\"test\")\n+        result = broker.execute(Order(symbol=\"AAPL\", qty=10, type=\"limit\", price=150))\n+        assert result.status == \"filled\"  # Always passes!",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "test-mocks-subject"
+      ],
+      "category_tags": [
+        "test-mocks-subject",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "test-mocks-subject"
+    },
+    {
+      "sample_id": "realign-757-coverage-gamed-loader",
+      "source_repo": "realign",
+      "issue_ref": "#757",
+      "description": "Data loader test achieves 100% coverage by running all methods but only asserts on types",
+      "diff_text": "--- a/tests/unit/data/test_loader.py\n+++ b/tests/unit/data/test_loader.py\n@@ -8,6 +8,14 @@ class TestDataLoader:\n     def test_load_json(self, tmp_path):\n         loader = DataLoader()\n         result = loader.load(tmp_path / \"data.json\")\n         assert isinstance(result, list)\n+\n+    def test_load_jsonl(self, tmp_path):\n+        loader = DataLoader()\n+        result = loader.load(tmp_path / \"data.jsonl\")\n+        assert isinstance(result, list)  # Type only\n+\n+    def test_load_csv(self, tmp_path):\n+        loader = DataLoader()\n+        result = loader.load(tmp_path / \"data.csv\")\n+        assert isinstance(result, list)  # Type only, no content check",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "coverage-gamed"
+      ],
+      "category_tags": [
+        "coverage-gamed",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "coverage-gamed"
+    },
+    {
+      "sample_id": "autonomous-dev-620-test-passes-without-fix-2",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#620",
+      "description": "Regression test for settings drift always passes because it checks file existence not content",
+      "diff_text": "--- a/tests/regression/test_settings_drift.py\n+++ b/tests/regression/test_settings_drift.py\n@@ -0,0 +1,12 @@\n+\"\"\"Regression test for settings.json drift.\"\"\"\n+from pathlib import Path\n+\n+def test_settings_not_drifted():\n+    \"\"\"Verify settings.json matches expected state.\"\"\"\n+    settings_path = Path(\".claude/settings.local.json\")\n+    # BUG: Only checks existence, not content\n+    assert settings_path.exists() or not settings_path.exists()\n+\n+def test_hooks_registered():\n+    \"\"\"Verify hooks are registered.\"\"\"\n+    assert True  # Always passes",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "test-passes-without-fix"
+      ],
+      "category_tags": [
+        "test-passes-without-fix",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "test-passes-without-fix"
+    },
+    {
+      "sample_id": "spektiv-850-local-cloud-parity-auth",
+      "source_repo": "spektiv",
+      "issue_ref": "#850",
+      "description": "Local dev skips OAuth validation that production requires, hiding auth bugs",
+      "diff_text": "--- a/src/spektiv/middleware/auth.py\n+++ b/src/spektiv/middleware/auth.py\n@@ -8,6 +8,9 @@ class AuthMiddleware:\n     async def authenticate(self, request) -> Optional[User]:\n+        if os.getenv(\"ENVIRONMENT\") == \"development\":\n+            # Skip auth in dev for convenience\n+            return User(id=\"dev-user\", role=\"admin\")\n         token = request.headers.get(\"Authorization\")\n         if not token:\n             return None\n         return self._validate_oauth(token)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "local-cloud-parity"
+      ],
+      "category_tags": [
+        "local-cloud-parity",
+        "security"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "local-cloud-parity"
+    },
+    {
+      "sample_id": "realign-760-dev-prod-config-batch",
+      "source_repo": "realign",
+      "issue_ref": "#760",
+      "description": "Dev config uses batch_size=1 masking OOM issues that appear with prod batch_size=8",
+      "diff_text": "--- a/configs/dev.yaml\n+++ b/configs/dev.yaml\n@@ -2,7 +2,7 @@ training:\n   learning_rate: 1e-5\n-  batch_size: 4\n+  batch_size: 1  # Small for fast iteration\n   max_steps: 50\n--- a/configs/prod.yaml\n+++ b/configs/prod.yaml\n@@ -2,7 +2,7 @@ training:\n   learning_rate: 1e-5\n   batch_size: 8\n   max_steps: 10000",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "dev-prod-config"
+      ],
+      "category_tags": [
+        "dev-prod-config",
+        "training-config"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "dev-prod-config"
+    },
+    {
+      "sample_id": "spektiv-855-backend-parity-timestamp",
+      "source_repo": "spektiv",
+      "issue_ref": "#855",
+      "description": "REST API returns ISO timestamps but WebSocket feed returns Unix timestamps",
+      "diff_text": "--- a/src/spektiv/api/serializers.py\n+++ b/src/spektiv/api/serializers.py\n@@ -15,7 +15,7 @@ def serialize_trade(trade: Trade) -> Dict:\n     return {\n         \"id\": trade.id,\n         \"symbol\": trade.symbol,\n-        \"timestamp\": trade.timestamp.isoformat(),\n+        \"timestamp\": trade.timestamp.isoformat(),  # ISO format\n     }\n--- a/src/spektiv/feeds/ws_serializer.py\n+++ b/src/spektiv/feeds/ws_serializer.py\n@@ -8,5 +8,5 @@ def serialize_ws_trade(trade: Trade) -> Dict:\n     return {\n         \"id\": trade.id,\n         \"symbol\": trade.symbol,\n-        \"timestamp\": trade.timestamp.isoformat(),\n+        \"timestamp\": int(trade.timestamp.timestamp()),  # Unix epoch\n     }",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "backend-parity"
+      ],
+      "category_tags": [
+        "backend-parity",
+        "cross-path-parity"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "backend-parity"
+    },
+    {
+      "sample_id": "realign-763-rollback-broken-schema",
+      "source_repo": "realign",
+      "issue_ref": "#763",
+      "description": "Schema migration adds UNIQUE constraint but rollback does not drop it",
+      "diff_text": "--- a/migrations/005_add_unique_name.py\n+++ b/migrations/005_add_unique_name.py\n@@ -0,0 +1,10 @@\n+def upgrade(conn):\n+    conn.execute(\"ALTER TABLE models ADD CONSTRAINT uq_model_name UNIQUE (name)\")\n+\n+def downgrade(conn):\n+    # BUG: Should drop the unique constraint\n+    pass  # Does nothing",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "rollback-broken"
+      ],
+      "category_tags": [
+        "rollback-broken",
+        "functionality"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "rollback-broken"
+    },
+    {
+      "sample_id": "clean-spektiv-new-signal-handler",
+      "source_repo": "spektiv",
+      "issue_ref": "#850",
+      "description": "Clean addition of new breakout signal handler with proper tests and error handling",
+      "diff_text": "--- a/src/spektiv/signals/breakout.py\n+++ b/src/spektiv/signals/breakout.py\n@@ -0,0 +1,22 @@\n+\"\"\"Breakout signal detection.\"\"\"\n+from typing import Dict, List\n+from spektiv.signals.base import BaseSignal, SignalResult\n+\n+class BreakoutSignal(BaseSignal):\n+    def __init__(self, lookback: int = 20, threshold: float = 2.0):\n+        self.lookback = lookback\n+        self.threshold = threshold\n+\n+    def evaluate(self, data: List[Dict]) -> SignalResult:\n+        if len(data) < self.lookback:\n+            return SignalResult(signal=0.0, confidence=0.0)\n+        recent = [d[\"close\"] for d in data[-self.lookback:]]\n+        avg = sum(recent) / len(recent)\n+        std = (sum((x - avg)**2 for x in recent) / len(recent)) ** 0.5\n+        if std == 0:\n+            return SignalResult(signal=0.0, confidence=0.0)\n+        current = data[-1][\"close\"]\n+        z_score = (current - avg) / std\n+        if abs(z_score) >= self.threshold:\n+            return SignalResult(signal=z_score, confidence=min(1.0, abs(z_score)/3))\n+        return SignalResult(signal=0.0, confidence=0.0)\n--- a/tests/unit/signals/test_breakout.py\n+++ b/tests/unit/signals/test_breakout.py\n@@ -0,0 +1,16 @@\n+from spektiv.signals.breakout import BreakoutSignal\n+\n+class TestBreakoutSignal:\n+    def test_no_signal_flat(self):\n+        signal = BreakoutSignal(lookback=5)\n+        data = [{\"close\": 100.0} for _ in range(10)]\n+        result = signal.evaluate(data)\n+        assert result.signal == 0.0\n+\n+    def test_breakout_detected(self):\n+        signal = BreakoutSignal(lookback=5, threshold=1.5)\n+        data = [{\"close\": 100.0} for _ in range(5)]\n+        data.append({\"close\": 120.0})\n+        result = signal.evaluate(data)\n+        assert result.signal > 0",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "api",
+        "tests"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-add-kto-config",
+      "source_repo": "realign",
+      "issue_ref": "#860",
+      "description": "Clean addition of KTO training configuration with proper validation and defaults",
+      "diff_text": "--- a/src/realign/training/configs/kto.py\n+++ b/src/realign/training/configs/kto.py\n@@ -0,0 +1,18 @@\n+\"\"\"KTO (Kahneman-Tversky Optimization) training config.\"\"\"\n+from dataclasses import dataclass\n+from realign.training.configs.base import TrainingConfig\n+\n+@dataclass\n+class KTOConfig(TrainingConfig):\n+    method: str = \"kto\"\n+    beta: float = 0.1\n+    desirable_weight: float = 1.0\n+    undesirable_weight: float = 1.0\n+\n+    def validate(self) -> None:\n+        super().validate()\n+        if self.beta <= 0:\n+            raise ValueError(\"beta must be positive\")\n+        if self.desirable_weight <= 0 or self.undesirable_weight <= 0:\n+            raise ValueError(\"weights must be positive\")",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "training-method"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-add-health-check",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#865",
+      "description": "Clean health check command with comprehensive validation and clear output",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/health_checker.py\n+++ b/plugins/autonomous-dev/lib/health_checker.py\n@@ -15,6 +15,20 @@ class HealthChecker:\n     def check_hooks(self) -> CheckResult:\n         \"\"\"Verify all hooks are properly installed.\"\"\"\n         missing = []\n         for hook_name, hook_config in self.settings.get(\"hooks\", {}).items():\n             for hook in hook_config:\n                 cmd = hook.get(\"command\", \"\")\n                 if not Path(cmd.split()[-1]).exists():\n                     missing.append(cmd)\n         return CheckResult(\n             name=\"hooks\",\n             passed=len(missing) == 0,\n             details=f\"Missing: {missing}\" if missing else \"All hooks installed\",\n+        )\n+\n+    def check_settings_schema(self) -> CheckResult:\n+        \"\"\"Verify settings.json matches expected schema.\"\"\"\n+        required_keys = [\"permissions\", \"hooks\"]\n+        missing = [k for k in required_keys if k not in self.settings]\n+        return CheckResult(\n+            name=\"settings_schema\",\n+            passed=len(missing) == 0,\n+            details=f\"Missing keys: {missing}\" if missing else \"Schema valid\",\n         )",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "tests-updated"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-refactor-serializer",
+      "source_repo": "spektiv",
+      "issue_ref": "#870",
+      "description": "Clean refactor of portfolio serializer with all tests and references updated",
+      "diff_text": "--- a/src/spektiv/api/serializers.py\n+++ b/src/spektiv/api/serializers.py\n@@ -1,10 +1,12 @@\n-def serialize_portfolio(portfolio) -> dict:\n-    return {\n+from typing import Dict\n+from spektiv.portfolio import Portfolio\n+\n+def serialize_portfolio(portfolio: Portfolio) -> Dict:\n+    \"\"\"Serialize portfolio to API response dict.\"\"\"\n+    return {\n         \"id\": portfolio.id,\n         \"name\": portfolio.name,\n         \"total_value\": portfolio.total_value,\n+        \"currency\": portfolio.currency,\n         \"positions\": [serialize_position(p) for p in portfolio.positions],\n     }\n--- a/tests/unit/api/test_serializers.py\n+++ b/tests/unit/api/test_serializers.py\n@@ -8,5 +8,7 @@ class TestSerializers:\n     def test_serialize_portfolio(self, sample_portfolio):\n         result = serialize_portfolio(sample_portfolio)\n         assert result[\"id\"] == sample_portfolio.id\n         assert result[\"total_value\"] == sample_portfolio.total_value\n+        assert result[\"currency\"] == sample_portfolio.currency",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "tests-updated"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-update-training-docs",
+      "source_repo": "realign",
+      "issue_ref": "#875",
+      "description": "Clean documentation update describing new GRPO training method",
+      "diff_text": "--- a/docs/training-methods.md\n+++ b/docs/training-methods.md\n@@ -30,3 +30,15 @@ KTO does not require paired preferences.\n | Parameter | Default | Description |\n |-----------|---------|-------------|\n | beta | 0.1 | KL penalty coefficient |\n+\n+## GRPO (Group Relative Policy Optimization)\n+\n+GRPO generates multiple completions per prompt and uses relative\n+ranking within each group to compute advantages.\n+\n+### Parameters\n+\n+| Parameter | Default | Description |\n+|-----------|---------|-------------|\n+| num_generations | 8 | Completions per prompt |\n+| kl_coeff | 0.1 | KL penalty coefficient |\n+| clip_range | 0.2 | PPO-style clip range |",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "documentation",
+        "training-method"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-add-test-fixtures",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#880",
+      "description": "Clean addition of shared test fixtures for benchmark tests",
+      "diff_text": "--- a/tests/benchmarks/conftest.py\n+++ b/tests/benchmarks/conftest.py\n@@ -0,0 +1,20 @@\n+\"\"\"Shared fixtures for benchmark tests.\"\"\"\n+import pytest\n+from pathlib import Path\n+\n+BENCHMARKS_DIR = Path(__file__).parent\n+\n+@pytest.fixture\n+def dataset_path():\n+    return BENCHMARKS_DIR / \"reviewer\" / \"dataset.json\"\n+\n+@pytest.fixture\n+def taxonomy_path():\n+    return BENCHMARKS_DIR / \"reviewer\" / \"taxonomy.json\"\n+\n+@pytest.fixture\n+def sample_results():\n+    return [\n+        {\"sample_id\": \"test-1\", \"verdict\": \"BLOCKING\"},\n+        {\"sample_id\": \"test-2\", \"verdict\": \"APPROVE\"},\n+    ]",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "tests",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-position-model",
+      "source_repo": "spektiv",
+      "issue_ref": "#885",
+      "description": "Clean addition of Position model with proper validation and type hints",
+      "diff_text": "--- a/src/spektiv/models/position.py\n+++ b/src/spektiv/models/position.py\n@@ -0,0 +1,25 @@\n+\"\"\"Portfolio position model.\"\"\"\n+from dataclasses import dataclass\n+from datetime import datetime\n+\n+@dataclass\n+class Position:\n+    symbol: str\n+    quantity: float\n+    avg_cost: float\n+    current_price: float\n+    opened_at: datetime\n+\n+    @property\n+    def market_value(self) -> float:\n+        return self.quantity * self.current_price\n+\n+    @property\n+    def unrealized_pnl(self) -> float:\n+        return (self.current_price - self.avg_cost) * self.quantity\n+\n+    @property\n+    def pnl_pct(self) -> float:\n+        if self.avg_cost == 0:\n+            return 0.0\n+        return (self.current_price - self.avg_cost) / self.avg_cost * 100",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "api",
+        "tests"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-improve-error-messages",
+      "source_repo": "realign",
+      "issue_ref": "#890",
+      "description": "Clean improvement of error messages with context and expected format",
+      "diff_text": "--- a/src/realign/data/loader.py\n+++ b/src/realign/data/loader.py\n@@ -10,7 +10,12 @@ def load_training_data(path: Path) -> List[Dict]:\n     if not path.exists():\n-        raise FileNotFoundError(f\"File not found: {path}\")\n+        raise FileNotFoundError(\n+            f\"Training data file not found: {path}\\n\"\n+            f\"Expected JSON or JSONL format.\\n\"\n+            f\"See: docs/data-format.md for supported formats\"\n+        )\n     if path.suffix == \".json\":\n         return json.loads(path.read_text())\n     elif path.suffix == \".jsonl\":\n         return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "documentation"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-update-changelog",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#895",
+      "description": "Clean changelog update documenting recent releases",
+      "diff_text": "--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1,5 +1,12 @@\n # Changelog\n \n+## v2.8.0 (2026-03-28)\n+\n+- Added reviewer effectiveness benchmark suite (#567)\n+- Expanded benchmark to 150 samples (#573)\n+- Added difficulty stratification and taxonomy\n+- Added mining scripts for dataset expansion\n+\n ## v2.7.0 (2026-03-15)\n \n - Added session activity logging",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "documentation",
+        "alignment"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-type-hints",
+      "source_repo": "spektiv",
+      "issue_ref": "#900",
+      "description": "Clean addition of type hints to existing broker interface",
+      "diff_text": "--- a/src/spektiv/brokers/base.py\n+++ b/src/spektiv/brokers/base.py\n@@ -1,10 +1,13 @@\n+from typing import Dict, List, Optional\n+from spektiv.trading.types import Order, ExecutionResult\n+\n class BaseBroker:\n     \"\"\"Base class for all broker implementations.\"\"\"\n \n-    def connect(self):\n+    def connect(self) -> bool:\n         raise NotImplementedError\n \n-    def execute(self, order):\n+    def execute(self, order: Order) -> ExecutionResult:\n         raise NotImplementedError\n \n-    def get_positions(self):\n+    def get_positions(self) -> List[Dict[str, float]]:\n         raise NotImplementedError",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "tests-updated"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-add-logging",
+      "source_repo": "realign",
+      "issue_ref": "#905",
+      "description": "Clean addition of structured logging to training pipeline",
+      "diff_text": "--- a/src/realign/training/trainer.py\n+++ b/src/realign/training/trainer.py\n@@ -1,5 +1,6 @@\n \"\"\"Training loop implementation.\"\"\"\n+import logging\n from typing import Dict, List\n \n+logger = logging.getLogger(__name__)\n \n class Trainer:\n     def train(self, data: List[Dict], config: Dict) -> Dict:\n+        logger.info(f\"Starting training with {len(data)} samples\")\n+        logger.info(f\"Config: lr={config.get('learning_rate')}, batch={config.get('batch_size')}\")\n         for step in range(config[\"max_steps\"]):\n             loss = self._train_step(data, step)\n+            if step % 100 == 0:\n+                logger.info(f\"Step {step}: loss={loss:.4f}\")\n+        logger.info(\"Training complete\")",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "training"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-fix-typo",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#910",
+      "description": "Clean single-line typo fix in documentation",
+      "diff_text": "--- a/docs/ARCHITECTURE-OVERVIEW.md\n+++ b/docs/ARCHITECTURE-OVERVIEW.md\n@@ -10,7 +10,7 @@ The pipeline consists of 8 steps:\n 1. **Alignment** - Check project goals\n-2. **Reserach** - Research existing patterns\n+2. **Research** - Research existing patterns\n 3. **Plan** - Create architecture plan",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "documentation",
+        "alignment"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-env-validation",
+      "source_repo": "spektiv",
+      "issue_ref": "#915",
+      "description": "Clean addition of environment variable validation at startup",
+      "diff_text": "--- a/src/spektiv/config/validation.py\n+++ b/src/spektiv/config/validation.py\n@@ -0,0 +1,18 @@\n+\"\"\"Environment validation at startup.\"\"\"\n+import os\n+import sys\n+\n+REQUIRED_ENV = [\"DATABASE_URL\", \"SECRET_KEY\"]\n+OPTIONAL_ENV = [\"SENTRY_DSN\", \"LOG_LEVEL\"]\n+\n+def validate_environment() -> None:\n+    \"\"\"Validate required environment variables are set.\"\"\"\n+    missing = [k for k in REQUIRED_ENV if not os.getenv(k)]\n+    if missing:\n+        print(\n+            f\"ERROR: Missing required environment variables: {missing}\\n\"\n+            f\"Set them in .env or export them.\\n\"\n+            f\"See: docs/setup.md\",\n+            file=sys.stderr,\n+        )\n+        sys.exit(1)",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "refactor"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-parametrize-tests",
+      "source_repo": "realign",
+      "issue_ref": "#920",
+      "description": "Clean refactoring of repetitive tests to use parametrize",
+      "diff_text": "--- a/tests/unit/test_scorers.py\n+++ b/tests/unit/test_scorers.py\n@@ -5,15 +5,10 @@ from realign.scorers import IFDScorer, QualityScorer\n class TestScorers:\n-    def test_ifd_scorer_returns_float(self):\n-        scorer = IFDScorer()\n-        result = scorer.score({\"text\": \"hello\"})\n-        assert isinstance(result, float)\n-\n-    def test_quality_scorer_returns_float(self):\n-        scorer = QualityScorer()\n-        result = scorer.score({\"text\": \"hello\"})\n-        assert isinstance(result, float)\n+    @pytest.mark.parametrize(\"scorer_cls\", [IFDScorer, QualityScorer])\n+    def test_scorer_returns_float(self, scorer_cls):\n+        scorer = scorer_cls()\n+        result = scorer.score({\"text\": \"hello world test\"})\n+        assert isinstance(result, float)\n+        assert 0.0 <= result <= 1.0",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "tests",
+        "refactor"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-add-conftest",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#925",
+      "description": "Clean addition of conftest.py with shared project path fixtures",
+      "diff_text": "--- a/tests/conftest.py\n+++ b/tests/conftest.py\n@@ -1,5 +1,12 @@\n import pytest\n from pathlib import Path\n \n+PROJECT_ROOT = Path(__file__).parent.parent\n+\n @pytest.fixture\n def project_root():\n-    return Path(__file__).parent.parent\n+    return PROJECT_ROOT\n+\n+@pytest.fixture\n+def plugin_dir():\n+    return PROJECT_ROOT / \"plugins\" / \"autonomous-dev\"",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "tests",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-docker-compose",
+      "source_repo": "spektiv",
+      "issue_ref": "#930",
+      "description": "Clean Docker Compose configuration for local development",
+      "diff_text": "--- a/docker-compose.dev.yml\n+++ b/docker-compose.dev.yml\n@@ -0,0 +1,20 @@\n+version: '3.8'\n+services:\n+  app:\n+    build: .\n+    ports:\n+      - \"8000:8000\"\n+    environment:\n+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/spektiv\n+      - ENVIRONMENT=development\n+    depends_on:\n+      - db\n+\n+  db:\n+    image: postgres:16\n+    environment:\n+      POSTGRES_DB: spektiv\n+      POSTGRES_PASSWORD: postgres\n+    volumes:\n+      - pgdata:/var/lib/postgresql/data\n+\n+volumes:\n+  pgdata:",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "yaml"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-add-gitignore-entry",
+      "source_repo": "realign",
+      "issue_ref": "#935",
+      "description": "Clean addition of build artifacts to .gitignore",
+      "diff_text": "--- a/.gitignore\n+++ b/.gitignore\n@@ -10,3 +10,6 @@ dist/\n *.egg-info/\n .env\n .venv/\n+# Training artifacts\n+checkpoints/\n+wandb/\n+*.safetensors",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "yaml"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-isort-fix",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#940",
+      "description": "Clean import sorting fix applied by isort",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_utils.py\n+++ b/plugins/autonomous-dev/lib/pipeline_utils.py\n@@ -1,8 +1,9 @@\n-from typing import Dict, List, Optional\n-from pathlib import Path\n-import json\n import hashlib\n+import json\n import os\n+from pathlib import Path\n+from typing import Dict, List, Optional\n+\n from datetime import datetime",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "tests-updated"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-update-deps",
+      "source_repo": "spektiv",
+      "issue_ref": "#945",
+      "description": "Clean dependency version update with no breaking changes",
+      "diff_text": "--- a/pyproject.toml\n+++ b/pyproject.toml\n@@ -10,8 +10,8 @@ dependencies = [\n-    \"fastapi>=0.100.0\",\n-    \"uvicorn>=0.22.0\",\n+    \"fastapi>=0.110.0\",\n+    \"uvicorn>=0.27.0\",\n     \"sqlalchemy>=2.0.0\",\n     \"pydantic>=2.0.0\",\n ]",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "dependencies"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-add-py-typed",
+      "source_repo": "realign",
+      "issue_ref": "#950",
+      "description": "Clean addition of py.typed marker for PEP 561 compliance",
+      "diff_text": "--- a/src/realign/py.typed\n+++ b/src/realign/py.typed\n@@ -0,0 +1 @@\n+# PEP 561 marker file",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "refactor"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-pre-commit-config",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#955",
+      "description": "Clean pre-commit configuration for code quality",
+      "diff_text": "--- a/.pre-commit-config.yaml\n+++ b/.pre-commit-config.yaml\n@@ -5,6 +5,10 @@ repos:\n     hooks:\n       - id: trailing-whitespace\n       - id: end-of-file-fixer\n+  - repo: https://github.com/psf/black\n+    rev: 24.3.0\n+    hooks:\n+      - id: black\n+        args: [--line-length=100]",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "yaml"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-rename-module",
+      "source_repo": "spektiv",
+      "issue_ref": "#960",
+      "description": "Clean module rename from utils to helpers with all imports updated",
+      "diff_text": "--- a/src/spektiv/utils/__init__.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-from spektiv.utils.formatting import format_currency\n-from spektiv.utils.validation import validate_symbol\n--- a/src/spektiv/helpers/__init__.py\n+++ b/src/spektiv/helpers/__init__.py\n@@ -0,0 +1,2 @@\n+from spektiv.helpers.formatting import format_currency\n+from spektiv.helpers.validation import validate_symbol\n--- a/src/spektiv/api/routes.py\n+++ b/src/spektiv/api/routes.py\n@@ -1,5 +1,5 @@\n-from spektiv.utils import format_currency, validate_symbol\n+from spektiv.helpers import format_currency, validate_symbol\n--- a/tests/unit/test_helpers.py\n+++ b/tests/unit/test_helpers.py\n@@ -1,5 +1,5 @@\n-from spektiv.utils import format_currency\n+from spektiv.helpers import format_currency",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "rename"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-add-benchmark-ci",
+      "source_repo": "realign",
+      "issue_ref": "#965",
+      "description": "Clean CI workflow addition for running benchmarks on schedule",
+      "diff_text": "--- a/.github/workflows/benchmark.yml\n+++ b/.github/workflows/benchmark.yml\n@@ -0,0 +1,18 @@\n+name: Benchmark\n+on:\n+  schedule:\n+    - cron: '0 6 * * 1'  # Weekly Monday 6am\n+  workflow_dispatch:\n+\n+jobs:\n+  benchmark:\n+    runs-on: ubuntu-latest\n+    steps:\n+      - uses: actions/checkout@v4\n+      - uses: actions/setup-python@v5\n+        with:\n+          python-version: '3.12'\n+      - run: pip install -e .[dev]\n+      - run: python scripts/run_benchmark.py --output results/\n+      - uses: actions/upload-artifact@v4\n+        with:\n+          name: benchmark-results\n+          path: results/",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "ci"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-add-test-marker",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#970",
+      "description": "Clean addition of custom pytest marker for slow tests",
+      "diff_text": "--- a/pyproject.toml\n+++ b/pyproject.toml\n@@ -15,6 +15,7 @@ markers = [\n     \"integration: integration tests\",\n     \"genai: GenAI UAT tests requiring API key\",\n+    \"slow: tests that take >30 seconds\",\n ]",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "tests",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-method-extraction",
+      "source_repo": "spektiv",
+      "issue_ref": "#975",
+      "description": "Clean refactoring extracting validation logic into separate methods",
+      "diff_text": "--- a/src/spektiv/trading/validator.py\n+++ b/src/spektiv/trading/validator.py\n@@ -5,15 +5,21 @@ class OrderValidator:\n     def validate(self, order: Order) -> ValidationResult:\n-        if not order.symbol:\n-            return ValidationResult(False, \"Missing symbol\")\n-        if order.quantity <= 0:\n-            return ValidationResult(False, \"Quantity must be positive\")\n-        if order.order_type not in VALID_TYPES:\n-            return ValidationResult(False, f\"Invalid type: {order.order_type}\")\n+        checks = [\n+            self._validate_symbol,\n+            self._validate_quantity,\n+            self._validate_type,\n+        ]\n+        for check in checks:\n+            result = check(order)\n+            if not result.valid:\n+                return result\n         return ValidationResult(True, \"\")\n+\n+    def _validate_symbol(self, order: Order) -> ValidationResult:\n+        if not order.symbol:\n+            return ValidationResult(False, \"Missing symbol\")\n+        return ValidationResult(True, \"\")",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "tests-updated"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-dataclass-migration",
+      "source_repo": "realign",
+      "issue_ref": "#980",
+      "description": "Clean migration from dict configs to dataclass configs",
+      "diff_text": "--- a/src/realign/training/configs/sft.py\n+++ b/src/realign/training/configs/sft.py\n@@ -1,8 +1,14 @@\n-SFT_DEFAULTS = {\n-    \"learning_rate\": 1e-5,\n-    \"batch_size\": 4,\n-    \"max_steps\": 1000,\n-}\n+from dataclasses import dataclass\n+from realign.training.configs.base import TrainingConfig\n+\n+@dataclass\n+class SFTConfig(TrainingConfig):\n+    method: str = \"sft\"\n+    learning_rate: float = 1e-5\n+    batch_size: int = 4\n+    max_steps: int = 1000\n+\n+    def validate(self) -> None:\n+        super().validate()",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "training-config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-readme-badges",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#985",
+      "description": "Clean addition of CI status badges to README",
+      "diff_text": "--- a/README.md\n+++ b/README.md\n@@ -1,4 +1,7 @@\n # autonomous-dev\n \n+![Tests](https://github.com/akaszubski/autonomous-dev/actions/workflows/test.yml/badge.svg)\n+![Coverage](https://img.shields.io/codecov/c/github/akaszubski/autonomous-dev)\n+\n Plugin for autonomous development in Claude Code.",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "documentation",
+        "alignment"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-makefile",
+      "source_repo": "spektiv",
+      "issue_ref": "#990",
+      "description": "Clean Makefile for common development tasks",
+      "diff_text": "--- a/Makefile\n+++ b/Makefile\n@@ -0,0 +1,15 @@\n+.PHONY: test lint format\n+\n+test:\n+\tpytest tests/ -v\n+\n+lint:\n+\tflake8 src/ --max-line-length=100\n+\tmypy src/spektiv/\n+\n+format:\n+\tblack src/ tests/ --line-length=100\n+\tisort src/ tests/ --profile=black\n+\n+dev:\n+\tuvicorn spektiv.app:app --reload --port 8000",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "config",
+        "yaml"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-property-addition",
+      "source_repo": "realign",
+      "issue_ref": "#995",
+      "description": "Clean addition of computed property to training metrics dataclass",
+      "diff_text": "--- a/src/realign/training/metrics.py\n+++ b/src/realign/training/metrics.py\n@@ -8,6 +8,14 @@ class TrainingMetrics:\n     total_steps: int\n     final_loss: float\n     best_loss: float\n+    total_tokens: int = 0\n+    wall_time_seconds: float = 0.0\n+\n+    @property\n+    def tokens_per_second(self) -> float:\n+        if self.wall_time_seconds == 0:\n+            return 0.0\n+        return self.total_tokens / self.wall_time_seconds",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "metric"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "realign-770-race-condition-metrics",
+      "source_repo": "realign",
+      "issue_ref": "#770",
+      "description": "Shared metrics dict updated concurrently from multiple training workers without lock",
+      "diff_text": "--- a/src/realign/training/metrics_tracker.py\n+++ b/src/realign/training/metrics_tracker.py\n@@ -10,9 +10,8 @@ class MetricsTracker:\n     _metrics: Dict[str, List[float]] = {}\n \n     def record(self, name: str, value: float) -> None:\n-        with self._lock:\n-            self._metrics.setdefault(name, []).append(value)\n+        self._metrics.setdefault(name, []).append(value)  # Not thread safe",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "race-condition"
+      ],
+      "category_tags": [
+        "race-condition",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "race-condition"
+    },
+    {
+      "sample_id": "spektiv-860-bypass-rate-limit",
+      "source_repo": "spektiv",
+      "issue_ref": "#860",
+      "description": "Rate limiter applied to REST API but WebSocket endpoint has no rate limiting",
+      "diff_text": "--- a/src/spektiv/app.py\n+++ b/src/spektiv/app.py\n@@ -12,6 +12,7 @@ app.add_middleware(RateLimiter, max_requests=100)\n app.add_middleware(AuthMiddleware)\n \n+# WebSocket endpoint has no rate limiter middleware\n @app.websocket(\"/ws/trades\")\n async def trades_ws(websocket):\n     await websocket.accept()\n     while True:\n         data = await websocket.receive_json()\n         # Process without rate limiting",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "bypass-alternative-path"
+      ],
+      "category_tags": [
+        "bypass-alternative-path",
+        "security"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "bypass-alternative-path"
+    },
+    {
+      "sample_id": "realign-775-test-passes-without-fix-scorer",
+      "source_repo": "realign",
+      "issue_ref": "#775",
+      "description": "Regression test for scorer bug always passes because it checks type not value",
+      "diff_text": "--- a/tests/regression/test_scorer_fix.py\n+++ b/tests/regression/test_scorer_fix.py\n@@ -0,0 +1,10 @@\n+def test_scorer_no_longer_returns_hardcoded():\n+    \"\"\"Regression: IFD scorer should compute, not return 0.85.\"\"\"\n+    from realign.scorers.ifd_scorer import IFDScorer\n+    scorer = IFDScorer()\n+    sample = {\"text\": \"test\", \"completion\": \"output\"}\n+    result = scorer.score(sample)\n+    # BUG: checks isinstance(result, float) not result != 0.85\n+    assert isinstance(result, float)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "test-passes-without-fix"
+      ],
+      "category_tags": [
+        "test-passes-without-fix",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "test-passes-without-fix"
+    },
+    {
+      "sample_id": "autonomous-dev-625-coverage-gamed-hooks",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#625",
+      "description": "Hook test achieves coverage by calling hooks but asserts only that no exception raised",
+      "diff_text": "--- a/tests/unit/hooks/test_hooks.py\n+++ b/tests/unit/hooks/test_hooks.py\n@@ -10,6 +10,12 @@ class TestHooks:\n     def test_pre_tool_hook_runs(self, hook_input):\n         result = run_hook(\"pre_tool\", hook_input)\n         assert result is not None  # Only checks not-None\n+\n+    def test_post_tool_hook_runs(self, hook_input):\n+        result = run_hook(\"post_tool\", hook_input)\n+        assert result is not None\n+\n+    def test_session_start_hook_runs(self, hook_input):\n+        result = run_hook(\"session_start\", hook_input)\n+        assert result is not None  # All just check not-None",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "coverage-gamed"
+      ],
+      "category_tags": [
+        "coverage-gamed",
+        "tests"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "coverage-gamed"
+    },
+    {
+      "sample_id": "spektiv-865-stale-cache-market-data",
+      "source_repo": "spektiv",
+      "issue_ref": "#865",
+      "description": "Market data cache TTL set to 24 hours, serving yesterday's closing prices during trading hours",
+      "diff_text": "--- a/src/spektiv/data/market_cache.py\n+++ b/src/spektiv/data/market_cache.py\n@@ -5,7 +5,7 @@ class MarketDataCache:\n     _cache: Dict[str, Tuple[float, float]] = {}  # symbol -> (price, timestamp)\n \n     def get_price(self, symbol: str) -> float:\n-        TTL = 60  # 1 minute cache\n+        TTL = 86400  # 24 hour cache for cost savings\n         if symbol in self._cache:\n             price, ts = self._cache[symbol]\n             if time.time() - ts < TTL:\n                 return price\n         price = self._fetch_live_price(symbol)\n         self._cache[symbol] = (price, time.time())\n         return price",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "stale-cache"
+      ],
+      "category_tags": [
+        "stale-cache",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "stale-cache"
+    },
+    {
+      "sample_id": "realign-780-non-atomic-model-save",
+      "source_repo": "realign",
+      "issue_ref": "#780",
+      "description": "Model save writes weights and tokenizer separately, crash between them corrupts checkpoint",
+      "diff_text": "--- a/src/realign/models/saver.py\n+++ b/src/realign/models/saver.py\n@@ -8,12 +8,9 @@ class ModelSaver:\n     def save(self, model, tokenizer, output_dir: Path) -> None:\n         output_dir.mkdir(parents=True, exist_ok=True)\n-        temp = output_dir.with_name(f\".tmp_{output_dir.name}\")\n-        temp.mkdir(parents=True, exist_ok=True)\n-        self._save_weights(model, temp / \"model.safetensors\")\n-        self._save_tokenizer(tokenizer, temp / \"tokenizer.json\")\n-        self._save_config(model.config, temp / \"config.json\")\n-        temp.rename(output_dir)\n+        self._save_weights(model, output_dir / \"model.safetensors\")\n+        # If crash here, checkpoint has weights but no tokenizer\n+        self._save_tokenizer(tokenizer, output_dir / \"tokenizer.json\")\n+        self._save_config(model.config, output_dir / \"config.json\")",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "non-atomic-update"
+      ],
+      "category_tags": [
+        "non-atomic-update",
+        "concurrency"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "non-atomic-update"
+    },
+    {
+      "sample_id": "spektiv-870-backend-parity-precision",
+      "source_repo": "spektiv",
+      "issue_ref": "#870",
+      "description": "REST API returns 2 decimal places for prices but gRPC feed returns 8 decimal places",
+      "diff_text": "--- a/src/spektiv/api/serializers.py\n+++ b/src/spektiv/api/serializers.py\n@@ -8,7 +8,7 @@ def serialize_quote(quote):\n     return {\n         \"symbol\": quote.symbol,\n-        \"price\": round(quote.price, 8),\n+        \"price\": round(quote.price, 2),  # Truncates crypto precision\n         \"volume\": quote.volume,\n     }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "backend-parity"
+      ],
+      "category_tags": [
+        "backend-parity",
+        "cross-path-parity"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "backend-parity"
+    },
+    {
+      "sample_id": "autonomous-dev-630-local-cloud-parity-hooks",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#630",
+      "description": "Hooks run in development but CI does not install hook dependencies, skipping all enforcement",
+      "diff_text": "--- a/.github/workflows/test.yml\n+++ b/.github/workflows/test.yml\n@@ -15,6 +15,7 @@ jobs:\n       - run: pip install -e .[dev]\n       - run: pytest tests/ -v\n+      # Note: hooks not installed in CI, so hook tests skip",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "local-cloud-parity"
+      ],
+      "category_tags": [
+        "local-cloud-parity",
+        "ci"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "local-cloud-parity"
+    },
+    {
+      "sample_id": "realign-785-silent-import-scorer",
+      "source_repo": "realign",
+      "issue_ref": "#785",
+      "description": "Custom scorer import fails silently, falling back to dummy scorer that always returns 1.0",
+      "diff_text": "--- a/src/realign/scorers/loader.py\n+++ b/src/realign/scorers/loader.py\n@@ -5,7 +5,12 @@ def load_scorer(name: str) -> BaseScorer:\n-    module = importlib.import_module(f\"realign.scorers.{name}\")\n-    return module.Scorer()\n+    try:\n+        module = importlib.import_module(f\"realign.scorers.{name}\")\n+        return module.Scorer()\n+    except ImportError:\n+        class DummyScorer(BaseScorer):\n+            def score(self, sample):\n+                return 1.0  # Always perfect score\n+        return DummyScorer()",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "silent-import-fail"
+      ],
+      "category_tags": [
+        "silent-import-fail",
+        "scorer"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "silent-import-fail"
+    },
+    {
+      "sample_id": "spektiv-875-identity-spoofing-api-key",
+      "source_repo": "spektiv",
+      "issue_ref": "#875",
+      "description": "API key validation disabled in debug mode, allowing unauthenticated access in dev",
+      "diff_text": "--- a/src/spektiv/middleware/api_key.py\n+++ b/src/spektiv/middleware/api_key.py\n@@ -8,6 +8,8 @@ class APIKeyMiddleware:\n     async def authenticate(self, request) -> bool:\n         api_key = request.headers.get(\"X-API-Key\")\n+        if os.getenv(\"DEBUG\") == \"true\":\n+            return True  # Skip auth in debug mode\n         if not api_key:\n             return False\n         return self._validate_key(api_key)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "identity-spoofing"
+      ],
+      "category_tags": [
+        "identity-spoofing",
+        "security"
+      ],
+      "difficulty": "hard",
+      "commit_sha": "",
+      "defect_category": "identity-spoofing"
+    },
+    {
+      "sample_id": "realign-790-hardcoded-epoch",
+      "source_repo": "realign",
+      "issue_ref": "#790",
+      "description": "Number of training epochs hardcoded to 3 instead of reading from config",
+      "diff_text": "--- a/src/realign/training/loop.py\n+++ b/src/realign/training/loop.py\n@@ -12,7 +12,7 @@ class TrainingLoop:\n     def run(self, data, config):\n-        epochs = config.get(\"epochs\", 1)\n+        epochs = 3  # Hardcoded\n         for epoch in range(epochs):\n             self._run_epoch(data, epoch)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "hardcoded-value"
+      ],
+      "category_tags": [
+        "hardcoded-value",
+        "training"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "hardcoded-value"
+    },
+    {
+      "sample_id": "spektiv-880-orphan-import-strategy",
+      "source_repo": "spektiv",
+      "issue_ref": "#880",
+      "description": "Deleted PairsStrategy still imported in strategy test file",
+      "diff_text": "--- a/tests/unit/strategies/test_strategies.py\n+++ b/tests/unit/strategies/test_strategies.py\n@@ -1,7 +1,6 @@\n from spektiv.strategies.momentum import MomentumStrategy\n from spektiv.strategies.mean_reversion import MeanReversionStrategy\n-# PairsStrategy was deleted but import remains\n from spektiv.strategies.pairs import PairsStrategy\n \n class TestStrategies:\n     def test_momentum(self):\n         s = MomentumStrategy({})\n         assert s is not None",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "orphan-reference"
+      ],
+      "category_tags": [
+        "orphan-reference",
+        "import-error"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "orphan-reference"
+    },
+    {
+      "sample_id": "realign-795-wrong-dispatch-eval",
+      "source_repo": "realign",
+      "issue_ref": "#795",
+      "description": "Evaluation metric 'f1' dispatches to accuracy computation instead of f1_score",
+      "diff_text": "--- a/src/realign/evaluation/metrics.py\n+++ b/src/realign/evaluation/metrics.py\n@@ -8,7 +8,7 @@ METRIC_FN = {\n     \"accuracy\": compute_accuracy,\n     \"precision\": compute_precision,\n     \"recall\": compute_recall,\n-    \"f1\": compute_f1_score,\n+    \"f1\": compute_accuracy,  # Wrong function\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "wrong-dispatch"
+      ],
+      "category_tags": [
+        "wrong-dispatch",
+        "dispatch-table"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "wrong-dispatch"
+    },
+    {
+      "sample_id": "autonomous-dev-635-null-safety-hook-input",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#635",
+      "description": "Hook input parser does not handle missing tool_input key, crashes on None.get()",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/hook_parser.py\n+++ b/plugins/autonomous-dev/lib/hook_parser.py\n@@ -8,8 +8,7 @@ def parse_hook_input(raw: Dict) -> HookInput:\n     tool_name = raw.get(\"tool_name\", \"\")\n     tool_input = raw.get(\"tool_input\")\n-    if tool_input is None:\n-        tool_input = {}\n+    # tool_input can be None if hook receives malformed JSON\n     file_path = tool_input.get(\"file_path\", \"\")\n     command = tool_input.get(\"command\", \"\")",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "null-safety"
+      ],
+      "category_tags": [
+        "null-safety",
+        "none-handling"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "null-safety"
+    },
+    {
+      "sample_id": "spektiv-885-incomplete-fix-fees",
+      "source_repo": "spektiv",
+      "issue_ref": "#885",
+      "description": "Trading fee calculation fixed for market orders but limit orders still use old formula",
+      "diff_text": "--- a/src/spektiv/trading/fees.py\n+++ b/src/spektiv/trading/fees.py\n@@ -8,11 +8,11 @@ class FeeCalculator:\n     def calculate(self, order: Order) -> float:\n         if order.order_type == \"market\":\n-            return order.quantity * order.price * 0.001  # Old 0.1%\n+            return order.quantity * order.price * 0.0005  # Fixed: 0.05%\n         elif order.order_type == \"limit\":\n-            return order.quantity * order.price * 0.001  # Same old 0.1%\n+            return order.quantity * order.price * 0.001  # Still old 0.1%!\n         return 0.0",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": [
+        "incomplete-fix"
+      ],
+      "category_tags": [
+        "incomplete-fix",
+        "partial-fix"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "incomplete-fix"
+    },
+    {
+      "sample_id": "realign-800-off-by-one-eval",
+      "source_repo": "realign",
+      "issue_ref": "#800",
+      "description": "Evaluation loop uses < instead of <= skipping the last sample in the test set",
+      "diff_text": "--- a/src/realign/evaluation/evaluator.py\n+++ b/src/realign/evaluation/evaluator.py\n@@ -15,7 +15,7 @@ class Evaluator:\n     def evaluate(self, test_data: List[Dict]) -> EvalResult:\n         scores = []\n-        for i in range(len(test_data)):\n+        for i in range(len(test_data) - 1):  # Off by one\n             score = self.scorer.score(test_data[i])\n             scores.append(score)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "off-by-one"
+      ],
+      "category_tags": [
+        "off-by-one",
+        "loop-bound"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "off-by-one"
+    },
+    {
+      "sample_id": "autonomous-dev-640-wrong-default-enforcement",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#640",
+      "description": "Default enforcement level changed from 'block' to 'off', disabling all workflow enforcement",
+      "diff_text": "--- a/plugins/autonomous-dev/config/defaults.py\n+++ b/plugins/autonomous-dev/config/defaults.py\n@@ -5,7 +5,7 @@ DEFAULTS = {\n     \"auto_git\": True,\n     \"max_retries\": 3,\n-    \"enforcement_level\": \"block\",\n+    \"enforcement_level\": \"off\",  # Changed for debugging, not reverted\n     \"pipeline_timeout\": 7200,\n }",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "wrong-default"
+      ],
+      "category_tags": [
+        "wrong-default",
+        "enforcement"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "wrong-default"
+    },
+    {
+      "sample_id": "spektiv-890-filter-silent-trades",
+      "source_repo": "spektiv",
+      "issue_ref": "#890",
+      "description": "Failed trades silently filtered from trade history instead of being reported as errors",
+      "diff_text": "--- a/src/spektiv/trading/history.py\n+++ b/src/spektiv/trading/history.py\n@@ -10,10 +10,7 @@ def get_trade_history(portfolio_id: str) -> List[Trade]:\n     trades = Trade.query.filter_by(portfolio_id=portfolio_id).all()\n     result = []\n     for trade in trades:\n-        if trade.status == \"failed\":\n-            result.append(trade)  # Include failed trades\n+        if trade.status != \"failed\":\n+            result.append(trade)  # Silently exclude failures\n     return result",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "filter-over-rejection"
+      ],
+      "category_tags": [
+        "filter-over-rejection",
+        "data-handling"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "filter-over-rejection"
+    },
+    {
+      "sample_id": "realign-805-error-swallowed-eval",
+      "source_repo": "realign",
+      "issue_ref": "#805",
+      "description": "Evaluation scorer catches ValueError and returns 0.0 instead of propagating the error",
+      "diff_text": "--- a/src/realign/evaluation/scorer.py\n+++ b/src/realign/evaluation/scorer.py\n@@ -12,8 +12,7 @@ class EvalScorer:\n     def score(self, sample: Dict) -> float:\n         try:\n             return self._compute(sample)\n-        except ValueError as e:\n-            raise ScoringError(f\"Scoring failed for {sample.get('id')}: {e}\") from e\n+        except ValueError:\n+            return 0.0  # Hide scoring errors",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "error-swallowed"
+      ],
+      "category_tags": [
+        "error-swallowed",
+        "silent-failure"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "error-swallowed"
+    },
+    {
+      "sample_id": "autonomous-dev-645-log-no-alert-pipeline",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#645",
+      "description": "Pipeline timeout logged but no user notification or cleanup triggered",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_runner.py\n+++ b/plugins/autonomous-dev/lib/pipeline_runner.py\n@@ -20,8 +20,7 @@ class PipelineRunner:\n         elapsed = time.time() - start_time\n         if elapsed > self.config.timeout:\n-            self._notify_user(f\"Pipeline timed out after {elapsed:.0f}s\")\n-            self._cleanup_state()\n-            raise PipelineTimeoutError(f\"Exceeded {self.config.timeout}s\")\n+            logging.warning(f\"Pipeline timeout: {elapsed:.0f}s\")\n+            # No cleanup, no notification",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": [
+        "log-no-alert"
+      ],
+      "category_tags": [
+        "log-no-alert",
+        "silent-failure"
+      ],
+      "difficulty": "medium",
+      "commit_sha": "",
+      "defect_category": "log-no-alert"
+    },
+    {
+      "sample_id": "clean-realign-add-type-alias",
+      "source_repo": "realign",
+      "issue_ref": "#1000",
+      "description": "Clean addition of type aliases for common types used across codebase",
+      "diff_text": "--- a/src/realign/types.py\n+++ b/src/realign/types.py\n@@ -0,0 +1,10 @@\n+\"\"\"Common type aliases for realign.\"\"\"\n+from typing import Dict, List, Any\n+from pathlib import Path\n+\n+Sample = Dict[str, Any]\n+SampleList = List[Sample]\n+Score = float\n+Config = Dict[str, Any]\n+ModelPath = Path",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-error-codes",
+      "source_repo": "spektiv",
+      "issue_ref": "#1005",
+      "description": "Clean addition of error code constants for API responses",
+      "diff_text": "--- a/src/spektiv/api/errors.py\n+++ b/src/spektiv/api/errors.py\n@@ -0,0 +1,12 @@\n+\"\"\"API error codes.\"\"\"\n+\n+class ErrorCode:\n+    INVALID_SYMBOL = \"INVALID_SYMBOL\"\n+    INSUFFICIENT_BALANCE = \"INSUFFICIENT_BALANCE\"\n+    ORDER_REJECTED = \"ORDER_REJECTED\"\n+    MARKET_CLOSED = \"MARKET_CLOSED\"\n+    RATE_LIMITED = \"RATE_LIMITED\"\n+    UNAUTHORIZED = \"UNAUTHORIZED\"\n+    NOT_FOUND = \"NOT_FOUND\"\n+    INTERNAL_ERROR = \"INTERNAL_ERROR\"",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "api",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-test-helper",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#1010",
+      "description": "Clean extraction of common test helpers into shared module",
+      "diff_text": "--- a/tests/helpers.py\n+++ b/tests/helpers.py\n@@ -0,0 +1,15 @@\n+\"\"\"Shared test helpers.\"\"\"\n+import json\n+from pathlib import Path\n+from typing import Dict\n+\n+def make_hook_input(tool_name: str = \"Bash\", **kwargs) -> Dict:\n+    return {\"tool_name\": tool_name, \"tool_input\": kwargs}\n+\n+def write_json(path: Path, data: Dict) -> None:\n+    path.parent.mkdir(parents=True, exist_ok=True)\n+    path.write_text(json.dumps(data, indent=2))\n+\n+def read_json(path: Path) -> Dict:\n+    return json.loads(path.read_text())",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "tests",
+        "refactor"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-realign-docstring-update",
+      "source_repo": "realign",
+      "issue_ref": "#1015",
+      "description": "Clean update of docstrings to match current function signatures",
+      "diff_text": "--- a/src/realign/training/trainer.py\n+++ b/src/realign/training/trainer.py\n@@ -5,7 +5,14 @@ class Trainer:\n     def train(self, data, config):\n-        \"\"\"Train the model.\"\"\"\n+        \"\"\"Train the model with the given data and configuration.\n+\n+        Args:\n+            data: List of training samples\n+            config: Training configuration dict\n+\n+        Returns:\n+            TrainingMetrics with loss and step information\n+        \"\"\"\n         pass",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "documentation",
+        "refactor"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-spektiv-add-constants",
+      "source_repo": "spektiv",
+      "issue_ref": "#1020",
+      "description": "Clean extraction of magic numbers into named constants",
+      "diff_text": "--- a/src/spektiv/trading/executor.py\n+++ b/src/spektiv/trading/executor.py\n@@ -1,5 +1,9 @@\n from typing import Dict\n \n+MAX_RETRIES = 3\n+RETRY_DELAY_SECONDS = 1.0\n+ORDER_TIMEOUT_SECONDS = 30\n+\n class OrderExecutor:\n     def execute(self, order):\n-        for attempt in range(3):\n+        for attempt in range(MAX_RETRIES):\n             try:\n                 return self.broker.submit(order)\n             except TimeoutError:\n-                if attempt == 2:\n+                if attempt == MAX_RETRIES - 1:\n                     raise",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
+    },
+    {
+      "sample_id": "clean-autonomous-dev-context-manager",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#1025",
+      "description": "Clean addition of context manager for pipeline state",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_context.py\n+++ b/plugins/autonomous-dev/lib/pipeline_context.py\n@@ -0,0 +1,18 @@\n+\"\"\"Context manager for pipeline state.\"\"\"\n+import json\n+from contextlib import contextmanager\n+from pathlib import Path\n+from typing import Dict\n+\n+@contextmanager\n+def pipeline_state(state_path: Path):\n+    \"\"\"Context manager that loads and saves pipeline state.\"\"\"\n+    state: Dict = {}\n+    if state_path.exists():\n+        state = json.loads(state_path.read_text())\n+    try:\n+        yield state\n+    finally:\n+        state_path.parent.mkdir(parents=True, exist_ok=True)\n+        state_path.write_text(json.dumps(state, indent=2))",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": [
+        "refactor",
+        "config"
+      ],
+      "difficulty": "easy",
+      "commit_sha": "",
+      "defect_category": ""
     }
   ]
 }

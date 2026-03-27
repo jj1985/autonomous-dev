@@ -29,6 +29,9 @@ class BenchmarkSample:
         expected_categories: List of expected defect categories
         category_tags: Descriptive tags for the sample
         description: Human-readable description of the defect/change
+        difficulty: Difficulty tier for stratification (easy, medium, hard)
+        commit_sha: Git commit SHA for provenance tracking
+        defect_category: Primary defect category from taxonomy
     """
 
     sample_id: str
@@ -39,6 +42,9 @@ class BenchmarkSample:
     expected_categories: List[str]
     category_tags: List[str]
     description: str
+    difficulty: str = "medium"
+    commit_sha: str = ""
+    defect_category: str = ""
 
 
 @dataclass
@@ -75,6 +81,8 @@ class ScoringReport:
         total_samples: Number of unique samples
         trials_per_sample: Number of trials run per sample
         consistency_rate: Average fraction of trials matching majority verdict
+        per_difficulty: Accuracy breakdown by difficulty tier (easy, medium, hard)
+        per_defect_category: Accuracy breakdown by defect category from taxonomy
         timestamp: When the scoring was computed
     """
 
@@ -86,6 +94,8 @@ class ScoringReport:
     total_samples: int
     trials_per_sample: int
     consistency_rate: float
+    per_difficulty: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    per_defect_category: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -156,6 +166,9 @@ def load_dataset(path: Path) -> List[BenchmarkSample]:
             expected_categories=s["expected_categories"],
             category_tags=s["category_tags"],
             description=s["description"],
+            difficulty=s.get("difficulty", "medium"),
+            commit_sha=s.get("commit_sha", ""),
+            defect_category=s.get("defect_category", ""),
         ))
 
     return samples
@@ -250,7 +263,11 @@ def _is_positive(verdict: str) -> bool:
     return verdict in _POSITIVE_VERDICTS
 
 
-def score_results(results: List[BenchmarkResult]) -> ScoringReport:
+def score_results(
+    results: List[BenchmarkResult],
+    *,
+    samples: Optional[List[BenchmarkSample]] = None,
+) -> ScoringReport:
     """Compute scoring metrics from benchmark results.
 
     Binary classification: BLOCKING/REQUEST_CHANGES = positive (defective),
@@ -259,6 +276,9 @@ def score_results(results: List[BenchmarkResult]) -> ScoringReport:
 
     Args:
         results: List of BenchmarkResult from all trials
+        samples: Optional list of BenchmarkSample for per-difficulty and
+            per-defect-category breakdowns. When provided, builds a lookup
+            dict by sample_id to enrich results with metadata.
 
     Returns:
         ScoringReport with balanced accuracy, FPR, FNR, confusion matrix, etc.
@@ -314,6 +334,14 @@ def score_results(results: List[BenchmarkResult]) -> ScoringReport:
     total_samples = len(sample_ids)
     trials_per_sample = len(results) // total_samples if total_samples > 0 else 0
 
+    # Build sample lookup for difficulty/category breakdowns
+    sample_lookup: Dict[str, BenchmarkSample] = {}
+    if samples:
+        sample_lookup = {s.sample_id: s for s in samples}
+
+    per_difficulty = _compute_per_difficulty(results, sample_lookup)
+    per_defect_category = _compute_per_defect_category(results, sample_lookup)
+
     return ScoringReport(
         balanced_accuracy=balanced_accuracy,
         false_positive_rate=fpr,
@@ -323,7 +351,86 @@ def score_results(results: List[BenchmarkResult]) -> ScoringReport:
         total_samples=total_samples,
         trials_per_sample=trials_per_sample,
         consistency_rate=consistency_rate,
+        per_difficulty=per_difficulty,
+        per_defect_category=per_defect_category,
     )
+
+
+def _compute_per_difficulty(
+    results: List[BenchmarkResult],
+    sample_lookup: Dict[str, "BenchmarkSample"],
+) -> Dict[str, Dict[str, Any]]:
+    """Compute accuracy breakdown by difficulty tier.
+
+    Args:
+        results: All benchmark results
+        sample_lookup: Mapping of sample_id to BenchmarkSample
+
+    Returns:
+        Dict mapping difficulty tier to accuracy stats
+    """
+    if not sample_lookup:
+        return {}
+
+    by_difficulty: Dict[str, List[bool]] = {}
+    for r in results:
+        if r.predicted_verdict == "PARSE_ERROR":
+            continue
+        sample = sample_lookup.get(r.sample_id)
+        if not sample:
+            continue
+        difficulty = sample.difficulty or "medium"
+        correct = _is_positive(r.predicted_verdict) == _is_positive(r.expected_verdict)
+        by_difficulty.setdefault(difficulty, []).append(correct)
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for tier, correct_list in by_difficulty.items():
+        total = len(correct_list)
+        correct_count = sum(correct_list)
+        result[tier] = {
+            "accuracy": correct_count / total if total > 0 else 0.0,
+            "total": total,
+            "correct": correct_count,
+        }
+    return result
+
+
+def _compute_per_defect_category(
+    results: List[BenchmarkResult],
+    sample_lookup: Dict[str, "BenchmarkSample"],
+) -> Dict[str, Dict[str, Any]]:
+    """Compute accuracy breakdown by defect category.
+
+    Args:
+        results: All benchmark results
+        sample_lookup: Mapping of sample_id to BenchmarkSample
+
+    Returns:
+        Dict mapping defect category to accuracy stats
+    """
+    if not sample_lookup:
+        return {}
+
+    by_category: Dict[str, List[bool]] = {}
+    for r in results:
+        if r.predicted_verdict == "PARSE_ERROR":
+            continue
+        sample = sample_lookup.get(r.sample_id)
+        if not sample or not sample.defect_category:
+            continue
+        correct = _is_positive(r.predicted_verdict) == _is_positive(r.expected_verdict)
+        by_category.setdefault(sample.defect_category, []).append(correct)
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for cat, correct_list in by_category.items():
+        total = len(correct_list)
+        correct_count = sum(correct_list)
+        result[cat] = {
+            "accuracy": correct_count / total if total > 0 else 0.0,
+            "total": total,
+            "correct": correct_count,
+        }
+    return result
 
 
 def _compute_per_category(results: List[BenchmarkResult]) -> Dict[str, Dict[str, Any]]:
@@ -410,6 +517,8 @@ def store_benchmark_run(store: Any, report: ScoringReport) -> None:
             "trials_per_sample": report.trials_per_sample,
             "consistency_rate": report.consistency_rate,
             "per_category": report.per_category,
+            "per_difficulty": report.per_difficulty,
+            "per_defect_category": report.per_defect_category,
             "timestamp": report.timestamp,
         },
     )

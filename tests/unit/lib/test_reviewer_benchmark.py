@@ -305,6 +305,139 @@ class TestScoreResults:
 # Store Integration
 # ---------------------------------------------------------------------------
 
+class TestLoadDatasetOptionalFields:
+    """Test backward compatibility for optional fields in BenchmarkSample."""
+
+    def test_samples_without_new_fields_get_defaults(self, tmp_path: Path) -> None:
+        """Old-format samples (no difficulty/commit_sha/defect_category) get defaults."""
+        samples = [_make_sample()]
+        p = _write_dataset(tmp_path, samples)
+        result = load_dataset(p)
+        assert len(result) == 1
+        assert result[0].difficulty == "medium"
+        assert result[0].commit_sha == ""
+        assert result[0].defect_category == ""
+
+    def test_samples_with_new_fields_populated(self, tmp_path: Path) -> None:
+        """Samples with new fields have them correctly loaded."""
+        sample = _make_sample(
+            difficulty="hard",
+            commit_sha="abc123",
+            defect_category="null-safety",
+        )
+        p = _write_dataset(tmp_path, [sample])
+        result = load_dataset(p)
+        assert result[0].difficulty == "hard"
+        assert result[0].commit_sha == "abc123"
+        assert result[0].defect_category == "null-safety"
+
+    def test_mixed_old_and_new_format_samples(self, tmp_path: Path) -> None:
+        """Dataset with both old-format and new-format samples loads correctly."""
+        old_sample = _make_sample(sample_id="old-001")
+        new_sample = _make_sample(
+            sample_id="new-001",
+            difficulty="easy",
+            commit_sha="def456",
+            defect_category="hardcoded-value",
+        )
+        p = _write_dataset(tmp_path, [old_sample, new_sample])
+        result = load_dataset(p)
+        assert len(result) == 2
+        assert result[0].difficulty == "medium"  # default
+        assert result[1].difficulty == "easy"  # explicit
+
+
+class TestPerDifficulty:
+    """Test score_results with per-difficulty breakdown."""
+
+    def test_per_difficulty_with_samples(self) -> None:
+        samples = [
+            BenchmarkSample(**_make_sample(sample_id="s1", difficulty="easy")),
+            BenchmarkSample(**_make_sample(
+                sample_id="s2", expected_verdict="APPROVE", difficulty="hard"
+            )),
+        ]
+        results = [
+            _make_result("s1", "BLOCKING", "BLOCKING"),
+            _make_result("s2", "APPROVE", "APPROVE"),
+        ]
+        report = score_results(results, samples=samples)
+        assert "easy" in report.per_difficulty
+        assert "hard" in report.per_difficulty
+        assert report.per_difficulty["easy"]["accuracy"] == 1.0
+        assert report.per_difficulty["hard"]["accuracy"] == 1.0
+
+    def test_per_difficulty_without_samples(self) -> None:
+        results = [_make_result("s1", "BLOCKING", "BLOCKING")]
+        report = score_results(results)
+        assert report.per_difficulty == {}
+
+    def test_per_difficulty_counts(self) -> None:
+        samples = [
+            BenchmarkSample(**_make_sample(sample_id="s1", difficulty="medium")),
+            BenchmarkSample(**_make_sample(sample_id="s2", difficulty="medium")),
+        ]
+        results = [
+            _make_result("s1", "BLOCKING", "BLOCKING"),
+            _make_result("s2", "APPROVE", "BLOCKING"),  # wrong
+        ]
+        report = score_results(results, samples=samples)
+        assert report.per_difficulty["medium"]["total"] == 2
+        assert report.per_difficulty["medium"]["correct"] == 1
+        assert report.per_difficulty["medium"]["accuracy"] == 0.5
+
+
+class TestPerDefectCategory:
+    """Test score_results with per-defect-category breakdown."""
+
+    def test_per_defect_category_with_samples(self) -> None:
+        samples = [
+            BenchmarkSample(**_make_sample(
+                sample_id="s1", defect_category="null-safety"
+            )),
+            BenchmarkSample(**_make_sample(
+                sample_id="s2", defect_category="hardcoded-value"
+            )),
+        ]
+        results = [
+            _make_result("s1", "BLOCKING", "BLOCKING"),
+            _make_result("s2", "BLOCKING", "BLOCKING"),
+        ]
+        report = score_results(results, samples=samples)
+        assert "null-safety" in report.per_defect_category
+        assert "hardcoded-value" in report.per_defect_category
+
+    def test_per_defect_category_without_samples(self) -> None:
+        results = [_make_result("s1", "BLOCKING", "BLOCKING")]
+        report = score_results(results)
+        assert report.per_defect_category == {}
+
+    def test_per_defect_category_skips_empty_category(self) -> None:
+        samples = [
+            BenchmarkSample(**_make_sample(sample_id="s1", defect_category="")),
+        ]
+        results = [_make_result("s1", "BLOCKING", "BLOCKING")]
+        report = score_results(results, samples=samples)
+        assert report.per_defect_category == {}
+
+    def test_per_defect_category_accuracy(self) -> None:
+        samples = [
+            BenchmarkSample(**_make_sample(
+                sample_id="s1", defect_category="null-safety"
+            )),
+            BenchmarkSample(**_make_sample(
+                sample_id="s2", defect_category="null-safety"
+            )),
+        ]
+        results = [
+            _make_result("s1", "BLOCKING", "BLOCKING"),   # correct
+            _make_result("s2", "APPROVE", "BLOCKING"),     # wrong
+        ]
+        report = score_results(results, samples=samples)
+        assert report.per_defect_category["null-safety"]["accuracy"] == 0.5
+        assert report.per_defect_category["null-safety"]["total"] == 2
+
+
 class TestStoreBenchmarkRun:
     def test_store_benchmark_run(self) -> None:
         mock_store = MagicMock()

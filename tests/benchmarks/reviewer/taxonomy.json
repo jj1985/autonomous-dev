@@ -1,0 +1,381 @@
+{
+  "version": "2.0",
+  "groups": [
+    "functionality",
+    "evolvability",
+    "concurrency",
+    "security",
+    "testing",
+    "data-handling",
+    "wiring",
+    "silent-failure",
+    "cross-path-parity",
+    "documentation-drift"
+  ],
+  "categories": {
+    "hardcoded-value": {
+      "group": "functionality",
+      "description": "A computed or configurable value replaced with a hardcoded literal, hiding real behavior behind a constant."
+    },
+    "wrong-dispatch": {
+      "group": "functionality",
+      "description": "A dispatch table, registry, or routing maps an action to the wrong handler or function."
+    },
+    "null-safety": {
+      "group": "functionality",
+      "description": "Code allows None/null values to flow into paths that assume non-null, causing AttributeError or TypeError."
+    },
+    "stub-implementation": {
+      "group": "functionality",
+      "description": "A function body replaced with raise NotImplementedError or pass instead of real logic."
+    },
+    "orphan-reference": {
+      "group": "wiring",
+      "description": "A symbol (class, enum, config key) is deleted but references to it remain, causing ImportError or KeyError at runtime."
+    },
+    "incomplete-fix": {
+      "group": "functionality",
+      "description": "A bug is fixed in one code path but an identical bug remains in a parallel or sibling path."
+    },
+    "off-by-one": {
+      "group": "functionality",
+      "description": "Loop bound, array index, or range off by one, silently skipping the first or last element."
+    },
+    "wrong-default": {
+      "group": "functionality",
+      "description": "A config or parameter default changed to a value that breaks the intended behavior of the system."
+    },
+    "removed-security": {
+      "group": "security",
+      "description": "A security check, validation, or enforcement function silently removed during refactoring."
+    },
+    "test-skip-abuse": {
+      "group": "testing",
+      "description": "Excessive use of pytest.mark.skip or skipif to hide failing tests instead of fixing them."
+    },
+    "class-unused": {
+      "group": "evolvability",
+      "description": "A new class or module is added but never instantiated, imported, or referenced anywhere."
+    },
+    "infra-no-integration": {
+      "group": "wiring",
+      "description": "Infrastructure code (config loader, middleware, hook) is created but not wired into the runtime."
+    },
+    "config-unused": {
+      "group": "evolvability",
+      "description": "A configuration key is added but no code reads or acts on it."
+    },
+    "feature-flag-unchecked": {
+      "group": "functionality",
+      "description": "A feature flag is defined but the conditional check around the new code path is missing or always true."
+    },
+    "api-endpoint-501": {
+      "group": "functionality",
+      "description": "An API endpoint is registered but returns 501 Not Implemented or raises NotImplementedError."
+    },
+    "test-zero-assertions": {
+      "group": "testing",
+      "description": "A test function runs code but contains no assert statements, giving false confidence."
+    },
+    "test-happy-path-only": {
+      "group": "testing",
+      "description": "Tests only cover the success path; no tests for error conditions, edge cases, or invalid input."
+    },
+    "test-mocks-subject": {
+      "group": "testing",
+      "description": "A test mocks the function under test itself, so the test always passes regardless of real behavior."
+    },
+    "test-passes-without-fix": {
+      "group": "testing",
+      "description": "A regression test that passes even without the corresponding bug fix applied."
+    },
+    "coverage-gamed": {
+      "group": "testing",
+      "description": "Code structured to inflate coverage (e.g., executing lines without meaningful assertions)."
+    },
+    "local-cloud-parity": {
+      "group": "cross-path-parity",
+      "description": "Local development path diverges from cloud/production path in a way that masks bugs."
+    },
+    "dev-prod-config": {
+      "group": "cross-path-parity",
+      "description": "Development config differs from production config in ways that cause prod-only failures."
+    },
+    "backend-parity": {
+      "group": "cross-path-parity",
+      "description": "Two backend implementations (e.g., MLX vs PyTorch) diverge in behavior or output shape."
+    },
+    "rollback-broken": {
+      "group": "functionality",
+      "description": "A migration or state change has no rollback path, or the rollback path is broken."
+    },
+    "error-swallowed": {
+      "group": "silent-failure",
+      "description": "An exception is caught with a bare except or except Exception and silently discarded."
+    },
+    "filter-over-rejection": {
+      "group": "silent-failure",
+      "description": "Invalid data is silently filtered out instead of raising an error, hiding data quality issues."
+    },
+    "silent-import-fail": {
+      "group": "silent-failure",
+      "description": "An import wrapped in try/except that silently degrades, causing confusing errors later."
+    },
+    "metric-never-incremented": {
+      "group": "silent-failure",
+      "description": "A metric, counter, or gauge is defined but never incremented or emitted."
+    },
+    "log-no-alert": {
+      "group": "silent-failure",
+      "description": "An error condition is logged but no alert, metric, or escalation is triggered."
+    },
+    "docs-feature-missing": {
+      "group": "documentation-drift",
+      "description": "Documentation describes a feature that does not exist in the codebase, or vice versa."
+    },
+    "config-schema-drift": {
+      "group": "documentation-drift",
+      "description": "Config file schema changed but documentation or validation schema not updated."
+    },
+    "enum-switch-incomplete": {
+      "group": "functionality",
+      "description": "A new enum variant added but switch/match statements do not handle it, falling through to default."
+    },
+    "api-shape-changed": {
+      "group": "evolvability",
+      "description": "API response shape changed but callers not updated, causing KeyError or missing data."
+    },
+    "hook-deleted-refactor": {
+      "group": "wiring",
+      "description": "A hook or callback deleted during refactoring but its registration or caller remains."
+    },
+    "identity-spoofing": {
+      "group": "security",
+      "description": "Authentication or authorization check can be bypassed by spoofing identity fields."
+    },
+    "bypass-alternative-path": {
+      "group": "security",
+      "description": "A security check exists on the main path but an alternative code path skips it entirely."
+    },
+    "secrets-committed": {
+      "group": "security",
+      "description": "API keys, tokens, or passwords committed to source control in plaintext."
+    },
+    "race-condition": {
+      "group": "concurrency",
+      "description": "Shared mutable state accessed without synchronization, causing intermittent incorrect behavior."
+    },
+    "non-atomic-update": {
+      "group": "concurrency",
+      "description": "A multi-step update that can leave state inconsistent if interrupted between steps."
+    },
+    "stale-cache": {
+      "group": "concurrency",
+      "description": "Cache not invalidated after underlying data changes, serving outdated results."
+    },
+    "api": {
+      "group": "functionality",
+      "description": "General API-related code pattern (endpoints, routes, handlers)."
+    },
+    "endpoint": {
+      "group": "functionality",
+      "description": "HTTP endpoint addition, modification, or removal."
+    },
+    "tests": {
+      "group": "testing",
+      "description": "Test code addition or modification."
+    },
+    "config": {
+      "group": "evolvability",
+      "description": "Configuration file changes (YAML, JSON, TOML)."
+    },
+    "training-method": {
+      "group": "functionality",
+      "description": "ML training method configuration or implementation."
+    },
+    "yaml": {
+      "group": "evolvability",
+      "description": "YAML configuration file content."
+    },
+    "refactor": {
+      "group": "evolvability",
+      "description": "Code restructuring without behavior change."
+    },
+    "rename": {
+      "group": "evolvability",
+      "description": "Symbol renaming across codebase."
+    },
+    "tests-updated": {
+      "group": "testing",
+      "description": "Tests updated to match code changes."
+    },
+    "documentation": {
+      "group": "documentation-drift",
+      "description": "Documentation file changes."
+    },
+    "architecture": {
+      "group": "documentation-drift",
+      "description": "Architecture documentation or design changes."
+    },
+    "alignment": {
+      "group": "documentation-drift",
+      "description": "Project alignment documentation updates."
+    },
+    "stub": {
+      "group": "functionality",
+      "description": "Placeholder or stub code pattern."
+    },
+    "fallthrough": {
+      "group": "functionality",
+      "description": "Fallthrough logic in conditionals or switch statements."
+    },
+    "scorer": {
+      "group": "functionality",
+      "description": "Scoring function or metric computation code."
+    },
+    "loss-function": {
+      "group": "functionality",
+      "description": "Loss function implementation for ML training."
+    },
+    "dispatch-table": {
+      "group": "wiring",
+      "description": "Dispatch table or registry mapping actions to handlers."
+    },
+    "training": {
+      "group": "functionality",
+      "description": "ML training pipeline code."
+    },
+    "none-handling": {
+      "group": "data-handling",
+      "description": "Handling of None/null values in data pipelines."
+    },
+    "loader": {
+      "group": "data-handling",
+      "description": "Data loading and parsing code."
+    },
+    "consumer": {
+      "group": "data-handling",
+      "description": "Data consumer or processor code."
+    },
+    "not-implemented": {
+      "group": "functionality",
+      "description": "NotImplementedError raised in production code path."
+    },
+    "live-trading": {
+      "group": "functionality",
+      "description": "Live trading execution code."
+    },
+    "regression": {
+      "group": "testing",
+      "description": "Regression in previously working functionality."
+    },
+    "deleted-class": {
+      "group": "wiring",
+      "description": "Class deleted but references remain in codebase."
+    },
+    "enum": {
+      "group": "functionality",
+      "description": "Enum type definition or usage."
+    },
+    "import-error": {
+      "group": "wiring",
+      "description": "Import statement that will fail at runtime."
+    },
+    "division-by-zero": {
+      "group": "functionality",
+      "description": "Division operation without zero-check guard."
+    },
+    "partial-fix": {
+      "group": "functionality",
+      "description": "Bug fixed in some paths but not all."
+    },
+    "ui": {
+      "group": "functionality",
+      "description": "User interface rendering code."
+    },
+    "loop-bound": {
+      "group": "functionality",
+      "description": "Loop boundary or iteration range."
+    },
+    "logprob": {
+      "group": "functionality",
+      "description": "Log-probability computation in ML models."
+    },
+    "metric": {
+      "group": "functionality",
+      "description": "Metric computation or tracking."
+    },
+    "dpo": {
+      "group": "functionality",
+      "description": "Direct Preference Optimization training code."
+    },
+    "mask-prompt": {
+      "group": "functionality",
+      "description": "Prompt masking configuration for training."
+    },
+    "training-config": {
+      "group": "evolvability",
+      "description": "Training configuration parameters."
+    },
+    "bypass-detection": {
+      "group": "security",
+      "description": "Bypass detection and enforcement code."
+    },
+    "enforcement": {
+      "group": "security",
+      "description": "Security or policy enforcement mechanism."
+    },
+    "skipif": {
+      "group": "testing",
+      "description": "pytest.mark.skipif usage patterns."
+    },
+    "dependencies": {
+      "group": "evolvability",
+      "description": "Dependency management and installation."
+    },
+    "ci": {
+      "group": "evolvability",
+      "description": "CI/CD pipeline configuration."
+    },
+    "functionality": {
+      "group": "functionality",
+      "description": "General functional correctness and behavior."
+    },
+    "evolvability": {
+      "group": "evolvability",
+      "description": "Code maintainability and extensibility concerns."
+    },
+    "concurrency": {
+      "group": "concurrency",
+      "description": "Thread safety, atomicity, and concurrent access patterns."
+    },
+    "security": {
+      "group": "security",
+      "description": "Security vulnerabilities, authentication, and authorization."
+    },
+    "data-handling": {
+      "group": "data-handling",
+      "description": "Data processing, validation, and transformation patterns."
+    },
+    "wiring": {
+      "group": "wiring",
+      "description": "Component integration, registration, and dependency wiring."
+    },
+    "silent-failure": {
+      "group": "silent-failure",
+      "description": "Errors, exceptions, or failures that are silently suppressed."
+    },
+    "cross-path-parity": {
+      "group": "cross-path-parity",
+      "description": "Divergence between parallel code paths (dev/prod, REST/WS, backends)."
+    },
+    "documentation-drift": {
+      "group": "documentation-drift",
+      "description": "Documentation out of sync with actual code behavior."
+    },
+    "session-log": {
+      "group": "testing",
+      "description": "Sample derived from session log mining."
+    }
+  }
+}
