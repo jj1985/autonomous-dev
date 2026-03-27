@@ -1,5 +1,7 @@
 # autonomous-dev — A Development Harness for Claude Code
 
+![Version](https://img.shields.io/badge/version-3.50.0-blue)
+
 **A harness that wraps Claude Code with enforcement, specialist agents, and alignment gates to deliver consistent, production-grade software engineering outcomes.**
 
 A *harness* is the software and structure that wraps an AI model to keep it on track — the prompts, tools, feedback loops, constraints, and validation that turn a capable but undisciplined model into a reliable system. Without a harness, the model is a wild horse with raw power but no direction. With one, that power is controlled, directed, and accountable.
@@ -227,6 +229,7 @@ For existing projects, use:
 /sync                    # Update plugin (--github, --env, --marketplace, --all)
 /worktree                # Git worktrees (--list, --status, --merge, --discard)
 /scaffold-genai-uat      # Scaffold LLM-as-judge tests into any repo
+/mem-search              # Search claude-mem persistent memory
 ```
 
 ---
@@ -289,7 +292,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 | Agents | 11 | Specialized AI for each SDLC stage |
 | Skills | 17 | Domain knowledge (progressive disclosure) |
 | Hooks | 25 | Automatic validation and enforcement |
-| Libraries | 172 | Python utilities |
+| Libraries | 173 | Python utilities |
 
 ---
 
@@ -307,7 +310,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 ### Reference
 - [Commands](plugins/autonomous-dev/commands/) - All 19 commands
 - [Hooks](docs/HOOKS.md) - 25 active hooks
-- [Libraries](docs/LIBRARIES.md) - 172 Python utilities
+- [Libraries](docs/LIBRARIES.md) - 173 Python utilities
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model
 
 ### Troubleshooting
@@ -347,4 +350,4 @@ bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/mas
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+MIT License

@@ -1,0 +1,149 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "created": "2026-03-28",
+    "samples": 14
+  },
+  "samples": [
+    {
+      "sample_id": "realign-538-hardcoded-fallthrough",
+      "source_repo": "realign",
+      "issue_ref": "#538",
+      "description": "IFD scorer hardcoded 0.85 in 3 fallthrough paths instead of calling actual scorer",
+      "diff_text": "--- a/src/realign/scorers/ifd_scorer.py\n+++ b/src/realign/scorers/ifd_scorer.py\n@@ -45,12 +45,12 @@ class IFDScorer:\n     def score(self, sample: Dict[str, Any]) -> float:\n         \"\"\"Score a single sample using IFD metric.\"\"\"\n         if not sample.get(\"completion\"):\n-            return self._compute_ifd(sample)\n+            return 0.85\n \n         if sample.get(\"is_synthetic\", False):\n-            return self._compute_ifd(sample)\n+            return 0.85\n \n         try:\n             return self._compute_ifd(sample)\n         except TokenizationError:\n-            return self._compute_ifd_fallback(sample)\n+            return 0.85",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["hardcoded-value"],
+      "category_tags": ["stub", "fallthrough", "scorer"]
+    },
+    {
+      "sample_id": "realign-691-orpo-sft-loss-dispatch",
+      "source_repo": "realign",
+      "issue_ref": "#691",
+      "description": "ORPO training dispatches to SFT loss function instead of ORPO loss due to wrong dispatch table entry",
+      "diff_text": "--- a/src/realign/training/loss_registry.py\n+++ b/src/realign/training/loss_registry.py\n@@ -18,7 +18,7 @@ LOSS_DISPATCH = {\n     \"sft\": sft_loss,\n     \"dpo\": dpo_loss,\n     \"kto\": kto_loss,\n-    \"orpo\": orpo_loss,\n+    \"orpo\": sft_loss,\n     \"simpo\": simpo_loss,\n }\n \n@@ -30,6 +30,6 @@ def get_loss_fn(method: str) -> Callable:\n     if method not in LOSS_DISPATCH:\n         raise ValueError(f\"Unknown training method: {method}\")\n     return LOSS_DISPATCH[method]",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["wrong-dispatch"],
+      "category_tags": ["loss-function", "dispatch-table", "training"]
+    },
+    {
+      "sample_id": "realign-580-none-loader-consumer",
+      "source_repo": "realign",
+      "issue_ref": "#580",
+      "description": "Loader changed to allow None values but downstream consumer crashes on None without guard",
+      "diff_text": "--- a/src/realign/data/loader.py\n+++ b/src/realign/data/loader.py\n@@ -22,8 +22,7 @@ def load_samples(path: Path) -> List[Dict]:\n     samples = []\n     for row in raw_data:\n         text = row.get(\"text\")\n-        if text is None:\n-            continue\n+        # Allow None text for metadata-only samples\n         samples.append({\"text\": text, \"meta\": row.get(\"meta\", {})})\n     return samples\n--- a/src/realign/data/consumer.py\n+++ b/src/realign/data/consumer.py\n@@ -15,6 +15,7 @@ def process_samples(samples: List[Dict]) -> List[str]:\n     results = []\n     for sample in samples:\n         text = sample[\"text\"]\n+        # text can now be None from loader but we call .strip() unconditionally\n         cleaned = text.strip().lower()\n         tokens = cleaned.split()\n         results.append(\" \".join(tokens))",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["null-safety"],
+      "category_tags": ["none-handling", "loader", "consumer"]
+    },
+    {
+      "sample_id": "spektiv-403-not-implemented-live-trading",
+      "source_repo": "spektiv",
+      "issue_ref": "#403",
+      "description": "Live trading endpoint raises NotImplementedError instead of actual implementation",
+      "diff_text": "--- a/src/spektiv/trading/live_executor.py\n+++ b/src/spektiv/trading/live_executor.py\n@@ -1,5 +1,6 @@\n \"\"\"Live trading executor for production order routing.\"\"\"\n \n+from typing import Dict, List, Optional\n from spektiv.trading.base import BaseExecutor, Order, ExecutionResult\n \n \n@@ -12,15 +13,8 @@ class LiveExecutor(BaseExecutor):\n \n     def execute_order(self, order: Order) -> ExecutionResult:\n         \"\"\"Execute a live trading order.\"\"\"\n-        self._validate_order(order)\n-        position = self._check_position_limits(order)\n-        result = self.broker.submit_order(\n-            symbol=order.symbol,\n-            quantity=order.quantity,\n-            side=order.side,\n-            order_type=order.order_type,\n-        )\n-        self._update_position_tracker(position, result)\n-        return ExecutionResult(\n-            order_id=result.id, status=result.status, filled_qty=result.filled\n-        )\n+        raise NotImplementedError(\"Live trading not yet implemented\")\n+\n+    def get_positions(self) -> List[Dict]:\n+        \"\"\"Get current positions.\"\"\"\n+        raise NotImplementedError(\"Position tracking not yet implemented\")",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["stub-implementation"],
+      "category_tags": ["not-implemented", "live-trading", "regression"]
+    },
+    {
+      "sample_id": "spektiv-678-deleted-broker-enum-remains",
+      "source_repo": "spektiv",
+      "issue_ref": "#678",
+      "description": "Broker class deleted but its enum entry remains, causing ImportError at runtime",
+      "diff_text": "--- a/src/spektiv/brokers/__init__.py\n+++ b/src/spektiv/brokers/__init__.py\n@@ -1,7 +1,6 @@\n from spektiv.brokers.alpaca import AlpacaBroker\n from spektiv.brokers.ibkr import IBKRBroker\n-from spektiv.brokers.tradier import TradierBroker\n from spektiv.brokers.paper import PaperBroker\n \n-__all__ = [\"AlpacaBroker\", \"IBKRBroker\", \"TradierBroker\", \"PaperBroker\"]\n+__all__ = [\"AlpacaBroker\", \"IBKRBroker\", \"PaperBroker\"]\n--- a/src/spektiv/brokers/registry.py\n+++ b/src/spektiv/brokers/registry.py\n@@ -8,7 +8,7 @@ class BrokerType(str, Enum):\n     ALPACA = \"alpaca\"\n     IBKR = \"ibkr\"\n     TRADIER = \"tradier\"\n     PAPER = \"paper\"\n \n BROKER_MAP = {\n     BrokerType.ALPACA: \"spektiv.brokers.alpaca.AlpacaBroker\",\n     BrokerType.IBKR: \"spektiv.brokers.ibkr.IBKRBroker\",\n     BrokerType.TRADIER: \"spektiv.brokers.tradier.TradierBroker\",\n     BrokerType.PAPER: \"spektiv.brokers.paper.PaperBroker\",\n }",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": ["orphan-reference"],
+      "category_tags": ["deleted-class", "enum", "import-error"]
+    },
+    {
+      "sample_id": "spektiv-658-compact-fixed-detailed-broken",
+      "source_repo": "spektiv",
+      "issue_ref": "#658",
+      "description": "Compact card rendering fixed but detailed card rendering still broken with same bug",
+      "diff_text": "--- a/src/spektiv/ui/cards.py\n+++ b/src/spektiv/ui/cards.py\n@@ -25,7 +25,7 @@ class PortfolioCard:\n     def render_compact(self, data: Dict) -> str:\n         \"\"\"Render compact portfolio card.\"\"\"\n         total = data.get(\"total_value\", 0)\n-        change = data.get(\"daily_change\", 0) / total * 100\n+        change = data.get(\"daily_change\", 0) / total * 100 if total else 0\n         return f\"Portfolio: ${total:,.2f} ({change:+.1f}%)\"\n \n     def render_detailed(self, data: Dict) -> str:\n@@ -33,7 +33,7 @@ class PortfolioCard:\n         total = data.get(\"total_value\", 0)\n         positions = data.get(\"positions\", [])\n         header = f\"Portfolio: ${total:,.2f}\"\n-        change = data.get(\"daily_change\", 0) / total * 100\n+        change = data.get(\"daily_change\", 0) / total * 100  # BUG: still divides by zero\n         lines = [header, f\"Daily: {change:+.1f}%\"]\n         for p in positions:\n             lines.append(f\"  {p['symbol']}: ${p['value']:,.2f}\")",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": ["incomplete-fix"],
+      "category_tags": ["division-by-zero", "partial-fix", "ui"]
+    },
+    {
+      "sample_id": "realign-254-off-by-one-logprob",
+      "source_repo": "realign",
+      "issue_ref": "#254",
+      "description": "Off-by-one error in loop bound skips last logprob token",
+      "diff_text": "--- a/src/realign/metrics/logprob_scorer.py\n+++ b/src/realign/metrics/logprob_scorer.py\n@@ -30,7 +30,7 @@ def compute_logprob_score(tokens: List[str], logprobs: List[float]) -> float:\n     if len(tokens) != len(logprobs):\n         raise ValueError(\"tokens and logprobs must have same length\")\n \n-    total = sum(logprobs[i] for i in range(len(logprobs)))\n+    total = sum(logprobs[i] for i in range(len(logprobs) - 1))\n     return total / len(logprobs)",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["off-by-one"],
+      "category_tags": ["loop-bound", "logprob", "metric"]
+    },
+    {
+      "sample_id": "realign-692-dpo-mask-prompt-true",
+      "source_repo": "realign",
+      "issue_ref": "#692",
+      "description": "DPO training config sets mask_prompt=True but DPO requires False to compute preference over full sequence",
+      "diff_text": "--- a/src/realign/training/configs/dpo.py\n+++ b/src/realign/training/configs/dpo.py\n@@ -15,7 +15,7 @@ class DPOConfig(TrainingConfig):\n     beta: float = 0.1\n     reference_free: bool = False\n     label_smoothing: float = 0.0\n-    mask_prompt: bool = False\n+    mask_prompt: bool = True\n \n     def validate(self) -> None:\n         super().validate()\n@@ -23,4 +23,4 @@ class DPOConfig(TrainingConfig):\n             raise ValueError(\"beta must be positive\")\n         if not 0 <= self.label_smoothing <= 0.5:\n             raise ValueError(\"label_smoothing must be in [0, 0.5]\")\n-        # mask_prompt=False is required for DPO preference learning\n+        # mask_prompt controls whether prompt tokens are masked in loss",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["wrong-default"],
+      "category_tags": ["dpo", "mask-prompt", "training-config"]
+    },
+    {
+      "sample_id": "autonomous-dev-542-bypass-detection-removed",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#542",
+      "description": "Bypass detection function silently removed in refactor, enforcement gap introduced",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/enforcement.py\n+++ b/plugins/autonomous-dev/lib/enforcement.py\n@@ -45,22 +45,6 @@ class EnforcementEngine:\n         self._violations: List[Violation] = []\n         self._config = config\n \n-    def detect_bypass_attempt(self, action: str, context: Dict) -> Optional[Violation]:\n-        \"\"\"Detect if an action is attempting to bypass enforcement.\n-\n-        Checks for known bypass patterns like env var spoofing,\n-        hook disabling, and pipeline state tampering.\n-        \"\"\"\n-        for pattern in self._config.bypass_patterns:\n-            if pattern.matches(action, context):\n-                violation = Violation(\n-                    severity=\"CRITICAL\",\n-                    pattern=pattern.name,\n-                    action=action,\n-                )\n-                self._violations.append(violation)\n-                return violation\n-        return None\n-\n     def validate_action(self, action: str, context: Dict) -> bool:\n         \"\"\"Validate whether an action is allowed.\"\"\"\n         if not self._config.enabled:\n@@ -68,8 +52,6 @@ class EnforcementEngine:\n \n         if action in self._config.blocked_actions:\n             return False\n-\n-        bypass = self.detect_bypass_attempt(action, context)\n-        if bypass:\n-            return False\n \n         return True",
+      "expected_verdict": "BLOCKING",
+      "expected_categories": ["removed-security"],
+      "category_tags": ["bypass-detection", "refactor", "enforcement"]
+    },
+    {
+      "sample_id": "autonomous-dev-199-skipif-instead-of-deps",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#199",
+      "description": "101 tests marked with skipif for missing dependencies instead of installing dependencies in CI",
+      "diff_text": "--- a/tests/unit/test_training.py\n+++ b/tests/unit/test_training.py\n@@ -1,6 +1,11 @@\n import pytest\n+import importlib\n from pathlib import Path\n \n+HAS_MLX = importlib.util.find_spec(\"mlx\") is not None\n+HAS_TORCH = importlib.util.find_spec(\"torch\") is not None\n+\n+@pytest.mark.skipif(not HAS_MLX, reason=\"mlx not installed\")\n class TestMLXTraining:\n     def test_lora_train(self):\n         \"\"\"Test LoRA training pipeline.\"\"\"\n@@ -18,6 +23,7 @@ class TestMLXTraining:\n     def test_full_ft(self):\n         pass\n \n+@pytest.mark.skipif(not HAS_TORCH, reason=\"torch not installed\")\n class TestTorchTraining:\n     def test_sft_train(self):\n         pass\n@@ -30,3 +36,25 @@ class TestTorchTraining:\n \n     def test_dpo_train(self):\n         pass\n+\n+@pytest.mark.skipif(not HAS_MLX, reason=\"mlx not installed\")\n+class TestMLXInference:\n+    def test_generate(self):\n+        pass\n+\n+    def test_batch_generate(self):\n+        pass\n+\n+@pytest.mark.skipif(not HAS_TORCH, reason=\"torch not installed\")\n+class TestTorchInference:\n+    def test_generate(self):\n+        pass",
+      "expected_verdict": "REQUEST_CHANGES",
+      "expected_categories": ["test-skip-abuse"],
+      "category_tags": ["skipif", "dependencies", "ci"]
+    },
+    {
+      "sample_id": "clean-api-endpoint-addition",
+      "source_repo": "spektiv",
+      "issue_ref": "#700",
+      "description": "Clean addition of new API endpoint with proper tests and error handling",
+      "diff_text": "--- a/src/spektiv/api/routes.py\n+++ b/src/spektiv/api/routes.py\n@@ -45,6 +45,21 @@ def get_portfolio(portfolio_id: str) -> Dict:\n     return portfolio.to_dict()\n \n \n+@router.get(\"/api/v1/portfolios/{portfolio_id}/performance\")\n+def get_portfolio_performance(\n+    portfolio_id: str,\n+    period: str = \"1M\",\n+) -> Dict:\n+    \"\"\"Get portfolio performance metrics for a given period.\"\"\"\n+    portfolio = Portfolio.get_by_id(portfolio_id)\n+    if not portfolio:\n+        raise HTTPException(status_code=404, detail=\"Portfolio not found\")\n+    if period not in VALID_PERIODS:\n+        raise HTTPException(status_code=400, detail=f\"Invalid period: {period}\")\n+    metrics = portfolio.compute_performance(period)\n+    return metrics.to_dict()\n+\n+\n @router.get(\"/api/v1/health\")\n def health_check() -> Dict:\n     return {\"status\": \"ok\"}\n--- a/tests/unit/api/test_routes.py\n+++ b/tests/unit/api/test_routes.py\n@@ -30,6 +30,22 @@ class TestPortfolioRoutes:\n         response = client.get(\"/api/v1/portfolios/invalid-id\")\n         assert response.status_code == 404\n \n+    def test_get_performance_success(self, client, sample_portfolio):\n+        response = client.get(\n+            f\"/api/v1/portfolios/{sample_portfolio.id}/performance?period=1M\"\n+        )\n+        assert response.status_code == 200\n+        data = response.json()\n+        assert \"return_pct\" in data\n+        assert \"sharpe_ratio\" in data\n+\n+    def test_get_performance_invalid_period(self, client, sample_portfolio):\n+        response = client.get(\n+            f\"/api/v1/portfolios/{sample_portfolio.id}/performance?period=invalid\"\n+        )\n+        assert response.status_code == 400\n+\n+\n class TestHealthCheck:\n     def test_health_returns_ok(self, client):\n         response = client.get(\"/api/v1/health\")",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": ["api", "endpoint", "tests"]
+    },
+    {
+      "sample_id": "clean-config-update",
+      "source_repo": "realign",
+      "issue_ref": "#710",
+      "description": "Clean configuration file update adding new training method with proper defaults",
+      "diff_text": "--- a/configs/training_defaults.yaml\n+++ b/configs/training_defaults.yaml\n@@ -25,6 +25,14 @@ methods:\n     label_smoothing: 0.0\n     mask_prompt: false\n \n+  grpo:\n+    learning_rate: 5.0e-6\n+    batch_size: 4\n+    num_generations: 8\n+    kl_coeff: 0.1\n+    clip_range: 0.2\n+    advantage_normalize: true\n+\n defaults:\n   max_seq_length: 2048\n   grad_checkpoint: true\n--- a/src/realign/training/configs/__init__.py\n+++ b/src/realign/training/configs/__init__.py\n@@ -3,8 +3,10 @@ from realign.training.configs.base import TrainingConfig\n from realign.training.configs.sft import SFTConfig\n from realign.training.configs.dpo import DPOConfig\n from realign.training.configs.kto import KTOConfig\n+from realign.training.configs.grpo import GRPOConfig\n \n __all__ = [\n     \"TrainingConfig\",\n     \"SFTConfig\",\n     \"DPOConfig\",\n     \"KTOConfig\",\n+    \"GRPOConfig\",\n ]",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": ["config", "training-method", "yaml"]
+    },
+    {
+      "sample_id": "clean-refactor-rename",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#715",
+      "description": "Clean refactor renaming function with all references and tests updated",
+      "diff_text": "--- a/plugins/autonomous-dev/lib/pipeline_utils.py\n+++ b/plugins/autonomous-dev/lib/pipeline_utils.py\n@@ -12,7 +12,7 @@ from typing import Dict, List, Optional\n from pathlib import Path\n \n \n-def get_step_status(step_name: str, state: Dict) -> str:\n+def get_pipeline_step_status(step_name: str, state: Dict) -> str:\n     \"\"\"Get the status of a pipeline step.\n \n     Args:\n@@ -25,7 +25,7 @@ def get_step_status(step_name: str, state: Dict) -> str:\n     return state.get(\"steps\", {}).get(step_name, {}).get(\"status\", \"pending\")\n \n \n-def set_step_status(step_name: str, status: str, state: Dict) -> None:\n+def set_pipeline_step_status(step_name: str, status: str, state: Dict) -> None:\n     \"\"\"Set the status of a pipeline step.\"\"\"\n     if \"steps\" not in state:\n         state[\"steps\"] = {}\n--- a/plugins/autonomous-dev/lib/pipeline_runner.py\n+++ b/plugins/autonomous-dev/lib/pipeline_runner.py\n@@ -1,5 +1,5 @@\n from typing import Dict\n-from pipeline_utils import get_step_status, set_step_status\n+from pipeline_utils import get_pipeline_step_status, set_pipeline_step_status\n \n \n class PipelineRunner:\n@@ -8,9 +8,9 @@ class PipelineRunner:\n         self.state = state\n \n     def run_step(self, step_name: str) -> bool:\n-        status = get_step_status(step_name, self.state)\n+        status = get_pipeline_step_status(step_name, self.state)\n         if status == \"complete\":\n             return True\n-        set_step_status(step_name, \"running\", self.state)\n+        set_pipeline_step_status(step_name, \"running\", self.state)\n         # ... step execution logic ...\n-        set_step_status(step_name, \"complete\", self.state)\n+        set_pipeline_step_status(step_name, \"complete\", self.state)\n--- a/tests/unit/lib/test_pipeline_utils.py\n+++ b/tests/unit/lib/test_pipeline_utils.py\n@@ -1,14 +1,14 @@\n import pytest\n-from pipeline_utils import get_step_status, set_step_status\n+from pipeline_utils import get_pipeline_step_status, set_pipeline_step_status\n \n \n class TestPipelineStepStatus:\n-    def test_get_step_status_pending(self):\n-        assert get_step_status(\"test\", {}) == \"pending\"\n+    def test_get_pipeline_step_status_pending(self):\n+        assert get_pipeline_step_status(\"test\", {}) == \"pending\"\n \n-    def test_set_step_status(self):\n+    def test_set_pipeline_step_status(self):\n         state = {}\n-        set_step_status(\"test\", \"complete\", state)\n+        set_pipeline_step_status(\"test\", \"complete\", state)\n         assert state[\"steps\"][\"test\"][\"status\"] == \"complete\"",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": ["refactor", "rename", "tests-updated"]
+    },
+    {
+      "sample_id": "clean-docs-update",
+      "source_repo": "autonomous-dev",
+      "issue_ref": "#720",
+      "description": "Clean documentation update aligned with recent code changes",
+      "diff_text": "--- a/docs/ARCHITECTURE-OVERVIEW.md\n+++ b/docs/ARCHITECTURE-OVERVIEW.md\n@@ -15,7 +15,7 @@ The pipeline consists of 8 steps:\n 4. **Test** - Write acceptance tests\n 5. **Implement** - Write code to pass tests\n 6. **Validate** - Run tests, verify all pass\n-7. **Review** - Code review\n+7. **Verify** - Security audit + code review\n 8. **Git** - Commit and push\n \n ## Agents\n@@ -25,7 +25,8 @@ The pipeline consists of 8 steps:\n | planner | Architecture plans |\n | test-master | Test generation |\n | implementer | Code implementation |\n-| reviewer | Code review |\n+| reviewer | Code review (quality) |\n+| security-auditor | Security analysis |\n | doc-master | Documentation |\n \n ## Hooks\n--- a/CLAUDE.md\n+++ b/CLAUDE.md\n@@ -5,7 +5,7 @@ Plugin for autonomous development in Claude Code.\n ## Project Overview\n \n Autonomous development plugin that provides:\n-- **7-step SDLC pipeline**: alignment -> research -> plan -> test -> implement -> validate -> git\n+- **8-step SDLC pipeline**: alignment -> research -> plan -> test -> implement -> validate -> verify -> git",
+      "expected_verdict": "APPROVE",
+      "expected_categories": [],
+      "category_tags": ["documentation", "architecture", "alignment"]
+    }
+  ]
+}

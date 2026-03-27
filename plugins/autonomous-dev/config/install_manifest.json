@@ -202,6 +202,7 @@
         "plugins/autonomous-dev/lib/research_persistence.py",
         "plugins/autonomous-dev/lib/retrofit_executor.py",
         "plugins/autonomous-dev/lib/retrofit_verifier.py",
+        "plugins/autonomous-dev/lib/reviewer_benchmark.py",
         "plugins/autonomous-dev/lib/sandbox_enforcer.py",
         "plugins/autonomous-dev/lib/scope_detector.py",
         "plugins/autonomous-dev/lib/search_utils.py",

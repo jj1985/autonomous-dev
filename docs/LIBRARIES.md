@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (64)
+### Core Libraries (65)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -80,6 +80,7 @@ The autonomous-dev plugin includes shared libraries organized into the following
 62. **test_routing.py** - Smart test routing: classifies changed files into categories and computes minimal pytest marker expression to skip irrelevant test tiers; `--full-tests` override runs complete suite (Issue #508)
 63. **refactor_analyzer.py** - `RefactorAnalyzer` class: deep analysis of test shape (Quality Diamond), test waste, doc redundancy, dead code, and unused libraries; composes `SweepAnalyzer` for quick-sweep mode; `ConfidenceLevel` enum for findings; word-boundary regex to reduce false positives (Issue #513)
 64. **genai_refactor_analyzer.py** - `GenAIRefactorAnalyzer`: hybrid static-candidate + LLM-semantic analysis wrapper around `RefactorAnalyzer`; three-pass analysis (doc-code drift via `covers:` frontmatter, hollow test detection, dead code verification with dynamic dispatch context); Haiku for first-pass classification, Sonnet escalation for HIGH findings; SHA-256 content hash caching; Anthropic Batch API support for 50% cost reduction (Issue #515)
+65. **reviewer_benchmark.py** - Harness effectiveness benchmark for the reviewer agent: loads labeled diff datasets with ground-truth verdicts, constructs reviewer prompts, parses APPROVE/REQUEST_CHANGES/BLOCKING verdicts, computes balanced accuracy/FPR/FNR/consistency scoring, and persists reports via `skill_evaluator.BenchmarkStore`. CLI runner at `scripts/run_reviewer_benchmark.py`. Dataset at `tests/benchmarks/reviewer/dataset.json` (Issue #567)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
@@ -15601,5 +15602,90 @@ __all__ = [
 - Project root detection
 
 **Test File**: tests/unit/lib/test_alignment_gate.py
+
+---
+
+## reviewer_benchmark.py (416 lines, v1.0.0 - Issue #567)
+
+**Purpose**: Harness effectiveness benchmark for the reviewer agent. Loads labeled datasets of real diffs with ground-truth verdicts, constructs reviewer prompts, parses model verdicts, and computes scoring metrics.
+
+**Problem**: No objective way to measure whether the reviewer agent correctly identifies defective code vs. clean code, or whether its verdicts are consistent across repeated invocations.
+
+**Solution**: A standalone benchmark library that drives the reviewer against labeled diff samples and reports balanced accuracy, false positive rate, false negative rate, and inter-trial consistency.
+
+**Location**: `plugins/autonomous-dev/lib/reviewer_benchmark.py`
+
+**Key Concepts**:
+- Binary classification: BLOCKING/REQUEST_CHANGES = positive (defective), APPROVE = negative (clean)
+- Balanced accuracy = (TPR + TNR) / 2 — accounts for class imbalance
+- Consistency rate = average fraction of trials matching majority verdict across samples
+- PARSE_ERROR results are excluded from accuracy calculations but counted in consistency
+
+**Data Structures**:
+
+```python
+@dataclass
+class BenchmarkSample:
+    sample_id: str
+    source_repo: str
+    issue_ref: str
+    diff_text: str
+    expected_verdict: str          # APPROVE | REQUEST_CHANGES | BLOCKING
+    expected_categories: List[str]
+    category_tags: List[str]
+    description: str
+
+@dataclass
+class BenchmarkResult:
+    sample_id: str
+    predicted_verdict: str
+    expected_verdict: str
+    findings: List[Dict[str, Any]]
+    raw_response: str
+    trial_index: int
+
+@dataclass
+class ScoringReport:
+    balanced_accuracy: float
+    false_positive_rate: float
+    false_negative_rate: float
+    per_category: Dict[str, Dict[str, Any]]
+    confusion_matrix: Dict[str, int]   # keys: TP, TN, FP, FN
+    total_samples: int
+    trials_per_sample: int
+    consistency_rate: float
+    timestamp: str
+```
+
+**Public API**:
+- `load_dataset(path: Path) -> List[BenchmarkSample]` — loads and validates a JSON dataset; raises `FileNotFoundError` or `ValueError` on invalid input
+- `build_reviewer_prompt(sample, reviewer_instructions) -> str` — constructs full reviewer prompt from a sample
+- `parse_verdict(response: str) -> Tuple[str, List[Dict]]` — extracts verdict and findings; looks for `## Verdict: VERDICT` heading first, falls back to bare keyword in last 200 characters; returns `"PARSE_ERROR"` when no verdict found
+- `score_results(results: List[BenchmarkResult]) -> ScoringReport` — computes all metrics from a list of results
+- `store_benchmark_run(store, report: ScoringReport) -> None` — persists report to a `BenchmarkStore` under key `"reviewer-effectiveness"`
+
+**Dataset Format** (`tests/benchmarks/reviewer/dataset.json`):
+```json
+{
+  "samples": [
+    {
+      "sample_id": "string",
+      "source_repo": "string",
+      "issue_ref": "#NNN",
+      "diff_text": "unified diff...",
+      "expected_verdict": "APPROVE|REQUEST_CHANGES|BLOCKING",
+      "expected_categories": ["category"],
+      "category_tags": ["tag"],
+      "description": "Human-readable description"
+    }
+  ]
+}
+```
+
+**CLI Runner**: `scripts/run_reviewer_benchmark.py` — drives the full benchmark loop against an Anthropic model, collects results across trials, and saves the report.
+
+**Testing**: `tests/unit/lib/test_reviewer_benchmark.py`
+
+**Version History**: v1.0.0 (2026-03-28) - Initial release for harness effectiveness benchmark suite (Issue #567)
 
 **Version History**: v1.0.0 (2026-01-19) - Initial release for strict PROJECT.md alignment validation (Issue #251)
