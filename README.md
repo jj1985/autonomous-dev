@@ -1,14 +1,16 @@
-# Autonomous Development Plugin for Claude Code
+# autonomous-dev — A Development Harness for Claude Code
 
-**Structured, autonomous, aligned AI development using PROJECT.md as the source of truth.**
+**A harness that wraps Claude Code with enforcement, specialist agents, and alignment gates to deliver consistent, production-grade software engineering outcomes.**
+
+A *harness* is the software and structure that wraps an AI model to keep it on track — the prompts, tools, feedback loops, constraints, and validation that turn a capable but undisciplined model into a reliable system. Without a harness, the model is a wild horse with raw power but no direction. With one, that power is controlled, directed, and accountable.
 
 ---
 
 ## What Is This?
 
-**The problem**: When you use Claude Code to build features, Claude doesn't know your project's goals, what's in or out of scope, or your architectural decisions. So it makes assumptions. You end up with code that works but doesn't fit your project - scope creep, wrong patterns, missing tests.
+**The problem**: Claude Code is brilliant at execution but unreliable at process. It skips tests, declares "good enough" on failing code, bypasses security reviews, and drifts from your project's intent. Not out of malice — it's trained to complete tasks, not follow engineering discipline. Prompt-level instructions ("please run tests") get ignored under context pressure.
 
-**The solution**: This plugin adds structure to AI-assisted development:
+**The solution**: autonomous-dev is a harness that enforces the full software development lifecycle:
 
 1. **You define your project** in a file called PROJECT.md - your goals, what's in/out of scope, constraints, architecture
 2. **You track work in GitHub Issues** - each feature or bug is an issue
@@ -16,7 +18,7 @@
 4. **Claude executes a full development pipeline** - research, planning, acceptance tests, implementation, code review, security scan, documentation
 5. **Claude stays aligned** - if a feature doesn't fit your PROJECT.md scope, it's blocked before any code is written
 
-**In short**: You define the rules once. Claude follows them for every feature.
+**In short**: You define the rules once. The harness enforces them for every feature.
 
 ---
 
@@ -46,37 +48,35 @@ After all agents complete:
 
 ## Why Use This?
 
-**Without autonomous-dev**:
+**Without a harness**:
 - You ask Claude to build a feature
 - Claude makes assumptions about your architecture
+- It skips tests when context gets long (context anxiety)
+- It approves its own work as "good enough" (poor self-evaluation)
 - You review the code, find issues, ask for fixes
 - Repeat until it's acceptable
-- Manually write tests (or skip them)
-- Manually update docs (or skip them)
 - Hope you didn't introduce security issues
 
 **With autonomous-dev**:
 - You define your project once (PROJECT.md)
 - You create a GitHub issue for each feature
 - You run `/implement "#X"`
-- Claude follows your rules, writes tests, reviews its own work, scans for security, updates docs
-- You review a complete, tested, documented result
+- The harness enforces every step — research, planning, testing, implementation, adversarial review, security audit, documentation
+- You review a complete, tested, documented, security-scanned result
 
-**The difference**: Claude stops guessing and starts following your project's rules.
+**The difference**: Claude stops guessing. The harness keeps it honest.
 
-### How It Stays Honest
+### Three-Layer Harness Architecture
 
-Claude is brilliant at execution but unreliable at process. It skips tests, declares "good enough" on failing code, bypasses security reviews, and drifts from intent — not out of malice, but because it's trained to complete tasks, not follow engineering discipline. Prompt-level instructions ("please run tests") get ignored under context pressure.
+autonomous-dev enforces process through three layers, each addressing a different failure mode:
 
-autonomous-dev solves this with three layers that keep Claude honest:
+- **Hooks** (deterministic enforcement) — Run on every tool call, commit, and prompt. Hard gates that can't be argued with: tests must pass with 0 failures before code review starts, no stubs or placeholders allowed, security scan is mandatory, documentation must stay in sync. These are the harness equivalent of guardrails — if the model tries to skip a step, it's physically blocked.
 
-- **Hooks** (deterministic, can't be bypassed) — Run on every tool call, commit, and prompt. They enforce hard gates: tests must pass with 0 failures before code review starts, no stubs or placeholders allowed, security scan is mandatory, documentation must stay in sync. Claude can't argue with a hook — it blocks or it doesn't.
+- **Agents** (adversarial evaluation) — Each pipeline step is handled by a specialist agent with a specific job and constrained tools. Critically, the implementer never reviews its own work — a separate reviewer agent with a skeptical mandate evaluates it. This follows the generator/evaluator pattern: the tension between agents improves quality, just like a GAN network. No single agent can skip steps or self-approve.
 
-- **Agents** (specialist AI, scoped authority) — Each pipeline step is handled by a specialist agent with a specific job and constrained tools. The researcher only researches. The implementer only implements. The security auditor only audits. No single agent can skip steps or declare its own work "done" — the coordinator enforces the sequence.
+- **Skills** (progressive context injection) — Instead of stuffing the context window with every rule upfront (which causes context anxiety and drift), skills inject domain knowledge only when relevant. Testing standards load during test writing. Security patterns load during security review. This keeps Claude focused within its current step.
 
-- **Skills** (domain knowledge, injected at the right time) — Instead of stuffing the context window with every rule upfront, skills inject relevant knowledge only when needed. Testing standards load during test writing. Security patterns load during security review. This keeps Claude focused and reduces the drift that comes from context overload.
-
-**The result**: Every feature goes through every step. Not because Claude remembers to, but because the system won't let it skip.
+**The result**: Every feature goes through every step. Not because Claude remembers to, but because the harness won't let it skip.
 
 ---
 
@@ -231,11 +231,11 @@ For existing projects, use:
 
 ---
 
-## How It Works
+## How the Harness Works
 
-### The Agent Pipeline
+### Generator / Evaluator Pipeline
 
-Every `/implement` runs this pipeline:
+Inspired by the adversarial evaluation pattern (generator creates, evaluator judges), every `/implement` runs this pipeline:
 
 ```
 /implement "feature"
@@ -271,13 +271,13 @@ Features validate against your PROJECT.md before work starts. If you request som
 
 ### Context Management
 
-Each feature uses ~25-35K tokens. After 4-5 features:
+As the context window fills up, models exhibit *context anxiety* — they rush through steps, declare things done prematurely, and degrade output quality. autonomous-dev handles this with context resets between features:
 
-1. System pauses automatically
-2. Run `/clear` to reset context
-3. Run `/implement --resume <batch-id>` to continue
+1. Each feature uses ~25-35K tokens
+2. After 4-5 features, run `/clear` to reset context
+3. Run `/implement --resume <batch-id>` to continue from where you left off
 
-**This is by design** - forces review checkpoints and prevents degraded performance.
+Batch processing handles this automatically with worktree isolation and checkpoint/resume.
 
 ---
 
