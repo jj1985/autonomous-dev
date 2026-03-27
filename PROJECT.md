@@ -1,7 +1,7 @@
 # Project Context - Autonomous Development Plugin
 
-**Last Updated**: 2026-03-07
-**Version**: v3.50.0
+**Last Updated**: 2026-03-28
+**Version**: v3.51.0
 
 ---
 
@@ -28,16 +28,24 @@ autonomous-dev provides **macro alignment with micro flexibility**:
 research → plan → test → implement → review → security → docs → commit
                                                                     ↓
                                               session logs → analysis → issues
+                                                                    ↓
+                                         measure → diagnose → fix → verify
+                                            ↑                         ↓
+                                            └─────────────────────────┘
 ```
 
-Every step. Every feature. Documentation, tests, and code stay in sync automatically. The system learns from its own sessions and files issues for what it finds.
+Every step. Every feature. Documentation, tests, and code stay in sync automatically. The system learns from its own sessions, measures its own effectiveness, diagnoses its own weaknesses, and improves its own prompts — verified by benchmarks before deployment.
 
 ```bash
-/implement "issue #72"
+/implement "issue #72"    # build features with full SDLC
+/self-improve             # system improves itself from runtime data
 ```
 
 **User Intent** (stated 2025-10-26):
 > "I speak requirements and Claude Code delivers a first grade software engineering outcome in minutes by following all the necessary steps that would need to be taken in top level software engineering but so much quicker with the use of AI and validation"
+
+**Current Direction** (stated 2026-03-28):
+> Building complete autonomous improvements using real-time runtime data as it's used. The system should get better every week without anyone thinking about it.
 
 **Key Points:**
 - All SDLC steps required — Research → Plan → Acceptance Tests → Implement → Review → Security → Docs (no shortcuts, diamond testing model)
@@ -45,6 +53,7 @@ Every step. Every feature. Documentation, tests, and code stay in sync automatic
 - Speed via AI — Each step accelerated, not eliminated
 - PROJECT.md is the gatekeeper — Work blocked if not aligned
 - Continuous improvement — System learns from sessions, detects drift, auto-files issues
+- **Self-improvement** — System measures its own effectiveness via benchmarks, diagnoses weaknesses from runtime data, improves its own agent prompts, and verifies improvements before deploying them
 
 ---
 
@@ -66,6 +75,9 @@ Every step. Every feature. Documentation, tests, and code stay in sync automatic
 - HARD GATE enforcement patterns for pipeline quality (test gate, anti-stubbing, hook registration, documentation congruence)
 - Alignment validation enforcement (strengthening PROJECT.md scope checks beyond advisory text)
 - Training pipeline utilities (data curation, quality validation, distributed training coordination)
+- Effectiveness benchmarking (labeled datasets of real diffs, balanced accuracy scoring, per-category and per-difficulty measurement of reviewer/agent quality)
+- Skill-based standards enforcement (engineering skills as explicit evaluation criteria for pipeline agents, not just documentation)
+- Autonomous self-improvement (runtime data aggregation → weakness diagnosis → prompt/skill fixes → benchmark verification → deploy — closed loop, no human in the loop for safe targets)
 
 **OUT of Scope** (Features we avoid):
 
@@ -157,10 +169,20 @@ Advisory text ("please ensure...") gets ignored under context pressure. What wor
 - `/improve` command triggers analysis; `--auto-file` creates issues in `akaszubski/autonomous-dev` with label `auto-improvement`
 - **Asynchronous** — runs post-session, never blocks active work
 
+**Layer 4: Autonomous Self-Improvement** (Closed-Loop, Evidence-Driven)
+- **Measurement**: Effectiveness benchmarks with 146+ labeled samples measure reviewer/agent accuracy per defect category and difficulty tier. Balanced accuracy, FPR, FNR, per-category breakdown tracked over time.
+- **Aggregation**: Runtime signals (session logs, benchmark scores, CI findings, auto-improvement issues) consolidated into ranked weakness reports
+- **Diagnosis**: Each weakness traced to root cause — specific file, section, missing instruction — with confidence scoring
+- **Action**: HIGH confidence diagnoses applied autonomously to agent prompts, skill definitions, and benchmark data. MEDIUM filed as issues. Hooks and core code require human approval.
+- **Verification**: Benchmark run before and after every change. Commit if improved, revert if regressed. Baseline updated on success.
+- **Scheduling**: Weekly automated cycles via `/self-improve`. Post-change hooks verify agent prompt edits don't regress quality.
+- See issues #579-#584 for implementation roadmap.
+
 **Key Distinctions:**
 - **Hooks = enforcement** (quality gates, always active, blocking)
 - **Agents = intelligence** (expert assistance, conditionally invoked, advisory)
 - **Continuous improvement = learning** (post-hoc analysis, drift detection, issue filing)
+- **Self-improvement = evolution** (autonomous measurement, diagnosis, fix, verification — closed loop)
 
 ### Hook Lifecycle Events
 
