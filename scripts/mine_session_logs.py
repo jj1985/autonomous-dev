@@ -19,6 +19,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+# Import shared security utilities (GitHub Issue #575 - validate --logs-dir path)
+# Add parent directories to sys.path to allow import from plugins/autonomous-dev/lib
+_script_dir = Path(__file__).parent.resolve()
+_project_root = _script_dir.parent
+_lib_dir = _project_root / "plugins" / "autonomous-dev" / "lib"
+sys.path.insert(0, str(_lib_dir))
+
+from security_utils import validate_path
+
 
 def parse_session_logs(logs_dir: Path) -> List[Dict[str, Any]]:
     """Parse JSONL session activity log files.
@@ -179,6 +188,19 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    try:
+        args.logs_dir = validate_path(args.logs_dir, purpose="session logs directory", allow_missing=True)
+    except ValueError as e:
+        print(f"Error: Invalid --logs-dir path: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.output:
+        try:
+            args.output = validate_path(args.output, purpose="output file", allow_missing=True)
+        except ValueError as e:
+            print(f"Error: Invalid --output path: {e}", file=sys.stderr)
+            sys.exit(1)
 
     print(f"Parsing session logs from {args.logs_dir}...", file=sys.stderr)
     events = parse_session_logs(args.logs_dir)

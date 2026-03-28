@@ -192,3 +192,64 @@ class TestBuildSampleFromSession:
         }
         sample = build_sample_from_session(session_data)
         assert sample["description"] == "Review had errors"
+
+
+class TestPathValidation:
+    """Test path validation for --logs-dir and --output arguments.
+
+    GitHub Issue: #575
+    """
+
+    def test_logs_dir_traversal_rejected(self, tmp_path: Path) -> None:
+        """Path traversal in --logs-dir exits with code 1."""
+        import subprocess
+
+        script = Path(__file__).resolve().parents[3] / "scripts" / "mine_session_logs.py"
+        result = subprocess.run(
+            [sys.executable, str(script), "--logs-dir", "../../etc"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Invalid --logs-dir path" in result.stderr
+
+    def test_logs_dir_absolute_system_path_rejected(self) -> None:
+        """Absolute system path in --logs-dir exits with code 1."""
+        import subprocess
+
+        script = Path(__file__).resolve().parents[3] / "scripts" / "mine_session_logs.py"
+        result = subprocess.run(
+            [sys.executable, str(script), "--logs-dir", "/etc"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Invalid --logs-dir path" in result.stderr
+
+    def test_valid_project_path_accepted(self, tmp_path: Path) -> None:
+        """A valid temporary project path is accepted without error."""
+        import subprocess
+
+        script = Path(__file__).resolve().parents[3] / "scripts" / "mine_session_logs.py"
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir()
+        result = subprocess.run(
+            [sys.executable, str(script), "--logs-dir", str(logs_dir)],
+            capture_output=True,
+            text=True,
+        )
+        # Should succeed (exit 0) — empty logs dir returns empty JSON array
+        assert result.returncode == 0
+
+    def test_output_path_traversal_rejected(self) -> None:
+        """Path traversal in --output exits with code 1."""
+        import subprocess
+
+        script = Path(__file__).resolve().parents[3] / "scripts" / "mine_session_logs.py"
+        result = subprocess.run(
+            [sys.executable, str(script), "--output", "../../etc/passwd"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Invalid --output path" in result.stderr
