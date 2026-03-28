@@ -61,6 +61,8 @@
     "config": {
       "files": [
         "plugins/autonomous-dev/config/auto_approve_policy.json",
+        "plugins/autonomous-dev/config/component_classifications.json",
+        "plugins/autonomous-dev/config/component_classifications.schema.json",
         "plugins/autonomous-dev/config/doc_change_registry.json",
         "plugins/autonomous-dev/config/global_settings_template.json",
         "plugins/autonomous-dev/config/hook-metadata.schema.json",
