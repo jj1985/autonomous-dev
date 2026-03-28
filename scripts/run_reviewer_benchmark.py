@@ -203,6 +203,12 @@ def main() -> None:
         default=False,
         help="Validate dataset against taxonomy, report stats, and exit without API calls",
     )
+    parser.add_argument(
+        "--history",
+        type=Path,
+        default=None,
+        help="Path to JSONL history file for trend tracking (appends each run)",
+    )
 
     args = parser.parse_args()
 
@@ -378,6 +384,27 @@ def main() -> None:
             print(
                 "WARNING: Could not import BenchmarkStore. "
                 "Results not persisted to store.",
+                file=sys.stderr,
+            )
+
+    # Store in JSONL history (Issue #578)
+    if args.history:
+        try:
+            from benchmark_history import BenchmarkHistory, compute_prompt_hash
+
+            prompt_hash = compute_prompt_hash(reviewer_instructions)
+            history = BenchmarkHistory(args.history)
+            history.append(
+                report,
+                prompt_hash=prompt_hash,
+                model=args.model,
+                metadata={"dataset": str(args.dataset), "trials": args.trials},
+            )
+            print(f"Report appended to history: {args.history}")
+        except ImportError:
+            print(
+                "WARNING: Could not import BenchmarkHistory. "
+                "Results not appended to history.",
                 file=sys.stderr,
             )
 

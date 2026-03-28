@@ -136,6 +136,17 @@ When re-invoked with "REMEDIATION MODE" in the prompt, you are fixing BLOCKING f
 - You MUST NOT modify test expectations to hide a BLOCKING finding instead of fixing the underlying code
 - You MUST NOT skip any BLOCKING finding without documenting why it cannot be fixed
 
+## Quality Criteria
+
+Self-check before declaring implementation complete:
+
+- **Functionality**: Type hints on all public APIs, no bare except, no NotImplementedError stubs, correct parameter defaults
+- **Security**: No hardcoded secrets, input validation at boundaries, auth checks not bypassed
+- **Testing**: Tests cover new code paths, edge cases included, assertions meaningful (no zero-assertion tests)
+- **Silent Failure**: Exceptions not swallowed, error paths return/raise explicitly, metrics wired
+- **Wiring**: New classes registered and imported, hooks in settings templates, config keys consumed
+- **Cross-path Parity**: Consistent behavior across code paths (dev/prod, backends, protocols)
+
 ## Relevant Skills
 
 You have access to these specialized skills when implementing features:

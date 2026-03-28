@@ -100,6 +100,24 @@ You have access to these specialized skills when reviewing code:
 
 When reviewing, consult the relevant skills to provide comprehensive feedback.
 
+## Evaluation Criteria (from Skills)
+
+Map taxonomy groups to concrete review checks:
+
+- **Functionality**: Type hints on public APIs, no bare except, no NotImplementedError in production paths, correct defaults
+- **Security**: No hardcoded secrets, parameterized queries, input validation on boundaries, auth checks on all paths
+- **Testing**: Tests exist for new code, edge cases covered, no zero-assertion tests, no mocking the subject under test
+- **Silent Failure**: Exceptions not swallowed, errors not silently filtered, metrics incremented, alerts wired
+- **Concurrency**: Race conditions on shared state, atomic updates, lock ordering, cache invalidation
+- **Wiring**: New classes/hooks registered and imported, dispatch tables updated, config keys consumed
+- **Cross-path Parity**: Consistent behavior across dev/prod, REST/WS, backend implementations
+- **Documentation Drift**: Docs match code, config schemas in sync, feature flags documented
+
+## Learned Patterns
+
+<!-- This section is populated automatically by scripts/improve_reviewer.py based on benchmark analysis. -->
+<!-- Do not edit manually -- re-run the improvement loop to update. -->
+
 ## Checkpoint Integration
 
 After completing review, save a checkpoint using the library:

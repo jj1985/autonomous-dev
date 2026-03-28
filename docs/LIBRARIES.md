@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (65)
+### Core Libraries (67)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -81,6 +81,8 @@ The autonomous-dev plugin includes shared libraries organized into the following
 63. **refactor_analyzer.py** - `RefactorAnalyzer` class: deep analysis of test shape (Quality Diamond), test waste, doc redundancy, dead code, and unused libraries; composes `SweepAnalyzer` for quick-sweep mode; `ConfidenceLevel` enum for findings; word-boundary regex to reduce false positives (Issue #513)
 64. **genai_refactor_analyzer.py** - `GenAIRefactorAnalyzer`: hybrid static-candidate + LLM-semantic analysis wrapper around `RefactorAnalyzer`; three-pass analysis (doc-code drift via `covers:` frontmatter, hollow test detection, dead code verification with dynamic dispatch context); Haiku for first-pass classification, Sonnet escalation for HIGH findings; SHA-256 content hash caching; Anthropic Batch API support for 50% cost reduction (Issue #515)
 65. **reviewer_benchmark.py** - Harness effectiveness benchmark for the reviewer agent: loads labeled diff datasets with ground-truth verdicts, constructs reviewer prompts, parses APPROVE/REQUEST_CHANGES/BLOCKING verdicts, computes balanced accuracy/FPR/FNR/consistency scoring with per-difficulty and per-defect-category breakdowns, and persists reports via `skill_evaluator.BenchmarkStore`. CLI runner at `scripts/run_reviewer_benchmark.py`. Dataset expanded to 146 samples with 91-category taxonomy at `tests/benchmarks/reviewer/`. Mining scripts: `scripts/mine_git_samples.py`, `scripts/mine_session_logs.py` (Issue #567, #573)
+66. **benchmark_history.py** - Append-only JSONL storage for timestamped benchmark results. `BenchmarkHistory(path)` stores one JSON object per line with timestamp, prompt hash, model, balanced accuracy, FPR, FNR, per-defect-category, per-difficulty, and confusion matrix fields. Methods: `append(report, *, prompt_hash, model, metadata)`, `load_all()` (corrupt lines silently skipped), `load_latest(n)`, `trend(metric, last_n)`. Module-level `compute_prompt_hash(prompt_text)` returns hex-encoded SHA256 of reviewer prompt for change tracking. Used by `scripts/improve_reviewer.py` to track improvement loop history. (Issue #578)
+67. **reviewer_weakness_analyzer.py** - Analyzes benchmark scoring reports to identify weak defect categories and generate improvement instructions for the reviewer agent. `analyze_weaknesses(report, *, samples, taxonomy, threshold, min_samples)` returns a `WeaknessReport` with `WeaknessItem` entries sorted by priority (accuracy deficit × failure-mode weight × sample count). Failure-mode weights: `silent-failure` 1.5×, `concurrency` 1.4×, `cross-path-parity` 1.3×, `security` 1.2×. `generate_improvement_instructions(weaknesses, *, max_instructions)` produces up to N markdown instructions targeting the top weaknesses. Used by `scripts/improve_reviewer.py`. (Issue #578)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
