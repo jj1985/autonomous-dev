@@ -1,6 +1,6 @@
 # autonomous-dev — A Development Harness for Claude Code
 
-![Version](https://img.shields.io/badge/version-3.50.0-blue)
+![Version](https://img.shields.io/badge/version-3.51.0-blue)
 
 **A harness that wraps Claude Code with enforcement, specialist agents, and alignment gates to deliver consistent, production-grade software engineering outcomes.**
 

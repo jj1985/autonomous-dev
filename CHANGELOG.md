@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Fixed
+- **VERSION file congruence with PROJECT.md**: `plugins/autonomous-dev/VERSION` updated from 3.50.0 to 3.51.0 to match the version declared in PROJECT.md.
+
 ### Added
 - **Alignment Gate: Hook-Level Enforcement + Scope Injection** (#585): `unified_pre_tool.py` now blocks coordinator Write/Edit/Bash to code files when `/implement` is active but STEP 2 (PROJECT.md alignment) has not yet completed — `alignment_passed: true` must be present in the pipeline state before any code changes are permitted. The gate fails closed on HMAC failure or missing state. `alignment_passed` is included in the HMAC-signed fields of `pipeline_state.py` to prevent state tampering. `implement.md` STEP 2 updated to write `alignment_passed: True` to the pipeline state after the alignment check passes. `implement.md` STEP 5 (planner) and STEP 10a (reviewer) now receive PROJECT.md GOALS and SCOPE sections verbatim so sub-agents operate within validated scope boundaries. 12 unit tests (`test_alignment_gate_enforcement.py`), 7 library tests (`test_pipeline_state_alignment.py`), and 11 acceptance tests (`test_acceptance_alignment_gate.py`).
 
