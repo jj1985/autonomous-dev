@@ -1,0 +1,739 @@
+"""Runtime Data Aggregator - Collect, normalize, rank, and persist improvement signals.
+
+Collects signals from 4 sources:
+1. Session activity logs (tool failures, hook errors, agent crashes)
+2. Benchmark history (per-category accuracy deficits)
+3. CI/session logs (known bypass pattern matches)
+4. GitHub issues (auto-improvement labeled issues)
+
+Normalizes severity, computes priority with type-specific weights,
+and persists ranked reports as append-only JSONL.
+
+Security:
+- CWE-532: Secret scrubbing for API keys, tokens, passwords
+- CWE-400: Line cap on session log reading (MAX_LINES = 100_000)
+- CWE-78: Subprocess calls use argument lists (no shell invocation)
+- CWE-22: Path validation via resolve() within project_root
+
+GitHub Issue: #579
+"""
+
+import json
+import math
+import re
+import subprocess
+import sys
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from .benchmark_history import BenchmarkHistory
+except ImportError:
+    _lib_dir = Path(__file__).parent.resolve()
+    sys.path.insert(0, str(_lib_dir))
+    from benchmark_history import BenchmarkHistory
+
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+MAX_LINES = 100_000
+
+SEVERITY_WEIGHTS: Dict[str, float] = {
+    "bypass_detected": 1.5,
+    "hook_failure": 1.4,
+    "benchmark_weakness": 1.3,
+    "step_skipping": 1.2,
+    "github_issue": 1.0,
+}
+
+DEFAULT_WEIGHT = 1.0
+
+BENCHMARK_ACCURACY_THRESHOLD = 0.70
+
+SECRET_PATTERNS: List[Tuple[str, str]] = [
+    (r"sk-[a-zA-Z0-9]{6,}", "[REDACTED]"),
+    (r"ghp_[a-zA-Z0-9]{6,}", "[REDACTED]"),
+    (r"gho_[a-zA-Z0-9]{6,}", "[REDACTED]"),
+    (r"ghr_[a-zA-Z0-9]{6,}", "[REDACTED]"),
+    (r"anthropic_[a-zA-Z0-9_-]{6,}", "[REDACTED]"),
+    (r"Bearer\s+[a-zA-Z0-9_\-]+", "[REDACTED]"),
+    (r"password[\"']?\s*[=:]\s*[\"']?[^\s\"']+", "[REDACTED]"),
+    (r"api[_-]?key[\"']?\s*[=:]\s*[\"']?[a-zA-Z0-9_-]{6,}", "[REDACTED]"),
+    (r"secret[\"']?\s*[=:]\s*[\"']?[a-zA-Z0-9_-]{6,}", "[REDACTED]"),
+]
+
+
+# =============================================================================
+# Data Classes
+# =============================================================================
+
+@dataclass
+class AggregatedSignal:
+    """A single aggregated improvement signal.
+
+    Args:
+        source: Origin of the signal (session, benchmark, ci, github)
+        signal_type: Classification (hook_failure, benchmark_weakness, bypass_detected, etc.)
+        description: Human-readable description of the signal
+        frequency: How many times this signal was observed in the window
+        severity: Normalized severity score (0.0-1.0)
+        raw_data: Original data for traceability
+        timestamp: ISO 8601 timestamp of the most recent occurrence
+    """
+
+    source: str
+    signal_type: str
+    description: str
+    frequency: int = 1
+    severity: float = 0.0
+    raw_data: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
+@dataclass
+class SourceHealth:
+    """Health status of a signal source.
+
+    Args:
+        source: Name of the signal source
+        status: Health status (ok, error, empty)
+        signal_count: Number of signals collected
+        error_message: Error details if status is 'error'
+    """
+
+    source: str
+    status: str = "ok"
+    signal_count: int = 0
+    error_message: str = ""
+
+
+@dataclass
+class AggregatedReport:
+    """Complete aggregated report with ranked signals and source health.
+
+    Args:
+        signals: Ranked list of aggregated signals (highest priority first)
+        source_health: Health status for each signal source
+        window_start: ISO 8601 start of the analysis window
+        window_end: ISO 8601 end of the analysis window
+        generated_at: ISO 8601 timestamp of report generation
+        top_n: Maximum number of signals included
+    """
+
+    signals: List[AggregatedSignal]
+    source_health: List[SourceHealth]
+    window_start: str
+    window_end: str
+    generated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    top_n: int = 10
+
+
+# =============================================================================
+# Security Utilities
+# =============================================================================
+
+def scrub_secrets(text: str) -> str:
+    """Remove API keys, tokens, and passwords from text.
+
+    Args:
+        text: Text that may contain secrets
+
+    Returns:
+        Text with secrets replaced by [REDACTED]
+    """
+    result = text
+    for pattern, replacement in SECRET_PATTERNS:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    return result
+
+
+def _sanitize_string(text: str) -> str:
+    """Strip control characters and scrub secrets from a string.
+
+    Args:
+        text: Raw string to sanitize
+
+    Returns:
+        Sanitized string with CR/LF/tab stripped and secrets scrubbed
+    """
+    cleaned = text.replace("\r", "").replace("\n", " ").replace("\t", " ")
+    return scrub_secrets(cleaned)
+
+
+def _validate_path(path: Path, project_root: Path) -> bool:
+    """Validate that a path resolves within project_root.
+
+    Args:
+        path: Path to validate
+        project_root: Allowed root directory
+
+    Returns:
+        True if path is within project_root
+    """
+    try:
+        resolved = path.resolve()
+        root_resolved = project_root.resolve()
+        return resolved.is_relative_to(root_resolved)
+    except (OSError, ValueError):
+        return False
+
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+def normalize_severity(value: float, min_val: float, max_val: float) -> float:
+    """Min-max normalize a value to [0, 1].
+
+    Args:
+        value: Raw value to normalize
+        min_val: Minimum of the range
+        max_val: Maximum of the range
+
+    Returns:
+        Normalized value clamped to [0.0, 1.0]
+    """
+    if min_val >= max_val:
+        return 0.0
+    normalized = (value - min_val) / (max_val - min_val)
+    return max(0.0, min(1.0, normalized))
+
+
+def compute_priority(signal: AggregatedSignal) -> float:
+    """Compute priority score for ranking signals.
+
+    Formula: SEVERITY_WEIGHTS[signal_type] * severity * log(1 + frequency)
+
+    Higher priority = more urgent. Uses type-specific weights to
+    prioritize bypasses and hook failures over informational signals.
+
+    Args:
+        signal: Signal to compute priority for
+
+    Returns:
+        Priority score (higher = more urgent)
+    """
+    weight = SEVERITY_WEIGHTS.get(signal.signal_type, DEFAULT_WEIGHT)
+    return weight * signal.severity * math.log(1 + signal.frequency)
+
+
+# =============================================================================
+# Collectors
+# =============================================================================
+
+def collect_session_signals(
+    logs_dir: Path,
+    window_days: int = 7,
+) -> Tuple[List[AggregatedSignal], SourceHealth]:
+    """Collect signals from session activity logs.
+
+    Reads .claude/logs/activity/*.jsonl files, filters by time window,
+    and extracts tool failures (success=false), hook errors, and agent crashes.
+    Groups by (signal_type, description) and counts frequency.
+
+    Args:
+        logs_dir: Path to .claude/logs/activity/ directory
+        window_days: Number of days to look back
+
+    Returns:
+        Tuple of (signals, source_health)
+    """
+    source_name = "session"
+    try:
+        if not logs_dir.exists():
+            return [], SourceHealth(source=source_name, status="empty", signal_count=0)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+        signal_groups: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        total_lines = 0
+
+        jsonl_files = sorted(logs_dir.glob("*.jsonl"))
+        for jsonl_file in jsonl_files:
+            try:
+                with open(jsonl_file, "r") as f:
+                    for line in f:
+                        if total_lines >= MAX_LINES:
+                            break
+                        total_lines += 1
+
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            event = json.loads(line)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+
+                        # Filter by timestamp
+                        ts_str = event.get("timestamp", "")
+                        try:
+                            ts = datetime.fromisoformat(ts_str)
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=timezone.utc)
+                            if ts < cutoff:
+                                continue
+                        except (ValueError, TypeError):
+                            continue
+
+                        # Extract failure signals
+                        success = event.get("success", True)
+                        if success is True:
+                            continue
+
+                        tool = event.get("tool", "unknown")
+                        output_summary = event.get("output_summary", "")
+                        hook = event.get("hook", "")
+
+                        # Determine signal type
+                        if hook and "error" in str(output_summary).lower():
+                            signal_type = "hook_failure"
+                        elif "agent" in str(event.get("agent", "") or "").lower():
+                            signal_type = "agent_crash"
+                        else:
+                            signal_type = "tool_failure"
+
+                        description = _sanitize_string(
+                            f"{tool}: {output_summary}"[:200]
+                        )
+                        key = (signal_type, description)
+
+                        if key not in signal_groups:
+                            signal_groups[key] = {
+                                "frequency": 0,
+                                "latest_ts": ts_str,
+                                "raw_data": event,
+                            }
+                        signal_groups[key]["frequency"] += 1
+                        signal_groups[key]["latest_ts"] = ts_str
+
+            except (OSError, PermissionError):
+                continue
+
+            if total_lines >= MAX_LINES:
+                break
+
+        signals = []
+        for (sig_type, desc), data in signal_groups.items():
+            signals.append(
+                AggregatedSignal(
+                    source=source_name,
+                    signal_type=sig_type,
+                    description=desc,
+                    frequency=data["frequency"],
+                    severity=normalize_severity(data["frequency"], 1, 20),
+                    raw_data=data["raw_data"],
+                    timestamp=data["latest_ts"],
+                )
+            )
+
+        health = SourceHealth(
+            source=source_name,
+            status="ok" if signals else "empty",
+            signal_count=len(signals),
+        )
+        return signals, health
+
+    except Exception as e:
+        return [], SourceHealth(
+            source=source_name, status="error", signal_count=0,
+            error_message=str(e)[:200],
+        )
+
+
+def collect_benchmark_signals(
+    history_path: Path,
+    window_days: int = 7,
+) -> Tuple[List[AggregatedSignal], SourceHealth]:
+    """Collect signals from benchmark history.
+
+    Uses BenchmarkHistory to load entries, filters by time window,
+    and converts per-category accuracy deficits (below threshold) into signals.
+
+    Args:
+        history_path: Path to benchmark history JSONL file
+        window_days: Number of days to look back
+
+    Returns:
+        Tuple of (signals, source_health)
+    """
+    source_name = "benchmark"
+    try:
+        history = BenchmarkHistory(history_path)
+        entries = history.load_all()
+
+        if not entries:
+            return [], SourceHealth(source=source_name, status="empty", signal_count=0)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+        signals = []
+
+        for entry in entries:
+            ts_str = entry.get("timestamp", "")
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts < cutoff:
+                    continue
+            except (ValueError, TypeError):
+                continue
+
+            per_defect = entry.get("per_defect_category", {})
+            if not isinstance(per_defect, dict):
+                continue
+
+            for category, stats in per_defect.items():
+                if not isinstance(stats, dict):
+                    continue
+
+                accuracy = stats.get("accuracy", 1.0)
+                total = stats.get("total", 0)
+
+                if accuracy < BENCHMARK_ACCURACY_THRESHOLD and total > 0:
+                    deficit = BENCHMARK_ACCURACY_THRESHOLD - accuracy
+                    signals.append(
+                        AggregatedSignal(
+                            source=source_name,
+                            signal_type="benchmark_weakness",
+                            description=_sanitize_string(
+                                f"Category '{category}' accuracy {accuracy:.2f} "
+                                f"(threshold {BENCHMARK_ACCURACY_THRESHOLD})"
+                            ),
+                            frequency=total,
+                            severity=normalize_severity(deficit, 0.0, BENCHMARK_ACCURACY_THRESHOLD),
+                            raw_data={"category": category, **stats},
+                            timestamp=ts_str,
+                        )
+                    )
+
+        health = SourceHealth(
+            source=source_name,
+            status="ok" if signals else "empty",
+            signal_count=len(signals),
+        )
+        return signals, health
+
+    except Exception as e:
+        return [], SourceHealth(
+            source=source_name, status="error", signal_count=0,
+            error_message=str(e)[:200],
+        )
+
+
+def collect_ci_signals(
+    logs_dir: Path,
+    patterns_path: Path,
+    window_days: int = 7,
+) -> Tuple[List[AggregatedSignal], SourceHealth]:
+    """Collect signals by matching session logs against known bypass patterns.
+
+    Reads session activity logs and cross-references against
+    known_bypass_patterns.json to detect model intent bypasses.
+
+    Args:
+        logs_dir: Path to .claude/logs/activity/ directory
+        patterns_path: Path to known_bypass_patterns.json
+        window_days: Number of days to look back
+
+    Returns:
+        Tuple of (signals, source_health)
+    """
+    source_name = "ci"
+    try:
+        if not patterns_path.exists():
+            return [], SourceHealth(
+                source=source_name, status="error", signal_count=0,
+                error_message=f"Patterns file not found: {patterns_path}",
+            )
+
+        try:
+            patterns_data = json.loads(patterns_path.read_text())
+        except (json.JSONDecodeError, ValueError) as e:
+            return [], SourceHealth(
+                source=source_name, status="error", signal_count=0,
+                error_message=f"Invalid patterns JSON: {e}",
+            )
+
+        patterns = patterns_data.get("patterns", [])
+        if not patterns:
+            return [], SourceHealth(source=source_name, status="empty", signal_count=0)
+
+        # Build indicator lookup by pattern
+        indicator_map: Dict[str, Dict[str, Any]] = {}
+        for pat in patterns:
+            pat_id = pat.get("id", "")
+            detection = pat.get("detection", {})
+            indicators = detection.get("indicators", [])
+            indicator_map[pat_id] = {
+                "name": pat.get("name", pat_id),
+                "severity": pat.get("severity", "warning"),
+                "indicators": [ind.lower() for ind in indicators],
+            }
+
+        if not logs_dir.exists():
+            return [], SourceHealth(source=source_name, status="empty", signal_count=0)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+        # Track (pattern_id, date) for deduplication
+        seen: set = set()
+        signals = []
+        total_lines = 0
+
+        jsonl_files = sorted(logs_dir.glob("*.jsonl"))
+        for jsonl_file in jsonl_files:
+            try:
+                with open(jsonl_file, "r") as f:
+                    for line in f:
+                        if total_lines >= MAX_LINES:
+                            break
+                        total_lines += 1
+
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            event = json.loads(line)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+
+                        ts_str = event.get("timestamp", "")
+                        try:
+                            ts = datetime.fromisoformat(ts_str)
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=timezone.utc)
+                            if ts < cutoff:
+                                continue
+                            event_date = ts.strftime("%Y-%m-%d")
+                        except (ValueError, TypeError):
+                            continue
+
+                        # Build a searchable text from the event
+                        event_text = json.dumps(event, default=str).lower()
+
+                        for pat_id, pat_info in indicator_map.items():
+                            for indicator in pat_info["indicators"]:
+                                if indicator in event_text:
+                                    dedup_key = (pat_id, event_date)
+                                    if dedup_key in seen:
+                                        break
+                                    seen.add(dedup_key)
+
+                                    sev_map = {"critical": 0.9, "warning": 0.5, "info": 0.2}
+                                    sev = sev_map.get(pat_info["severity"], 0.5)
+
+                                    signals.append(
+                                        AggregatedSignal(
+                                            source=source_name,
+                                            signal_type="bypass_detected",
+                                            description=_sanitize_string(
+                                                f"Bypass pattern '{pat_info['name']}' detected"
+                                            ),
+                                            frequency=1,
+                                            severity=sev,
+                                            raw_data={"pattern_id": pat_id, "date": event_date},
+                                            timestamp=ts_str,
+                                        )
+                                    )
+                                    break  # One match per pattern per event
+
+            except (OSError, PermissionError):
+                continue
+
+            if total_lines >= MAX_LINES:
+                break
+
+        health = SourceHealth(
+            source=source_name,
+            status="ok" if signals else "empty",
+            signal_count=len(signals),
+        )
+        return signals, health
+
+    except Exception as e:
+        return [], SourceHealth(
+            source=source_name, status="error", signal_count=0,
+            error_message=str(e)[:200],
+        )
+
+
+def collect_github_signals(
+    repo: str = "akaszubski/autonomous-dev",
+) -> Tuple[List[AggregatedSignal], SourceHealth]:
+    """Collect signals from GitHub issues labeled auto-improvement.
+
+    Runs gh CLI to list open issues with the auto-improvement label.
+    Gracefully falls back if gh is unavailable or times out.
+
+    Args:
+        repo: GitHub repository in owner/repo format
+
+    Returns:
+        Tuple of (signals, source_health)
+    """
+    source_name = "github"
+    try:
+        result = subprocess.run(
+            [
+                "gh", "issue", "list",
+                "--repo", repo,
+                "--label", "auto-improvement",
+                "--state", "open",
+                "--json", "title,body,labels,createdAt",
+            ],
+            capture_output=True,
+            timeout=30,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            return [], SourceHealth(
+                source=source_name, status="error", signal_count=0,
+                error_message=_sanitize_string(result.stderr[:200]),
+            )
+
+        try:
+            issues = json.loads(result.stdout)
+        except (json.JSONDecodeError, ValueError):
+            return [], SourceHealth(
+                source=source_name, status="error", signal_count=0,
+                error_message="Invalid JSON from gh CLI",
+            )
+
+        if not issues:
+            return [], SourceHealth(source=source_name, status="empty", signal_count=0)
+
+        signals = []
+        for issue in issues:
+            title = _sanitize_string(issue.get("title", ""))
+            created = issue.get("createdAt", "")
+            signals.append(
+                AggregatedSignal(
+                    source=source_name,
+                    signal_type="github_issue",
+                    description=title[:200],
+                    frequency=1,
+                    severity=0.5,
+                    raw_data={"title": title, "createdAt": created},
+                    timestamp=created,
+                )
+            )
+
+        health = SourceHealth(
+            source=source_name,
+            status="ok",
+            signal_count=len(signals),
+        )
+        return signals, health
+
+    except FileNotFoundError:
+        return [], SourceHealth(
+            source=source_name, status="error", signal_count=0,
+            error_message="gh CLI not found",
+        )
+    except subprocess.TimeoutExpired:
+        return [], SourceHealth(
+            source=source_name, status="error", signal_count=0,
+            error_message="gh CLI timed out after 30s",
+        )
+    except Exception as e:
+        return [], SourceHealth(
+            source=source_name, status="error", signal_count=0,
+            error_message=str(e)[:200],
+        )
+
+
+# =============================================================================
+# Persistence
+# =============================================================================
+
+def persist_report(report: AggregatedReport, output_path: Path) -> None:
+    """Persist an aggregated report as a single JSONL line.
+
+    Appends to the output file (creates parent dirs if needed).
+
+    Args:
+        report: Report to persist
+        output_path: Path to the JSONL output file
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    report_dict = asdict(report)
+    with open(output_path, "a") as f:
+        f.write(json.dumps(report_dict, default=str) + "\n")
+
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
+def aggregate(
+    project_root: Path,
+    *,
+    window_days: int = 7,
+    top_n: int = 10,
+    repo: str = "akaszubski/autonomous-dev",
+) -> AggregatedReport:
+    """Aggregate signals from all sources, rank by priority, persist report.
+
+    Collects from session logs, benchmark history, CI bypass patterns,
+    and GitHub issues. Computes priority for each signal, sorts descending,
+    caps at top_n, and persists to .claude/logs/aggregated_reports.jsonl.
+
+    Args:
+        project_root: Root directory of the project
+        window_days: Number of days to look back (default: 7)
+        top_n: Maximum signals to include in report (default: 10)
+        repo: GitHub repository for issue collection
+
+    Returns:
+        AggregatedReport with ranked signals and source health
+    """
+    project_root = Path(project_root)
+    now = datetime.now(timezone.utc)
+    window_start = (now - timedelta(days=window_days)).isoformat()
+    window_end = now.isoformat()
+
+    logs_activity_dir = project_root / ".claude" / "logs" / "activity"
+    benchmark_path = project_root / ".claude" / "logs" / "benchmark_history.jsonl"
+    patterns_path = (
+        project_root / "plugins" / "autonomous-dev" / "config" / "known_bypass_patterns.json"
+    )
+
+    # Collect from all sources
+    session_signals, session_health = collect_session_signals(logs_activity_dir, window_days)
+    benchmark_signals, benchmark_health = collect_benchmark_signals(benchmark_path, window_days)
+    ci_signals, ci_health = collect_ci_signals(logs_activity_dir, patterns_path, window_days)
+    github_signals, github_health = collect_github_signals(repo)
+
+    # Merge all signals
+    all_signals = session_signals + benchmark_signals + ci_signals + github_signals
+    all_health = [session_health, benchmark_health, ci_health, github_health]
+
+    # Sort by priority (highest first) and cap at top_n
+    all_signals.sort(key=compute_priority, reverse=True)
+    top_signals = all_signals[:top_n]
+
+    report = AggregatedReport(
+        signals=top_signals,
+        source_health=all_health,
+        window_start=window_start,
+        window_end=window_end,
+        top_n=top_n,
+    )
+
+    # Persist
+    output_path = project_root / ".claude" / "logs" / "aggregated_reports.jsonl"
+    if _validate_path(output_path, project_root):
+        persist_report(report, output_path)
+
+    return report

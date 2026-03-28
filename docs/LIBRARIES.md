@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (67)
+### Core Libraries (69)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -83,6 +83,8 @@ The autonomous-dev plugin includes shared libraries organized into the following
 65. **reviewer_benchmark.py** - Harness effectiveness benchmark for the reviewer agent: loads labeled diff datasets with ground-truth verdicts, constructs reviewer prompts, parses APPROVE/REQUEST_CHANGES/BLOCKING verdicts, computes balanced accuracy/FPR/FNR/consistency scoring with per-difficulty and per-defect-category breakdowns, and persists reports via `skill_evaluator.BenchmarkStore`. CLI runner at `scripts/run_reviewer_benchmark.py`. Dataset expanded to 146 samples with 91-category taxonomy at `tests/benchmarks/reviewer/`. Mining scripts: `scripts/mine_git_samples.py`, `scripts/mine_session_logs.py` (Issue #567, #573)
 66. **benchmark_history.py** - Append-only JSONL storage for timestamped benchmark results. `BenchmarkHistory(path)` stores one JSON object per line with timestamp, prompt hash, model, balanced accuracy, FPR, FNR, per-defect-category, per-difficulty, and confusion matrix fields. Methods: `append(report, *, prompt_hash, model, metadata)`, `load_all()` (corrupt lines silently skipped), `load_latest(n)`, `trend(metric, last_n)`. Module-level `compute_prompt_hash(prompt_text)` returns hex-encoded SHA256 of reviewer prompt for change tracking. Used by `scripts/improve_reviewer.py` to track improvement loop history. (Issue #578)
 67. **reviewer_weakness_analyzer.py** - Analyzes benchmark scoring reports to identify weak defect categories and generate improvement instructions for the reviewer agent. `analyze_weaknesses(report, *, samples, taxonomy, threshold, min_samples)` returns a `WeaknessReport` with `WeaknessItem` entries sorted by priority (accuracy deficit × failure-mode weight × sample count). Failure-mode weights: `silent-failure` 1.5×, `concurrency` 1.4×, `cross-path-parity` 1.3×, `security` 1.2×. `generate_improvement_instructions(weaknesses, *, max_instructions)` produces up to N markdown instructions targeting the top weaknesses. Used by `scripts/improve_reviewer.py`. (Issue #578)
+68. **runtime_data_aggregator.py** - Collect, normalize, rank, and persist improvement signals from 4 sources: session activity logs (tool failures, hook errors, agent crashes), benchmark history (per-category accuracy deficits), CI/session logs (known bypass pattern matches), and GitHub issues (auto-improvement labeled issues). `aggregate(project_root, *, window_days, top_n, repo)` collects all signals, computes priority using `SEVERITY_WEIGHTS` × severity × log(1+frequency), sorts descending, caps at top_n, persists to `.claude/logs/aggregated_reports.jsonl`, and returns `AggregatedReport`. Security: CWE-532 secret scrubbing, CWE-400 line cap (MAX_LINES=100,000), CWE-78 subprocess argument lists, CWE-22 path validation. (Issue #579)
+69. **runtime_verification_classifier.py** - Classifies changed files into runtime verification categories (frontend, API, CLI) so the reviewer can perform targeted runtime checks after static code review. `classify_runtime_targets(file_paths)` returns a `RuntimeVerificationPlan` with `has_targets` flag and typed target lists (`FrontendTarget`, `ApiTarget`, `CliTarget`). Frontend detection matches `.html`, `.tsx`, `.jsx`, `.vue`, `.svelte` extensions with per-framework suggested checks. API detection matches `routes/`, `api/`, `endpoints/`, `views/` path patterns and common server filenames, guessing framework (fastapi, flask, express) from path. CLI detection matches scripts and named CLI tools. All detection excludes test files. (v1.0.0, Issue #564)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
@@ -15711,3 +15713,163 @@ class ScoringReport:
 - v1.0.0 (2026-03-28) - Initial release for harness effectiveness benchmark suite (Issue #567)
 
 **Version History**: v1.0.0 (2026-01-19) - Initial release for strict PROJECT.md alignment validation (Issue #251)
+
+---
+
+## runtime_data_aggregator.py (v1.0.0 - Issue #579)
+
+**Purpose**: Collect, normalize, rank, and persist improvement signals from session logs, benchmark history, CI bypass patterns, and GitHub issues to drive the automated reviewer improvement loop.
+
+**Problem**: Improvement signals exist across 4 disparate sources (session activity logs, benchmark history, CI logs, GitHub issues). There was no unified way to collect, normalize severity, compute cross-source priority, or persist ranked reports for downstream consumers.
+
+**Solution**: A single `aggregate()` entry point that collects from all sources in parallel, normalizes severity to [0,1], applies type-specific priority weights, ranks signals, caps at top_n, and appends to an append-only JSONL report log.
+
+**Location**: `plugins/autonomous-dev/lib/runtime_data_aggregator.py`
+
+**Security**:
+- CWE-532: Secret scrubbing (API keys, tokens, passwords) via `scrub_secrets()`
+- CWE-400: Line cap on session log reading (`MAX_LINES = 100_000`)
+- CWE-78: All subprocess calls use argument lists (no shell invocation)
+- CWE-22: Path validation via `resolve()` within `project_root`
+
+### Data Classes
+
+#### `AggregatedSignal`
+A single aggregated improvement signal.
+
+**Attributes**:
+- `source: str` - Origin (session, benchmark, ci, github)
+- `signal_type: str` - Classification (hook_failure, benchmark_weakness, bypass_detected, tool_failure, agent_crash, github_issue)
+- `description: str` - Human-readable description (secrets scrubbed)
+- `frequency: int` - How many times observed in the window
+- `severity: float` - Normalized severity score (0.0–1.0)
+- `raw_data: Dict[str, Any]` - Original data for traceability
+- `timestamp: str` - ISO 8601 timestamp of most recent occurrence
+
+#### `SourceHealth`
+Health status of a signal source.
+
+**Attributes**:
+- `source: str` - Source name
+- `status: str` - "ok", "error", or "empty"
+- `signal_count: int` - Number of signals collected
+- `error_message: str` - Error details when status is "error"
+
+#### `AggregatedReport`
+Complete report with ranked signals and per-source health.
+
+**Attributes**:
+- `signals: List[AggregatedSignal]` - Ranked signals (highest priority first)
+- `source_health: List[SourceHealth]` - Health per source
+- `window_start: str` - ISO 8601 start of analysis window
+- `window_end: str` - ISO 8601 end of analysis window
+- `generated_at: str` - ISO 8601 report generation timestamp
+- `top_n: int` - Maximum signals included
+
+### Public API
+
+#### `aggregate()`
+
+Main entry point. Collects from all 4 sources, ranks, and persists.
+
+```python
+aggregate(
+    project_root: Path,
+    *,
+    window_days: int = 7,
+    top_n: int = 10,
+    repo: str = "akaszubski/autonomous-dev",
+) -> AggregatedReport
+```
+
+**Parameters**:
+- `project_root` - Root directory of the project
+- `window_days` - Days to look back (default: 7)
+- `top_n` - Maximum signals in report (default: 10)
+- `repo` - GitHub repository for issue collection
+
+**Returns**: `AggregatedReport` with ranked signals and source health
+
+**Side effect**: Appends report to `.claude/logs/aggregated_reports.jsonl`
+
+#### `collect_session_signals(logs_dir, window_days)`
+Reads `.claude/logs/activity/*.jsonl`, extracts tool failures (`success=false`), hook errors, and agent crashes. Groups by `(signal_type, description)` for frequency counting.
+
+#### `collect_benchmark_signals(history_path, window_days)`
+Uses `BenchmarkHistory` to load entries, filters by time window, converts per-category accuracy deficits below `BENCHMARK_ACCURACY_THRESHOLD` (0.70) into signals.
+
+#### `collect_ci_signals(logs_dir, patterns_path, window_days)`
+Reads session logs and cross-references against `known_bypass_patterns.json` to detect model intent bypasses. Deduplicates by `(pattern_id, date)`.
+
+#### `collect_github_signals(repo)`
+Runs `gh issue list --label auto-improvement` via subprocess. Gracefully falls back if `gh` is unavailable or times out (30s).
+
+#### `compute_priority(signal) -> float`
+Priority formula: `SEVERITY_WEIGHTS[signal_type] * severity * log(1 + frequency)`
+
+**Type weights** (higher = more urgent):
+- bypass_detected: 1.5
+- hook_failure: 1.4
+- benchmark_weakness: 1.3
+- step_skipping: 1.2
+- github_issue: 1.0
+
+### Usage Example
+
+```python
+from pathlib import Path
+from runtime_data_aggregator import aggregate
+
+report = aggregate(
+    Path("/path/to/project"),
+    window_days=7,
+    top_n=10,
+)
+
+for signal in report.signals:
+    print(f"[{signal.source}] {signal.signal_type}: {signal.description}")
+    print(f"  severity={signal.severity:.2f}, frequency={signal.frequency}")
+
+for health in report.source_health:
+    print(f"{health.source}: {health.status} ({health.signal_count} signals)")
+```
+
+**Testing**:
+- `tests/unit/lib/test_runtime_data_aggregator.py` — unit tests
+- `tests/genai/test_acceptance_runtime_data_aggregator.py` — acceptance tests
+
+## 176+1. runtime_verification_classifier.py (373 lines, v1.0.0 - Issue #564)
+
+**Purpose**: Classify changed files into runtime verification targets so the reviewer agent can decide which opt-in runtime checks to run after completing static code review.
+
+**GitHub Issue**: #564 — Runtime Verification Classifier
+
+### Public API
+
+```python
+from runtime_verification_classifier import classify_runtime_targets
+
+plan = classify_runtime_targets(["src/routes/api.py", "public/index.html"])
+print(plan.has_targets)  # True
+print(plan.summary)      # "Frontend: 1 target(s), API: 1 target(s)"
+```
+
+### Data Classes
+
+- **`FrontendTarget`** — A frontend file verifiable via Playwright or browser. Fields: `file_path`, `framework` (html|react|vue|svelte), `suggested_checks`.
+- **`ApiTarget`** — An API route/endpoint verifiable via curl. Fields: `file_path`, `framework` (fastapi|flask|express|generic), `endpoints`, `methods`.
+- **`CliTarget`** — A CLI tool or script verifiable via subprocess. Fields: `file_path`, `tool_name`, `suggested_commands`.
+- **`RuntimeVerificationPlan`** — Aggregated plan. Fields: `has_targets` (bool), `frontend` (List[FrontendTarget]), `api` (List[ApiTarget]), `cli` (List[CliTarget]), `summary` (str).
+
+### Detection Rules
+
+- **Frontend**: matches `.html`, `.tsx`, `.jsx`, `.vue`, `.svelte` extensions; excludes test files.
+- **API**: matches `routes/`, `api/`, `endpoints/`, `views/` path patterns and common server filenames (`app.py`, `main.py`, `server.py`, `server.js`, `server.ts`); guesses framework (fastapi, flask, express) from path; excludes test files.
+- **CLI**: matches files with no extension or explicit CLI naming patterns; excludes test files.
+
+### Testing
+
+- `tests/unit/lib/test_runtime_verification_classifier.py` — unit tests
+- `tests/genai/test_acceptance_runtime_verification.py` — acceptance tests
+
+**Version History**: v1.0.0 (2026-03-28) - Initial release for runtime data aggregation (Issue #579, Component 1)

@@ -207,6 +207,8 @@
         "plugins/autonomous-dev/lib/retrofit_verifier.py",
         "plugins/autonomous-dev/lib/reviewer_benchmark.py",
         "plugins/autonomous-dev/lib/reviewer_weakness_analyzer.py",
+        "plugins/autonomous-dev/lib/runtime_data_aggregator.py",
+        "plugins/autonomous-dev/lib/runtime_verification_classifier.py",
         "plugins/autonomous-dev/lib/sandbox_enforcer.py",
         "plugins/autonomous-dev/lib/scope_detector.py",
         "plugins/autonomous-dev/lib/search_utils.py",
