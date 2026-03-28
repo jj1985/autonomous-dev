@@ -40,6 +40,7 @@ class PipelineEvent:
     success: bool = True
     agent_transcript_path: str = ""
     batch_issue_number: int = 0
+    session_id: str = ""
 
 
 @dataclass
@@ -181,8 +182,31 @@ def parse_session_logs(
             continue
 
         tool = entry.get("tool", "")
-        input_summary = entry.get("input_summary", {})
+        raw_input_summary = entry.get("input_summary", {})
         output_summary = entry.get("output_summary", {})
+
+        # Guard against non-dict output_summary (e.g. legacy string values)
+        if not isinstance(output_summary, dict):
+            output_summary = {}
+
+        # Handle non-dict input_summary: try to extract subagent_type from string
+        # representation (e.g. "subagent_type: planner") so legacy / test-fixture
+        # entries still produce parseable events. (Issue #587)
+        if isinstance(raw_input_summary, dict):
+            input_summary = raw_input_summary
+        else:
+            input_summary = {}
+            if isinstance(raw_input_summary, str) and "subagent_type:" in raw_input_summary:
+                # Parse simple "key: value" format from string input_summary
+                for part in raw_input_summary.split(","):
+                    part = part.strip()
+                    if ":" in part:
+                        k, _, v = part.partition(":")
+                        input_summary[k.strip()] = v.strip()
+                # If we found a subagent_type, synthesize pipeline_action
+                if "subagent_type" in input_summary and "pipeline_action" not in input_summary:
+                    input_summary["pipeline_action"] = "agent_invocation"
+
         pipeline_action = input_summary.get("pipeline_action", "")
 
         # Extract batch_issue_number from input_summary (default 0 = non-batch)
@@ -203,6 +227,7 @@ def parse_session_logs(
                 duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
                 batch_issue_number=batch_issue_number,
+                session_id=entry.get("session_id", ""),
             ))
         elif tool == "Bash" and pipeline_action == "test_run":
             events.append(PipelineEvent(
@@ -213,6 +238,7 @@ def parse_session_logs(
                 pipeline_action="test_run",
                 duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
+                session_id=entry.get("session_id", ""),
             ))
         elif entry.get("hook") == "SubagentStop":
             events.append(PipelineEvent(
@@ -225,6 +251,7 @@ def parse_session_logs(
                 duration_ms=entry.get("duration_ms", 0),
                 success=entry.get("success", True),
                 agent_transcript_path=entry.get("agent_transcript_path", ""),
+                session_id=entry.get("session_id", ""),
             ))
 
     # Sort by timestamp
@@ -901,24 +928,15 @@ def detect_batch_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
 
     return findings
 
-def validate_pipeline_intent(
-    log_path: Path,
-    *,
-    session_id: Optional[str] = None,
-) -> List[Finding]:
-    """Orchestrate all intent validation checks on a session log.
+def _run_checks_on_events(events: List[PipelineEvent]) -> List[Finding]:
+    """Run all check functions on a list of events from a single session.
 
     Args:
-        log_path: Path to JSONL log file.
-        session_id: Optional session ID filter.
+        events: List of PipelineEvent from one session (or ungrouped events).
 
     Returns:
-        Combined list of all findings.
+        Combined list of all findings from all checks.
     """
-    events = parse_session_logs(log_path, session_id=session_id)
-    if not events:
-        return []
-
     findings: List[Finding] = []
     findings.extend(validate_step_ordering(events))
     findings.extend(detect_hard_gate_ordering(events))
@@ -929,4 +947,54 @@ def validate_pipeline_intent(
     findings.extend(detect_minimum_prompt_violation(events))
     findings.extend(detect_doc_verdict_missing(events))
     findings.extend(detect_batch_cia_skip(events))
+    return findings
+
+
+def validate_pipeline_intent(
+    log_path: Path,
+    *,
+    session_id: Optional[str] = None,
+) -> List[Finding]:
+    """Orchestrate all intent validation checks on a session log.
+
+    When session_id is provided, only events from that session are checked
+    (existing single-session behavior is unchanged).
+
+    When session_id is not provided, events are grouped by their session_id
+    field and each session's events are checked independently. This prevents
+    false CRITICAL "step_ordering" findings that arise from comparing events
+    across different sessions in the same daily JSONL log file (Issue #587).
+
+    Events with an empty session_id (legacy logs without session tracking) are
+    grouped together as a fallback and checked as a single virtual session.
+
+    Args:
+        log_path: Path to JSONL log file.
+        session_id: Optional session ID filter. When provided, only events
+            from this session are validated (single-session mode).
+
+    Returns:
+        Combined list of all findings, aggregated across all session groups.
+    """
+    events = parse_session_logs(log_path, session_id=session_id)
+    if not events:
+        return []
+
+    # When an explicit session_id filter was provided, all returned events
+    # already belong to that session — run checks on the flat list directly.
+    if session_id:
+        return _run_checks_on_events(events)
+
+    # Group events by session_id to avoid cross-session false positives.
+    # Events with empty session_id share a fallback group ("").
+    session_groups: dict[str, List[PipelineEvent]] = {}
+    for event in events:
+        key = event.session_id  # "" for legacy events without session tracking
+        if key not in session_groups:
+            session_groups[key] = []
+        session_groups[key].append(event)
+
+    findings: List[Finding] = []
+    for _sid, session_events in session_groups.items():
+        findings.extend(_run_checks_on_events(session_events))
     return findings

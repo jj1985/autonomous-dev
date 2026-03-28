@@ -58,6 +58,7 @@ def _make_event(
     result_word_count: int = 2000,
     success: bool = True,
     batch_issue_number: int = 0,
+    session_id: str = "",
 ) -> PipelineEvent:
     """Helper to create PipelineEvent for tests."""
     return PipelineEvent(
@@ -70,6 +71,7 @@ def _make_event(
         result_word_count=result_word_count,
         success=success,
         batch_issue_number=batch_issue_number,
+        session_id=session_id,
     )
 
 
@@ -1235,4 +1237,139 @@ class TestGetMinimumPromptContent:
         (agents_dir / "planner.md").write_text(file_content)
         result = get_minimum_prompt_content("planner", agents_dir)
         assert result == file_content
+
+
+class TestSessionScopedOrdering:
+    """Tests for session-scoped ordering checks (Issue #587).
+
+    Validates that step_ordering and related checks operate per session
+    to avoid false CRITICAL findings from cross-session event merging.
+    """
+
+    def test_cross_session_no_false_ordering_finding(self, tmp_path):
+        """Two sessions with reversed ordering across sessions produce no false findings.
+
+        Session A: planner at 10:00, implementer at 10:10 (correct)
+        Session B: planner at 09:00, implementer at 09:10 (correct)
+        Cross-session: B's implementer (09:10) < A's planner (10:00) — false positive if not scoped
+        """
+        log_file = tmp_path / "session.jsonl"
+        lines = [
+            # Session A — correct ordering
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T10:00:00+00:00", session_id="session-a"),
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:10:00+00:00", session_id="session-a"),
+            # Session B — correct ordering, but earlier timestamps than session-a
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T09:00:00+00:00", session_id="session-b"),
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T09:10:00+00:00", session_id="session-b"),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        findings = validate_pipeline_intent(log_file)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+        assert len(ordering_findings) == 0, (
+            f"#587: Cross-session events must not produce false ordering findings. "
+            f"Got: {ordering_findings}"
+        )
+
+    def test_single_session_ordering_still_detected(self, tmp_path):
+        """A real ordering violation within one session is still detected.
+
+        Single session with implementer before planner — should produce CRITICAL finding.
+        """
+        log_file = tmp_path / "session.jsonl"
+        lines = [
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:00:00+00:00", session_id="session-x"),
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T10:10:00+00:00", session_id="session-x"),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        findings = validate_pipeline_intent(log_file)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+        assert len(ordering_findings) > 0, (
+            "#587: Intra-session ordering violation must still be detected"
+        )
+        critical = [f for f in ordering_findings if f.severity == "CRITICAL"]
+        assert len(critical) > 0, "#587: Intra-session ordering violation must be CRITICAL"
+
+    def test_subagent_stop_carries_session_id(self, tmp_path):
+        """SubagentStop entries are parsed with session_id populated."""
+        log_file = tmp_path / "session.jsonl"
+        entry = {
+            "timestamp": "2026-03-28T10:00:00+00:00",
+            "hook": "SubagentStop",
+            "session_id": "test-session-xyz",
+            "subagent_type": "implementer",
+            "duration_ms": 60000,
+            "result_word_count": 500,
+            "success": True,
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+
+        events = parse_session_logs(log_file)
+        completion_events = [e for e in events if e.pipeline_action == "agent_completion"]
+        assert len(completion_events) == 1, "#587: SubagentStop should parse to agent_completion event"
+        assert completion_events[0].session_id == "test-session-xyz", (
+            "#587: SubagentStop event must carry session_id"
+        )
+
+    def test_empty_session_id_fallback(self, tmp_path):
+        """Events without session_id are grouped together as a fallback group.
+
+        Two events with empty session_id from different timestamps should still
+        be checked as a group — if they have a real violation, it should be detected.
+        """
+        log_file = tmp_path / "session.jsonl"
+        # These have no session_id — both go into the "" fallback group
+        # Implementer before planner = real violation
+        lines = [
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:00:00+00:00", session_id=""),
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T10:10:00+00:00", session_id=""),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        findings = validate_pipeline_intent(log_file)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+        assert len(ordering_findings) > 0, (
+            "#587: Events with empty session_id should be grouped together and violations detected"
+        )
+
+    def test_validate_pipeline_intent_multi_session(self, tmp_path):
+        """Full integration test: multi-session log returns only per-session findings.
+
+        Session A: correct pipeline ordering — no findings
+        Session B: correct pipeline ordering — no findings
+        Session C: implementer before planner (real violation) — CRITICAL finding
+        Expected: exactly one session contributes ordering findings (session C only).
+        """
+        log_file = tmp_path / "daily.jsonl"
+        # Session A — correct
+        lines_a = [
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T08:00:00+00:00", session_id="session-a"),
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T08:20:00+00:00", session_id="session-a"),
+        ]
+        # Session B — correct
+        lines_b = [
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T09:00:00+00:00", session_id="session-b"),
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T09:20:00+00:00", session_id="session-b"),
+        ]
+        # Session C — real violation
+        lines_c = [
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:00:00+00:00", session_id="session-c"),
+            _make_jsonl_line(subagent_type="planner", timestamp="2026-03-28T10:20:00+00:00", session_id="session-c"),
+        ]
+        log_file.write_text("\n".join(lines_a + lines_b + lines_c) + "\n")
+
+        findings = validate_pipeline_intent(log_file)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+
+        # Session C's violation is detected
+        assert len(ordering_findings) >= 1, (
+            "#587: Session C's real ordering violation must be detected"
+        )
+
+        # Verify the finding references implementer/planner — not cross-session artefacts
+        violation_descriptions = " ".join(f.description for f in ordering_findings)
+        assert "implementer" in violation_descriptions or "planner" in violation_descriptions, (
+            "#587: Ordering finding description must reference the violating agents"
+        )
 
