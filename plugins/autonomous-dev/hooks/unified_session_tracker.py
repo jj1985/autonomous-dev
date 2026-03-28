@@ -104,6 +104,22 @@ AUTO_UPDATE_PROGRESS = os.environ.get("AUTO_UPDATE_PROGRESS", "false").lower() =
 
 
 # ============================================================================
+# Pipeline Constants
+# ============================================================================
+
+# Active agents in the /implement pipeline (Issue #147)
+EXPECTED_PIPELINE_AGENTS: List[str] = [
+    "researcher-local",
+    "planner",
+    "test-master",
+    "implementer",
+    "reviewer",
+    "security-auditor",
+    "doc-master",
+]
+
+
+# ============================================================================
 # Log Directory Discovery
 # ============================================================================
 
@@ -550,15 +566,7 @@ def check_pipeline_complete() -> bool:
 
         # Check if all expected agents completed
         # Issue #147: Consolidated to only active agents in /implement pipeline
-        expected_agents = [
-            "researcher-local",
-            "planner",
-            "test-master",
-            "implementer",
-            "reviewer",
-            "security-auditor",
-            "doc-master"
-        ]
+        expected_agents = EXPECTED_PIPELINE_AGENTS
 
         completed_agents = {
             entry["agent"] for entry in session_data.get("agents", [])

@@ -59,16 +59,6 @@ def _write_pipeline_json(
     return f
 
 
-# Match the production expected_agents list from check_pipeline_complete()
-EXPECTED_AGENTS = [
-    "researcher-local",
-    "planner",
-    "test-master",
-    "implementer",
-    "reviewer",
-    "security-auditor",
-    "doc-master",
-]
 
 
 class TestCheckPipelineCompleteFiltering:
@@ -91,7 +81,7 @@ class TestCheckPipelineCompleteFiltering:
             session_dir,
             f"{today}-060000-pipeline.json",
             claude_session_id="session-aaa",
-            completed_agents=EXPECTED_AGENTS,
+            completed_agents=ust.EXPECTED_PIPELINE_AGENTS,
         )
 
         # Session B: no agents completed (newer file)
@@ -132,7 +122,7 @@ class TestCheckPipelineCompleteFiltering:
             session_dir,
             f"{today}-060000-pipeline.json",
             claude_session_id="session-old",
-            completed_agents=EXPECTED_AGENTS,
+            completed_agents=ust.EXPECTED_PIPELINE_AGENTS,
         )
 
         # Newer file: no agents (this is what would be picked without env var)
