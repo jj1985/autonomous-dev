@@ -200,6 +200,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
 **FINDINGS Format**: Each finding uses a structured `FINDING-{N}` schema with mandatory `file:line` reference, severity (`BLOCKING` or `WARNING`), category, issue description, detail, and suggested fix. BLOCKING findings trigger the STEP 6.5 Remediation Gate; WARNING findings are advisory only.
 **Verdict**: `APPROVE` (all findings WARNING or none) or `REQUEST_CHANGES` (any BLOCKING finding present). STEP 6.5 parses this verdict to determine whether to enter the remediation loop.
+**Runtime Verification (Opt-In, Issue #564)**: After completing static code review with NO BLOCKING findings, the reviewer MAY perform targeted runtime checks when changed files include frontend (HTML/TSX/Vue/Svelte), API routes, or CLI tools. Uses Playwright MCP for frontend, curl for API endpoints, and subprocess for CLI tools. HARD GATE: runtime verification MUST NOT run when BLOCKING findings are present; total time capped at 60 seconds; all subprocess commands MUST use `timeout 30` wrapper. Skips gracefully when the required tool or server is unavailable.
 
 ### security-auditor
 

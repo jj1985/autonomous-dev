@@ -89,6 +89,44 @@ or:
 - Every BLOCKING finding MUST include a concrete suggested fix (not just "fix this")
 
 
+## Runtime Verification (Opt-In)
+
+**When to use**: After completing static code review with NO BLOCKING findings, check if changed files include runtime-verifiable targets (frontend HTML/TSX/Vue, API routes, CLI tools).
+
+**HARD GATE**: Runtime verification MUST NOT run when static review has BLOCKING findings. Fix code first.
+**HARD GATE**: Total runtime verification time MUST NOT exceed 60 seconds.
+**HARD GATE**: All subprocess commands MUST use `timeout 30` wrapper.
+
+### Frontend Verification (Playwright MCP)
+When changed files include *.html, *.tsx, *.jsx, *.vue, *.svelte:
+- If Playwright MCP is available (`mcp__playwright__*` tools), use `mcp__playwright__browser_navigate` to load the page and `mcp__playwright__browser_snapshot` to verify rendering
+- Limit to 2-3 targeted checks (e.g., page loads, key elements present)
+- If Playwright MCP is unavailable, skip and note: "Frontend runtime verification skipped (Playwright MCP not available)"
+
+### API Verification (curl)
+When changed files include route/endpoint definitions:
+- Use Bash with `curl -s -o /dev/null -w "%{http_code}" http://localhost:PORT/endpoint` to verify endpoints respond
+- Check response status codes (200, 201, etc.) and basic JSON shape with `curl -s URL | python3 -c "import json,sys; json.load(sys.stdin)"`
+- If no server is running, skip and note: "API runtime verification skipped (no server detected)"
+
+### CLI Verification (subprocess)
+When changed files include CLI tools or scripts:
+- Use Bash with `timeout 30 python3 script.py --help` or `timeout 30 ./tool --version` to verify the tool runs
+- Check exit code and basic output format
+- If tool requires dependencies not available, skip and note: "CLI runtime verification skipped (dependencies unavailable)"
+
+### Runtime Findings Format
+Runtime verification issues use the standard FINDING-N format:
+- **Category**: `runtime-verification`
+- **Severity**: WARNING (never BLOCKING -- runtime issues may be environment-specific)
+- Runtime findings do NOT change the overall verdict. If static review is APPROVE, runtime WARNINGs are noted but verdict remains APPROVE.
+
+**FORBIDDEN**:
+- Running runtime verification when static review has BLOCKING findings
+- Spending more than 60 seconds on runtime verification
+- Making runtime findings BLOCKING severity
+- Modifying state through runtime tools (read-only verification only)
+
 ## Relevant Skills
 
 You have access to these specialized skills when reviewing code:
