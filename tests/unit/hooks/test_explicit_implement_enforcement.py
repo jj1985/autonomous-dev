@@ -412,3 +412,78 @@ class TestDefaultEnforcementIsBlockDuringExplicitImplement:
             f"Got '{level}'."
         )
         assert level == "block"
+
+
+# ---------------------------------------------------------------------------
+# Regression test: Issue #586 — avoid double state file read
+# ---------------------------------------------------------------------------
+
+class TestSingleCallOptimization:
+    """Issue #586: _is_explicit_implement_active() must be called only once per
+    validate_agent_authorization() invocation (not twice).
+
+    Before the fix, validate_agent_authorization() called the function twice in
+    sequence — once for the alignment gate check and once for the coordinator
+    enforcement check — causing two state file reads for a single authorization
+    decision. The fix extracts the result into a local variable 'impl_active'
+    before either check runs.
+    """
+
+    def test_validate_agent_authorization_calls_is_explicit_once(
+        self, valid_state, monkeypatch
+    ):
+        """validate_agent_authorization() must call _is_explicit_implement_active()
+        exactly once regardless of which branch is taken (Issue #586).
+        """
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        monkeypatch.setenv("ENFORCEMENT_LEVEL", "block")
+
+        call_count = {"n": 0}
+        original = hook._is_explicit_implement_active
+
+        def counting_wrapper():
+            call_count["n"] += 1
+            return original()
+
+        with patch.object(hook, "_is_explicit_implement_active", side_effect=counting_wrapper):
+            # Trigger the coordinator-blocking path (non-pipeline agent + code file)
+            hook.validate_agent_authorization(
+                "Edit",
+                {"file_path": "/tmp/module.py", "old_string": "x", "new_string": "y"},
+            )
+
+        assert call_count["n"] == 1, (
+            f"_is_explicit_implement_active() was called {call_count['n']} times "
+            f"inside validate_agent_authorization(), expected exactly 1. "
+            f"This indicates the double state-file-read regression (Issue #586) has returned."
+        )
+
+    def test_validate_agent_authorization_calls_is_explicit_once_when_inactive(
+        self, monkeypatch, tmp_path
+    ):
+        """Even when /implement is NOT active, the call count must be <= 1 (Issue #586).
+
+        When impl_active is False the conditions short-circuit, so the function
+        may be called 0 or 1 times — but never 2.
+        """
+        # Point state file at a non-existent path so _is_pipeline_active returns False
+        monkeypatch.setenv("PIPELINE_STATE_FILE", str(tmp_path / "nonexistent.json"))
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+
+        call_count = {"n": 0}
+        original = hook._is_explicit_implement_active
+
+        def counting_wrapper():
+            call_count["n"] += 1
+            return original()
+
+        with patch.object(hook, "_is_explicit_implement_active", side_effect=counting_wrapper):
+            hook.validate_agent_authorization(
+                "Edit",
+                {"file_path": "/tmp/module.py", "old_string": "x", "new_string": "y"},
+            )
+
+        assert call_count["n"] <= 1, (
+            f"_is_explicit_implement_active() was called {call_count['n']} times "
+            f"when pipeline is inactive — expected 0 or 1 (Issue #586)."
+        )

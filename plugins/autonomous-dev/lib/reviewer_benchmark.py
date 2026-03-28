@@ -79,7 +79,8 @@ class ScoringReport:
         per_category: Accuracy breakdown by category tag
         confusion_matrix: Dict with keys TP, TN, FP, FN
         total_samples: Number of unique samples
-        trials_per_sample: Number of trials run per sample
+        trials_per_sample: Average number of completed trials per sample
+            (floor-division of total results by unique sample count)
         consistency_rate: Average fraction of trials matching majority verdict
         per_difficulty: Accuracy breakdown by difficulty tier (easy, medium, hard)
         per_defect_category: Accuracy breakdown by defect category from taxonomy
@@ -111,6 +112,7 @@ _VERDICT_HEADING_RE = re.compile(
 )
 _VERDICT_BARE_RE = re.compile(
     r"\b(APPROVE|REQUEST_CHANGES|BLOCKING)\b",
+    re.IGNORECASE,
 )
 
 
@@ -130,7 +132,10 @@ def load_dataset(path: Path) -> List[BenchmarkSample]:
     if not path.exists():
         raise FileNotFoundError(f"Dataset file not found: {path}")
 
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {path}: {e}") from e
     samples_raw = data.get("samples", [])
 
     if not samples_raw:
@@ -323,21 +328,21 @@ def score_results(
     # False negative rate = FN / (FN + TP)
     fnr = fn / (fn + tp) if (fn + tp) > 0 else 0.0
 
-    # Per-category accuracy
-    per_category = _compute_per_category(results)
-
     # Consistency rate
     consistency_rate = _compute_consistency(results)
 
     # Determine unique samples and trials per sample
     sample_ids = {r.sample_id for r in results}
     total_samples = len(sample_ids)
-    trials_per_sample = len(results) // total_samples if total_samples > 0 else 0
+    trials_per_sample = len(results) // total_samples if total_samples > 0 else 0  # floor-division: average completed trials per sample
 
     # Build sample lookup for difficulty/category breakdowns
     sample_lookup: Dict[str, BenchmarkSample] = {}
     if samples:
         sample_lookup = {s.sample_id: s for s in samples}
+
+    # Per-category accuracy (groups by category_tags when sample_lookup is available)
+    per_category = _compute_per_category(results, sample_lookup=sample_lookup or None)
 
     per_difficulty = _compute_per_difficulty(results, sample_lookup)
     per_defect_category = _compute_per_defect_category(results, sample_lookup)
@@ -433,13 +438,21 @@ def _compute_per_defect_category(
     return result
 
 
-def _compute_per_category(results: List[BenchmarkResult]) -> Dict[str, Dict[str, Any]]:
+def _compute_per_category(
+    results: List[BenchmarkResult],
+    *,
+    sample_lookup: Optional[Dict[str, "BenchmarkSample"]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """Compute per-category accuracy from results.
 
-    Groups by expected_verdict category.
+    When sample_lookup is provided, groups by each sample's category_tags
+    (a single result may contribute to multiple tag buckets). Falls back to
+    grouping by expected_verdict when sample_lookup is None.
 
     Args:
         results: All benchmark results
+        sample_lookup: Optional mapping of sample_id to BenchmarkSample.
+            When provided, category_tags from the sample are used for grouping.
 
     Returns:
         Dict mapping category to accuracy stats
@@ -448,11 +461,14 @@ def _compute_per_category(results: List[BenchmarkResult]) -> Dict[str, Dict[str,
     for r in results:
         if r.predicted_verdict == "PARSE_ERROR":
             continue
-        cat = r.expected_verdict
-        correct = (
-            _is_positive(r.predicted_verdict) == _is_positive(r.expected_verdict)
-        )
-        categories.setdefault(cat, []).append(correct)
+        correct = _is_positive(r.predicted_verdict) == _is_positive(r.expected_verdict)
+        if sample_lookup is not None:
+            sample = sample_lookup.get(r.sample_id)
+            tags = sample.category_tags if sample and sample.category_tags else [r.expected_verdict]
+        else:
+            tags = [r.expected_verdict]
+        for tag in tags:
+            categories.setdefault(tag, []).append(correct)
 
     per_cat: Dict[str, Dict[str, Any]] = {}
     for cat, correct_list in categories.items():

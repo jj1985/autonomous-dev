@@ -80,6 +80,7 @@ class AgentTracker:
 
             if self.session_file.exists():
                 self.session_data = json.loads(self.session_file.read_text())
+                self.session_data.setdefault("agents", [])
             else:
                 # Create new session file
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -133,6 +134,7 @@ class AgentTracker:
                         # Use most recent file matching this session
                         self.session_file = sorted(matching_files)[-1]
                         self.session_data = json.loads(self.session_file.read_text())
+                        self.session_data.setdefault("agents", [])
                     else:
                         # No file matches this session — create a new one
                         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -150,6 +152,7 @@ class AgentTracker:
                     # No CLAUDE_SESSION_ID — fall back to latest file (backward compat)
                     self.session_file = sorted(json_files)[-1]
                     self.session_data = json.loads(self.session_file.read_text())
+                    self.session_data.setdefault("agents", [])
             else:
                 # Create new session file
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

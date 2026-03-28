@@ -4056,7 +4056,7 @@ Features are only marked as completed when they truly pass ALL quality gates:
 
 ---
 
-## 25. agent_tracker package (1,710 lines, v3.44.0+, Issue #165)
+## 25. agent_tracker package (1,755 lines, v3.44.0+, Issue #165)
 
 **Purpose**: Portable tracking infrastructure for agent execution with dynamic project root detection
 
@@ -4071,7 +4071,7 @@ Features are only marked as completed when they truly pass ALL quality gates:
 - `__init__.py` (72 lines): Re-exports for backward compatibility
 - `models.py` (64 lines): Data structures (AGENT_METADATA, EXPECTED_AGENTS)
 - `state.py` (408 lines): Session state management and agent lifecycle
-- `tracker.py` (441 lines): Main AgentTracker class with delegation pattern
+- `tracker.py` (478 lines): Main AgentTracker class with delegation pattern
 - `metrics.py` (116 lines): Progress calculation and time estimation
 - `verification.py` (311 lines): Parallel execution verification
 - `display.py` (200 lines): Status display and visualization
@@ -4105,6 +4105,7 @@ Features are only marked as completed when they truly pass ALL quality gates:
   - Creates `docs/sessions/` directory if missing
   - Finds or creates JSON session files with timestamp naming: `YYYYMMDD-HHMMSS-pipeline.json`
   - Session isolation via `CLAUDE_SESSION_ID`: when the env var is set, file selection filters to pipeline.json files whose stored `claude_session_id` field matches the current session, preventing cross-session pollution when multiple batches run on the same day (Issue #594). Falls back to latest file when env var is absent.
+  - Schema compatibility via `setdefault("agents", [])` at all three session-file loading sites (Issue #576): session files that use the new pipeline schema and omit the `agents` key no longer raise `KeyError` on load.
   - Atomic writes using tempfile + rename pattern (Issue #45 security)
   - Path validation via shared security_utils module
 
@@ -15618,7 +15619,7 @@ __all__ = [
 
 ---
 
-## reviewer_benchmark.py (525 lines, v1.1.0 - Issue #573)
+## reviewer_benchmark.py (541 lines, v1.1.1 - Issue #568)
 
 **Purpose**: Harness effectiveness benchmark for the reviewer agent. Loads labeled datasets of real diffs with ground-truth verdicts, constructs reviewer prompts, parses model verdicts, and computes scoring metrics.
 
@@ -15680,8 +15681,8 @@ class ScoringReport:
 **Public API**:
 - `load_dataset(path: Path) -> List[BenchmarkSample]` — loads and validates a JSON dataset; raises `FileNotFoundError` or `ValueError` on invalid input
 - `build_reviewer_prompt(sample, reviewer_instructions) -> str` — constructs full reviewer prompt from a sample
-- `parse_verdict(response: str) -> Tuple[str, List[Dict]]` — extracts verdict and findings; looks for `## Verdict: VERDICT` heading first, falls back to bare keyword in last 200 characters; returns `"PARSE_ERROR"` when no verdict found
-- `score_results(results: List[BenchmarkResult], *, samples: Optional[List[BenchmarkSample]] = None) -> ScoringReport` — computes all metrics; pass `samples` to enable `per_difficulty` and `per_defect_category` breakdowns
+- `parse_verdict(response: str) -> Tuple[str, List[Dict]]` — extracts verdict and findings; looks for `## Verdict: VERDICT` heading first (case-insensitive), falls back to bare keyword search in last 200 characters (also case-insensitive, returns upper-cased result); returns `"PARSE_ERROR"` when no verdict found
+- `score_results(results: List[BenchmarkResult], *, samples: Optional[List[BenchmarkSample]] = None) -> ScoringReport` — computes all metrics; pass `samples` to enable `per_difficulty` and `per_defect_category` breakdowns, and to change `per_category` grouping from `expected_verdict` keys to `category_tags` from the sample metadata (a single result contributes to every tag in its sample's `category_tags` list)
 - `store_benchmark_run(store, report: ScoringReport) -> None` — persists report to a `BenchmarkStore` under key `"reviewer-effectiveness"`
 
 **Dataset Format** (`tests/benchmarks/reviewer/dataset.json`):
@@ -15718,6 +15719,7 @@ class ScoringReport:
 **Testing**: `tests/unit/lib/test_reviewer_benchmark.py`, `tests/unit/scripts/test_mine_git_samples.py`, `tests/unit/scripts/test_mine_session_logs.py`, `tests/genai/test_acceptance_benchmark_expansion.py`
 
 **Version History**:
+- v1.1.1 (2026-03-29) - 4 bug fixes: invalid-JSON raises `ValueError` with path context; `--validate-dataset` no longer requires `ANTHROPIC_API_KEY`; bare verdict keyword matching is now case-insensitive; `per_category` groups by `category_tags` (not `expected_verdict`) when `samples` are supplied (Issue #568)
 - v1.1.0 (2026-03-28) - Expanded to 146 samples, 91-category taxonomy, difficulty stratification, per-difficulty/per-defect-category scoring, mining scripts (Issue #573)
 - v1.0.0 (2026-03-28) - Initial release for harness effectiveness benchmark suite (Issue #567)
 

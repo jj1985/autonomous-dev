@@ -7,6 +7,7 @@ GitHub Issue: #567
 """
 
 import json
+import os
 import pytest
 from pathlib import Path
 from typing import Any, Dict, List
@@ -459,3 +460,176 @@ class TestStoreBenchmarkRun:
         assert call_args[1]["score"] == 0.85
         assert "confusion_matrix" in call_args[1]["metadata"]
         mock_store.save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for Issue #574: --validate-dataset must not require API key
+# ---------------------------------------------------------------------------
+
+class TestLoadDatasetInvalidJson:
+    """Test that invalid JSON in dataset files raises ValueError with path context."""
+
+    def test_load_dataset_invalid_json(self, tmp_path: Path) -> None:
+        """Invalid JSON file -> ValueError with path in message (Bug 1 regression)."""
+        bad_json = tmp_path / "bad.json"
+        bad_json.write_text("{not valid json: }")
+        with pytest.raises(ValueError, match=str(bad_json)):
+            load_dataset(bad_json)
+
+    def test_load_dataset_invalid_json_message_contains_error(self, tmp_path: Path) -> None:
+        """ValueError message includes original JSON parse error context."""
+        bad_json = tmp_path / "bad.json"
+        bad_json.write_text("definitely not json")
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            load_dataset(bad_json)
+
+
+class TestParseBareVerdictCaseInsensitive:
+    """Test that bare verdict keyword matching is case-insensitive (Bug 3 regression)."""
+
+    def test_parse_verdict_bare_keyword_lowercase(self) -> None:
+        """Bare lowercase 'approve' in tail -> parsed as 'APPROVE'."""
+        padding = "x" * 300
+        response = padding + "Overall this looks fine. approve"
+        verdict, _ = parse_verdict(response)
+        assert verdict == "APPROVE"
+
+    def test_parse_verdict_bare_keyword_mixed_case(self) -> None:
+        """Bare mixed-case 'Blocking' in tail -> parsed as 'BLOCKING'."""
+        padding = "x" * 300
+        response = padding + "My verdict: Blocking"
+        verdict, _ = parse_verdict(response)
+        assert verdict == "BLOCKING"
+
+    def test_parse_verdict_bare_keyword_request_changes_lowercase(self) -> None:
+        """Bare lowercase 'request_changes' in tail -> parsed as 'REQUEST_CHANGES'."""
+        padding = "x" * 300
+        response = padding + " request_changes"
+        verdict, _ = parse_verdict(response)
+        assert verdict == "REQUEST_CHANGES"
+
+
+class TestPerCategoryWithCategoryTags:
+    """Test that per_category groups by category_tags when samples are provided (Bug 4 regression)."""
+
+    def test_per_category_with_category_tags(self) -> None:
+        """When samples are provided, per_category groups by category_tags not expected_verdict."""
+        samples = [
+            BenchmarkSample(**_make_sample(
+                sample_id="s1",
+                expected_verdict="BLOCKING",
+                category_tags=["null-safety"],
+            )),
+            BenchmarkSample(**_make_sample(
+                sample_id="s2",
+                expected_verdict="APPROVE",
+                category_tags=["style"],
+            )),
+        ]
+        results = [
+            _make_result("s1", "BLOCKING", "BLOCKING"),
+            _make_result("s2", "APPROVE", "APPROVE"),
+        ]
+        report = score_results(results, samples=samples)
+        # Should group by category_tags, not expected_verdict
+        assert "null-safety" in report.per_category
+        assert "style" in report.per_category
+        # expected_verdict keys should NOT appear when samples with tags are provided
+        assert "BLOCKING" not in report.per_category
+        assert "APPROVE" not in report.per_category
+
+    def test_per_category_multi_tag_sample(self) -> None:
+        """A sample with multiple category_tags contributes to each tag bucket."""
+        samples = [
+            BenchmarkSample(**_make_sample(
+                sample_id="s1",
+                expected_verdict="BLOCKING",
+                category_tags=["null-safety", "hardcoded-value"],
+            )),
+        ]
+        results = [_make_result("s1", "BLOCKING", "BLOCKING")]
+        report = score_results(results, samples=samples)
+        assert "null-safety" in report.per_category
+        assert "hardcoded-value" in report.per_category
+        assert report.per_category["null-safety"]["accuracy"] == 1.0
+        assert report.per_category["hardcoded-value"]["accuracy"] == 1.0
+
+    def test_per_category_without_samples_falls_back_to_expected_verdict(self) -> None:
+        """Without samples, per_category falls back to expected_verdict grouping."""
+        results = [
+            _make_result("s1", "BLOCKING", "BLOCKING"),
+            _make_result("s2", "APPROVE", "APPROVE"),
+        ]
+        report = score_results(results)
+        assert "BLOCKING" in report.per_category
+        assert "APPROVE" in report.per_category
+
+
+class TestValidateDatasetWithoutApiKey:
+    """Regression tests: --validate-dataset should not require ANTHROPIC_API_KEY.
+
+    Bug: API key check ran before --validate-dataset early return, so running
+    `--validate-dataset` without a key caused SystemExit(1).
+
+    Fix: Load dataset and handle --validate-dataset early return BEFORE
+    checking for the API key.
+
+    GitHub Issue: #574
+    """
+
+    def test_validate_dataset_without_api_key(self, tmp_path: Path) -> None:
+        """--validate-dataset succeeds even when ANTHROPIC_API_KEY is absent.
+
+        Regression: before the fix, this would exit with code 1 because the
+        API key check ran before the --validate-dataset early return.
+        """
+        # Write a minimal valid dataset
+        samples = [_make_sample()]
+        dataset_path = _write_dataset(tmp_path, samples)
+
+        script = (
+            Path(__file__).resolve().parents[3] / "scripts" / "run_reviewer_benchmark.py"
+        )
+
+        env = os.environ.copy()
+        env.pop("ANTHROPIC_API_KEY", None)  # Ensure key is absent
+
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(script), "--dataset", str(dataset_path), "--validate-dataset"],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (
+            f"--validate-dataset failed without API key (exit {result.returncode}).\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_benchmark_without_api_key_fails(self, tmp_path: Path) -> None:
+        """Normal benchmark run (no --validate-dataset) requires ANTHROPIC_API_KEY.
+
+        Ensures the API key guard is still enforced when running a full benchmark.
+        """
+        samples = [_make_sample()]
+        dataset_path = _write_dataset(tmp_path, samples)
+
+        script = (
+            Path(__file__).resolve().parents[3] / "scripts" / "run_reviewer_benchmark.py"
+        )
+
+        env = os.environ.copy()
+        env.pop("ANTHROPIC_API_KEY", None)  # Ensure key is absent
+
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(script), "--dataset", str(dataset_path)],
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1, (
+            f"Expected exit code 1 when API key is missing, got {result.returncode}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        assert "ANTHROPIC_API_KEY" in result.stderr

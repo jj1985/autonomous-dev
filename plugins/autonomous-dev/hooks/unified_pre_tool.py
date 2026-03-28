@@ -1069,8 +1069,9 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
         agent_name = _get_active_agent_name()
         if agent_name in PIPELINE_AGENTS:
             return ("allow", f"Pipeline agent '{agent_name}' authorized")
+        impl_active = _is_explicit_implement_active()
         # Issue #585: Block ALL code writes before alignment passes
-        if _is_explicit_implement_active() and tool_name in ("Write", "Edit", "Bash"):
+        if impl_active and tool_name in ("Write", "Edit", "Bash"):
             if not _has_alignment_passed():
                 if _is_code_file_target(tool_name, tool_input):
                     _log_deviation(
@@ -1085,7 +1086,7 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
                         "before any code changes are allowed. Complete STEP 2 first."
                     ))
         # Issue #528: If /implement was explicitly invoked, block coordinator code writes
-        if _is_explicit_implement_active() and tool_name in ("Write", "Edit", "Bash"):
+        if impl_active and tool_name in ("Write", "Edit", "Bash"):
             level = os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower()
             if level != "off" and _is_code_file_target(tool_name, tool_input):
                 block_reason = (
@@ -1748,8 +1749,9 @@ def main():
             # validation layers, so this check must be in the fast path.
             if tool_name in ("Write", "Edit", "Bash"):
                 agent_name = _get_active_agent_name()
+                impl_active = _is_explicit_implement_active()
                 if (agent_name not in PIPELINE_AGENTS
-                        and _is_explicit_implement_active()
+                        and impl_active
                         and os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower() != "off"):
                     if _is_code_file_target(tool_name, tool_input):
                         block_reason = (

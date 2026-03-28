@@ -212,7 +212,17 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Validate API key
+    # Load dataset
+    print(f"Loading dataset from {args.dataset}...")
+    samples = load_dataset(args.dataset)
+    print(f"Loaded {len(samples)} samples")
+
+    # Validate-only mode (no API key required)
+    if args.validate_dataset:
+        _validate_and_report(samples, args.dataset)
+        return
+
+    # Validate API key (only needed for benchmark runs, not --validate-dataset)
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         print(
@@ -221,16 +231,6 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-
-    # Load dataset
-    print(f"Loading dataset from {args.dataset}...")
-    samples = load_dataset(args.dataset)
-    print(f"Loaded {len(samples)} samples")
-
-    # Validate-only mode
-    if args.validate_dataset:
-        _validate_and_report(samples, args.dataset)
-        return
 
     # Apply filters
     if args.filter_difficulty:
