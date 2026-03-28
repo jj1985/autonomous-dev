@@ -122,6 +122,16 @@ ENFORCE_WORKFLOW_STRICT=true    # Maps to BLOCK (strictest)
 
 **Precedence**: `ENFORCEMENT_LEVEL` takes precedence over `ENFORCE_WORKFLOW_STRICT`
 
+### Alignment Gate (Issue #585)
+
+When `/implement` is active, `unified_pre_tool.py` enforces that STEP 2 (PROJECT.md alignment) must complete before any code writes are allowed:
+
+- **Detection**: `_has_alignment_passed()` reads the pipeline state file and checks `alignment_passed: true`.
+- **Behavior**: If `/implement` is active and `alignment_passed` is not yet set, coordinator Write/Edit/Bash to code files are denied with the message "ALIGNMENT GATE: /implement is active but STEP 2 (PROJECT.md alignment) has not passed yet."
+- **HMAC**: `alignment_passed` is included in the HMAC-signed pipeline state to prevent tampering. The gate fails closed on any HMAC failure or missing state.
+- **Scope**: Code files only (`.py`, `.js`, `.ts`, etc.). Config files and docs are exempt.
+- **Purpose**: Guarantees alignment validation is never skipped under time or context pressure — the hook enforces it at the tool level, not just as a prompt instruction.
+
 ### Explicit /implement Hard Block (Issue #528)
 
 When the user explicitly invokes `/implement`, the hook enters a higher enforcement mode regardless of `ENFORCEMENT_LEVEL`:

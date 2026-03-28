@@ -212,6 +212,31 @@ Do NOT proceed to STEP 2 until the staging area is clean.
 
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`"). Check feature against GOALS, SCOPE, CONSTRAINTS. If misaligned: BLOCK with reason and options.
 
+**After alignment passes**, update the pipeline state to record that STEP 2 completed:
+
+```bash
+python3 -c "
+import sys, os, json
+sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from pipeline_state import sign_state
+state_path = '/tmp/implement_pipeline_state.json'
+if os.path.exists(state_path):
+    with open(state_path) as f:
+        state = json.load(f)
+    state['alignment_passed'] = True
+    sid = os.environ.get('CLAUDE_SESSION_ID', 'unknown')
+    state = sign_state(state, sid)
+    with open(state_path, 'w') as f:
+        json.dump(state, f)
+    print('Alignment gate passed — state updated')
+"
+```
+
+**FORBIDDEN**:
+- ❌ Proceeding to STEP 3 without updating `alignment_passed` in the pipeline state
+- ❌ Declaring alignment "obvious" without reading PROJECT.md
+- ❌ Skipping STEP 2 under time or context pressure
+
 ### STEP 3: Check Research Cache
 
 **Progress**: Output step banner (STEP 3/15 — Research Cache). Output CACHE_HIT or CACHE_MISS after.
@@ -240,7 +265,7 @@ Validation: If web researcher shows 0 tool uses, retry. Merge both outputs. Pers
 
 **Progress**: Output step banner (STEP 5/15 — Planning, Agent: planner (Opus)). Output agent completion after.
 
-**Agent**(subagent_type="planner", model="opus") — Pass merged research + feature description. Output: file-by-file plan, dependencies, edge cases, testing strategy.
+**Agent**(subagent_type="planner", model="opus") — Pass merged research + feature description + PROJECT.md GOALS and SCOPE sections (verbatim). Read `.claude/PROJECT.md` and extract the GOALS section and SCOPE section (both IN Scope and OUT of Scope). Include them in the planner prompt as: "PROJECT.md GOALS: [verbatim text]. PROJECT.md SCOPE (In Scope): [verbatim items]. PROJECT.md SCOPE (Out of Scope): [verbatim items]. The plan MUST align with these scope boundaries." Output: file-by-file plan, dependencies, edge cases, testing strategy.
 
 ### STEP 6: Generate Acceptance Tests (default mode only)
 
@@ -328,7 +353,7 @@ Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — 
 
 **VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer. Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
-**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output. Output: APPROVAL or issues.
+**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVAL or issues.
 
 **HARD GATE: Reviewer Completion** — You MUST wait for the reviewer agent to return its result BEFORE invoking security-auditor. Do NOT launch security-auditor in the same message as reviewer. This is a SEQUENTIAL constraint, not a suggestion. If you violate this gate, the pipeline is invalid.
 

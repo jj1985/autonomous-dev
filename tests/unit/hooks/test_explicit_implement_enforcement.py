@@ -76,6 +76,7 @@ def valid_state(state_file, monkeypatch):
         "mode": "full",
         "run_id": "test-run",
         "explicitly_invoked": True,
+        "alignment_passed": True,
     })
     monkeypatch.setenv("PIPELINE_STATE_FILE", path)
     return path

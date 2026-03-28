@@ -616,6 +616,46 @@ def _is_explicit_implement_active() -> bool:
         return False
 
 
+def _has_alignment_passed() -> bool:
+    """Check if STEP 2 alignment has passed in the pipeline state (Issue #585).
+
+    Reads the pipeline state file and verifies that alignment_passed is True.
+    HMAC integrity is verified to prevent tampering. On any error (file missing,
+    JSON invalid, HMAC fails), returns False (fail closed).
+
+    Returns:
+        True if alignment has passed and HMAC is valid
+    """
+    pipeline_state_file = os.getenv(
+        "PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json"
+    )
+    try:
+        state_path = Path(pipeline_state_file)
+        if not state_path.exists():
+            return False
+        import json as _json
+
+        with open(state_path) as f:
+            state = _json.load(f)
+
+        # HMAC integrity check — fail closed on any verification failure
+        if state.get("hmac") is not None:
+            try:
+                from pipeline_state import verify_state_hmac
+                sid = os.getenv("CLAUDE_SESSION_ID") or _session_id
+                if not verify_state_hmac(state, sid):
+                    _log_deviation(
+                        "pipeline_state", "hmac_check", "alignment_gate_hmac_invalid"
+                    )
+                    return False
+            except ImportError:
+                return False  # Fail closed: HMAC present but verify library unavailable
+
+        return state.get("alignment_passed", False) is True
+    except (Exception,):
+        return False  # Fail closed on any error
+
+
 # Non-code file extensions exempt from explicit /implement coordinator blocking
 _NON_CODE_EXTENSIONS = {
     ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini",
@@ -885,6 +925,21 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
         agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
         if agent_name in PIPELINE_AGENTS:
             return ("allow", f"Pipeline agent '{agent_name}' authorized")
+        # Issue #585: Block ALL code writes before alignment passes
+        if _is_explicit_implement_active() and tool_name in ("Write", "Edit", "Bash"):
+            if not _has_alignment_passed():
+                if _is_code_file_target(tool_name, tool_input):
+                    _log_deviation(
+                        tool_input.get("file_path", "unknown") if tool_name != "Bash"
+                        else "bash_command",
+                        tool_name,
+                        "alignment_gate_not_passed",
+                    )
+                    return ("deny", (
+                        "ALIGNMENT GATE: /implement is active but STEP 2 (PROJECT.md alignment) "
+                        "has not passed yet. The coordinator must complete alignment validation "
+                        "before any code changes are allowed. Complete STEP 2 first."
+                    ))
         # Issue #528: If /implement was explicitly invoked, block coordinator code writes
         if _is_explicit_implement_active() and tool_name in ("Write", "Edit", "Bash"):
             level = os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower()

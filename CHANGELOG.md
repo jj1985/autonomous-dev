@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Added
+- **Alignment Gate: Hook-Level Enforcement + Scope Injection** (#585): `unified_pre_tool.py` now blocks coordinator Write/Edit/Bash to code files when `/implement` is active but STEP 2 (PROJECT.md alignment) has not yet completed — `alignment_passed: true` must be present in the pipeline state before any code changes are permitted. The gate fails closed on HMAC failure or missing state. `alignment_passed` is included in the HMAC-signed fields of `pipeline_state.py` to prevent state tampering. `implement.md` STEP 2 updated to write `alignment_passed: True` to the pipeline state after the alignment check passes. `implement.md` STEP 5 (planner) and STEP 10a (reviewer) now receive PROJECT.md GOALS and SCOPE sections verbatim so sub-agents operate within validated scope boundaries. 12 unit tests (`test_alignment_gate_enforcement.py`), 7 library tests (`test_pipeline_state_alignment.py`), and 11 acceptance tests (`test_acceptance_alignment_gate.py`).
+
 ### Fixed
 - **Policy schema regression restored to v2.0** (#561, #562): `auto_approve_policy.json` was reverted to v1.0 (whitelist-first) schema during conflict resolution in commit 9b42c0d. Restored to v2.0 (blacklist-first, permissive mode) in both `plugins/autonomous-dev/config/` and `.claude/config/`. Schema validation tests added to `test_native_tool_auto_approval.py` to prevent future regressions. `allowed-tools` frontmatter added to `implement-fix.md`, `refactor.md`, and `sweep.md` command files for enforcement compatibility.
 - **TOOL-AUTO-APPROVAL.md Configuration section** updated: Policy File "Structure" example now shows v2.0 blacklist-first schema instead of stale v1.0 whitelist-first schema.

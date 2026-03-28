@@ -251,6 +251,7 @@ def _compute_state_hmac(state: dict, secret: str) -> str:
         state.get("mode", ""),
         state.get("run_id", ""),
         str(state.get("explicitly_invoked", False)),
+        str(state.get("alignment_passed", False)),
         nonce,
     ]
     message = "|".join(parts).encode("utf-8")
