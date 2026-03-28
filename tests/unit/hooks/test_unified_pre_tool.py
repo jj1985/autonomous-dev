@@ -129,9 +129,13 @@ class TestValidateMcpSecurity:
             assert "disabled" in reason.lower()
 
     def test_unknown_mcp_tool_no_auto_approve(self):
+        # Issue #401 refactored MCP security to default-allow when mcp_security_validator
+        # is not importable (which is the case in tests). MCP_AUTO_APPROVE=false no longer
+        # causes "ask" — the validator returns "allow" to avoid blocking users when the
+        # optional security module is absent. Assertion changed from "ask" -> "allow".
         with patch.dict(os.environ, {"PRE_TOOL_MCP_SECURITY": "true", "MCP_AUTO_APPROVE": "false"}):
             decision, reason = upt.validate_mcp_security("mcp_custom_tool", {})
-            assert decision == "ask"
+            assert decision == "allow"
 
     def test_unknown_mcp_tool_auto_approve_no_engine(self):
         with patch.dict(os.environ, {"PRE_TOOL_MCP_SECURITY": "true", "MCP_AUTO_APPROVE": "true"}):
@@ -212,6 +216,67 @@ class TestValidateAgentAuthorization:
                 "Edit", {"file_path": "app.py", "old_string": "x = 1", "new_string": "x = 2"}
             )
             assert decision == "allow"
+
+    @pytest.mark.parametrize("file_path", [
+        "tests/test_foo.py",
+        "docs/README.md",
+        "CHANGELOG.md",
+        ".claude/config/policy.json",
+    ])
+    def test_exempt_path_coverage(self, file_path: str):
+        """Regression: _is_exempt_path must recognise test files, docs, and configs.
+
+        Covers multiple exempt path patterns to ensure the function is robust
+        against future refactoring. Each path should be allowed without entering
+        significance analysis.
+        """
+        with patch.dict(
+            os.environ,
+            {
+                "PRE_TOOL_AGENT_AUTH": "true",
+                "CLAUDE_AGENT_NAME": "",
+                "ENFORCEMENT_LEVEL": "block",
+            },
+            clear=False,
+        ):
+            os.environ.pop("PIPELINE_STATE_FILE", None)
+            decision, reason = upt.validate_agent_authorization(
+                "Edit",
+                {"file_path": file_path, "old_string": "a", "new_string": "b"},
+            )
+            assert decision == "allow", (
+                f"Expected 'allow' for exempt path '{file_path}', got '{decision}': {reason}"
+            )
+
+    @pytest.mark.parametrize("old_str,new_str", [
+        ("version = '1.0.0'", "version = '1.0.1'"),  # single-line value change
+        ("# TODO: fix this", "# Fixed: resolved the issue"),  # comment change
+        ("import os", "import os  # noqa: F401"),  # import annotation change
+    ])
+    def test_minor_edit_various_patterns(self, old_str: str, new_str: str):
+        """Regression: _has_significant_additions must treat small single-line edits as minor.
+
+        Covers common minor-edit patterns to prevent false positives in enforcement.
+        None of these should trigger significance detection.
+        """
+        with patch.dict(
+            os.environ,
+            {
+                "PRE_TOOL_AGENT_AUTH": "true",
+                "CLAUDE_AGENT_NAME": "",
+                "ENFORCEMENT_LEVEL": "block",
+            },
+            clear=False,
+        ):
+            os.environ.pop("PIPELINE_STATE_FILE", None)
+            decision, reason = upt.validate_agent_authorization(
+                "Edit",
+                {"file_path": "app.py", "old_string": old_str, "new_string": new_str},
+            )
+            assert decision == "allow", (
+                f"Expected 'allow' for minor edit ({old_str!r} -> {new_str!r}), "
+                f"got '{decision}': {reason}"
+            )
 
 
 class TestValidateBatchPermission:
