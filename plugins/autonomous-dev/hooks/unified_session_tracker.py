@@ -303,28 +303,64 @@ class SessionTracker:
     """Basic session logging to docs/sessions/."""
 
     def __init__(self):
-        """Initialize session tracker."""
+        """Initialize session tracker.
+
+        When CLAUDE_SESSION_ID is set, session files include the session ID in
+        their filename to prevent cross-session contamination (Issue #594).
+        """
         self.session_dir = Path("docs/sessions")
         self.session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Read CLAUDE_SESSION_ID for session isolation (Issue #594)
+        claude_session_id = os.environ.get("CLAUDE_SESSION_ID")
 
         # Find or create session file for today
         today = datetime.now().strftime("%Y%m%d")
         session_files = list(self.session_dir.glob(f"{today}-*.md"))
 
         if session_files:
-            # Use most recent session file from today
-            self.session_file = sorted(session_files)[-1]
+            if claude_session_id:
+                # Filter by session ID substring in filename
+                # Files created with this session ID include it in the name
+                safe_sid = claude_session_id.replace("/", "_").replace("\\", "_")
+                matching = [f for f in session_files if safe_sid in f.name]
+                if matching:
+                    self.session_file = sorted(matching)[-1]
+                else:
+                    # No match — create new session file for this session
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    safe_sid = claude_session_id[:16].replace("/", "_").replace("\\", "_")
+                    self.session_file = self.session_dir / f"{timestamp}-{safe_sid}-session.md"
+                    self.session_file.write_text(
+                        f"# Session {timestamp}\n\n"
+                        f"**Started**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                        f"**Claude Session ID**: {claude_session_id}\n\n"
+                        f"---\n\n"
+                    )
+            else:
+                # No CLAUDE_SESSION_ID — fall back to most recent file (backward compat)
+                self.session_file = sorted(session_files)[-1]
         else:
             # Create new session file
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            self.session_file = self.session_dir / f"{timestamp}-session.md"
-
-            # Initialize with header
-            self.session_file.write_text(
-                f"# Session {timestamp}\n\n"
-                f"**Started**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                f"---\n\n"
-            )
+            if claude_session_id:
+                safe_sid = claude_session_id[:16].replace("/", "_").replace("\\", "_")
+                filename = f"{timestamp}-{safe_sid}-session.md"
+                session_header = (
+                    f"# Session {timestamp}\n\n"
+                    f"**Started**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"**Claude Session ID**: {claude_session_id}\n\n"
+                    f"---\n\n"
+                )
+            else:
+                filename = f"{timestamp}-session.md"
+                session_header = (
+                    f"# Session {timestamp}\n\n"
+                    f"**Started**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                    f"---\n\n"
+                )
+            self.session_file = self.session_dir / filename
+            self.session_file.write_text(session_header)
 
     def log(self, agent_name: str, message: str) -> None:
         """
@@ -476,6 +512,9 @@ def check_pipeline_complete() -> bool:
     """
     Check if all 7 agents in pipeline completed.
 
+    Filters candidate session files by CLAUDE_SESSION_ID when available to
+    prevent cross-session contamination (Issue #594).
+
     Returns:
         True if pipeline complete, False otherwise
     """
@@ -489,6 +528,21 @@ def check_pipeline_complete() -> bool:
 
         if not session_files:
             return False
+
+        # Filter by CLAUDE_SESSION_ID when available (Issue #594)
+        claude_session_id = os.environ.get("CLAUDE_SESSION_ID")
+        if claude_session_id:
+            matching = []
+            for f in session_files:
+                try:
+                    data = json.loads(f.read_text())
+                    if data.get("claude_session_id") == claude_session_id:
+                        matching.append(f)
+                except (json.JSONDecodeError, OSError):
+                    continue
+            # Use matching files if any; otherwise fall back to all files
+            if matching:
+                session_files = matching
 
         # Read latest session
         latest_session = sorted(session_files)[-1]

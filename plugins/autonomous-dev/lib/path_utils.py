@@ -189,6 +189,37 @@ def is_worktree() -> bool:
     return _is_worktree_func()
 
 
+def get_main_repo_activity_log_dir() -> Optional[Path]:
+    """Get the activity log directory of the main (parent) repository.
+
+    When running inside a git worktree, session activity logs may be written
+    to the main repo's ``.claude/logs/activity/`` directory instead of the
+    worktree's own directory.  This function resolves that parent path so
+    callers can merge logs from both locations.
+
+    Returns:
+        Path to ``<parent_repo>/.claude/logs/activity/`` if currently inside
+        a worktree and the directory exists, otherwise ``None``.
+    """
+    if not is_worktree():
+        return None
+
+    try:
+        from git_operations import get_worktree_parent
+        parent = get_worktree_parent()
+    except (ImportError, Exception):
+        return None
+
+    if parent is None:
+        return None
+
+    activity_dir = parent / ".claude" / "logs" / "activity"
+    if activity_dir.is_dir():
+        return activity_dir
+
+    return None
+
+
 def get_session_dir(create: bool = True, use_cache: bool = True) -> Path:
     """Get session directory path (PROJECT_ROOT/docs/sessions).
 

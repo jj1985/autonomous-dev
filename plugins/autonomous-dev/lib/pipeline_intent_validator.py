@@ -144,20 +144,12 @@ def get_minimum_prompt_content(agent_type: str, agents_dir: Path) -> Optional[st
         return None
 
 
-def parse_session_logs(
+def _parse_single_log(
     log_path: Path,
     *,
     session_id: Optional[str] = None,
 ) -> List[PipelineEvent]:
-    """Parse JSONL session log into pipeline-relevant events.
-
-    Args:
-        log_path: Path to JSONL log file.
-        session_id: Optional session ID filter.
-
-    Returns:
-        List of PipelineEvent sorted by timestamp.
-    """
+    """Parse a single JSONL log file into pipeline events (internal helper)."""
     events: List[PipelineEvent] = []
 
     if not log_path.exists():
@@ -254,9 +246,50 @@ def parse_session_logs(
                 session_id=entry.get("session_id", ""),
             ))
 
-    # Sort by timestamp
-    events.sort(key=lambda e: e.timestamp)
     return events
+
+
+def parse_session_logs(
+    log_path: Path,
+    *,
+    session_id: Optional[str] = None,
+    additional_log_paths: Optional[List[Path]] = None,
+) -> List[PipelineEvent]:
+    """Parse JSONL session log into pipeline-relevant events.
+
+    Args:
+        log_path: Path to JSONL log file.
+        session_id: Optional session ID filter.
+        additional_log_paths: Optional list of additional JSONL log files to
+            merge.  Events are deduplicated by (timestamp, tool, session_id)
+            so the same event appearing in multiple files is only returned once.
+
+    Returns:
+        List of PipelineEvent sorted by timestamp.
+    """
+    events = _parse_single_log(log_path, session_id=session_id)
+
+    # Parse additional log paths and merge
+    if additional_log_paths:
+        for extra_path in additional_log_paths:
+            if extra_path and extra_path.exists():
+                extra_events = _parse_single_log(
+                    extra_path, session_id=session_id
+                )
+                events.extend(extra_events)
+
+    # Deduplicate by (timestamp, tool, session_id)
+    seen: set = set()
+    unique_events: List[PipelineEvent] = []
+    for evt in events:
+        key = (evt.timestamp, evt.tool, evt.session_id)
+        if key not in seen:
+            seen.add(key)
+            unique_events.append(evt)
+
+    # Sort by timestamp
+    unique_events.sort(key=lambda e: e.timestamp)
+    return unique_events
 
 
 def _parse_timestamp(ts: str) -> Optional[datetime]:
@@ -976,7 +1009,22 @@ def validate_pipeline_intent(
     Returns:
         Combined list of all findings, aggregated across all session groups.
     """
-    events = parse_session_logs(log_path, session_id=session_id)
+    # Detect worktree context and resolve main repo log path (Issue #593)
+    additional_log_paths: Optional[List[Path]] = None
+    try:
+        from path_utils import get_main_repo_activity_log_dir
+        main_log_dir = get_main_repo_activity_log_dir()
+        if main_log_dir is not None:
+            main_log_file = main_log_dir / log_path.name
+            if main_log_file.exists() and main_log_file != log_path.resolve():
+                additional_log_paths = [main_log_file]
+    except (ImportError, Exception):
+        pass
+
+    events = parse_session_logs(
+        log_path, session_id=session_id,
+        additional_log_paths=additional_log_paths,
+    )
     if not events:
         return []
 

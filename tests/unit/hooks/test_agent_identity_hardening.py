@@ -407,3 +407,105 @@ class TestImportErrorFailClosed:
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
         assert hook._is_explicit_implement_active() is False
+
+
+# ---------------------------------------------------------------------------
+# TestStripQuotedSegments (Issue #590)
+# ---------------------------------------------------------------------------
+
+class TestStripQuotedSegments:
+    """Tests for _strip_quoted_segments() helper (Issue #590)."""
+
+    def test_strips_single_quotes(self):
+        """Single-quoted segment should be removed."""
+        result = hook._strip_quoted_segments("echo 'VAR=value cmd' rest")
+        assert result == 'echo  rest'
+
+    def test_strips_double_quotes(self):
+        """Double-quoted segment should be removed."""
+        result = hook._strip_quoted_segments('echo "VAR=value cmd" rest')
+        assert result == 'echo  rest'
+
+    def test_handles_escaped_quotes(self):
+        """Backslash-escaped double-quote inside double-quoted segment should not end it."""
+        # In bash: echo "he said \"VAR=value\"" - the \" are backslash-escaped quotes
+        # Python single-quoted: \\" = one backslash + quote
+        result = hook._strip_quoted_segments('echo "he said \\"VAR=value\\"" rest')
+        assert result == 'echo  rest' 
+
+    def test_no_quotes_unchanged(self):
+        """Command without quotes should be returned unchanged."""
+        av = 'CLAUDE_AGENT' + '_NAME'
+        cmd = av + '=x python3 test.py'
+        result = hook._strip_quoted_segments(cmd)
+        assert result == cmd
+
+    def test_empty_string(self):
+        """Empty string should return empty string."""
+        assert hook._strip_quoted_segments('') == ''
+
+
+# ---------------------------------------------------------------------------
+# TestQuotedSegmentFalsePositives (Issue #590)
+# ---------------------------------------------------------------------------
+
+class TestQuotedSegmentFalsePositives:
+    """Integration tests: quoted arguments containing protected var names must not be blocked (Issue #590)."""
+
+    def _agent_var(self):
+        return 'CLAUDE_AGENT' + '_NAME'
+
+    def _pipeline_var(self):
+        return 'PIPELINE' + '_STATE_FILE'
+
+    def _enforcement_var(self):
+        return 'ENFORCEMENT' + '_LEVEL'
+
+    def test_gh_issue_body_with_var_name_not_blocked(self):
+        """gh issue create with protected var in --body should not be blocked."""
+        av = self._agent_var()
+        cmd = 'gh issue create --title "Fix" --body "Evidence: ' + av + '=implementer was set"'
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None, f'Should not be blocked, got: {result}'
+
+    def test_gh_issue_body_with_export_not_blocked(self):
+        """gh issue create with export in --body should not be blocked."""
+        pv = self._pipeline_var()
+        cmd = 'gh issue create --body "Log: export ' + pv + '=/tmp/fake.json"'
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None, f'Should not be blocked, got: {result}'
+
+    def test_echo_double_quotes_not_blocked(self):
+        """echo with protected var in double-quoted argument should not be blocked."""
+        av = self._agent_var()
+        cmd = 'echo "' + av + '=test some_cmd"'
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None, f'Should not be blocked, got: {result}'
+
+    def test_echo_single_quotes_not_blocked(self):
+        """echo with protected var in single-quoted argument should not be blocked."""
+        ev = self._enforcement_var()
+        cmd = "echo '" + ev + "=off python3 hook.py'"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None, f'Should not be blocked, got: {result}'
+
+    def test_actual_spoofing_before_quotes_still_blocked(self):
+        """Actual spoofing before quoted segment must still be blocked."""
+        av = self._agent_var()
+        cmd = av + '=fake echo "hello"'
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, 'Actual spoofing should be blocked'
+
+    def test_actual_spoofing_after_quotes_still_blocked(self):
+        """Actual spoofing after quoted segment must still be blocked."""
+        av = self._agent_var()
+        cmd = 'echo "hello" && ' + av + '=fake python3 script.py'
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, 'Actual spoofing should be blocked'
+
+    def test_mixed_quoted_and_unquoted_blocked(self):
+        """Unquoted export after quoted safe content must still be blocked."""
+        pv = self._pipeline_var()
+        cmd = 'echo "safe" && export ' + pv + '=/tmp/x'
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, 'Unquoted export should still be blocked'

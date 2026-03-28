@@ -74,7 +74,7 @@ The autonomous-dev plugin includes shared libraries organized into the following
 56. **training_metrics.py** - Tulu3 multi-dimensional scoring and DPO preference generation for LLM training quality assessment (v1.0.0, Issue #279)
 57. **coverage_baseline.py** - Coverage baseline storage and regression detection for test quality gates (v1.0.0, Issue #332)
 58. **batch_git_finalize.py** - Batch git finalization with auto-commit, merge, and worktree cleanup (v1.0.0, Issues #333-334)
-59. **pipeline_intent_validator.py** - Intent-level pipeline validation via JSONL session logs for coordinator-level violations. Detects step ordering, hard gate bypasses, context dropping, parallelization violations, progressive prompt compression across batch issues (Issue #367, compression detection Issue #544), doc-master verdict timeouts/failures (Issue #543), and batch issues missing continuous-improvement-analyst invocations (Issue #559). `Finding` dataclass includes `recommended_action: Optional[str]` field for remediation guidance. `detect_progressive_compression()` accepts optional `agents_dir` parameter and populates `recommended_action` with prompt reload instructions. `get_minimum_prompt_content(agent_type, agents_dir)` reads baseline prompt content from agent `.md` files with `VALID_AGENT_TYPES` whitelist path validation (Issue #561). `detect_doc_verdict_missing()` uses `_correlate_invocation_completion()` to pair PostToolUse invocation events with SubagentStop completion events by subagent type and temporal proximity, enabling accurate verdict detection from completion word counts rather than invocation placeholders; `MIN_DOC_VERDICT_WORDS = 30` constant sets minimum output threshold (Issue #562). `PipelineEvent` dataclass includes `session_id: str` field populated from JSONL log entries. `validate_pipeline_intent()` is now session-scoped: when no `session_id` filter is provided, events are grouped by their `session_id` field and each session's events are checked independently, preventing false CRITICAL `step_ordering` findings from cross-session event comparisons in a shared daily log file; legacy events with an empty `session_id` are grouped together as a fallback virtual session (Issue #587)
+59. **pipeline_intent_validator.py** - Intent-level pipeline validation via JSONL session logs for coordinator-level violations. Detects step ordering, hard gate bypasses, context dropping, parallelization violations, progressive prompt compression across batch issues (Issue #367, compression detection Issue #544), doc-master verdict timeouts/failures (Issue #543), and batch issues missing continuous-improvement-analyst invocations (Issue #559). `Finding` dataclass includes `recommended_action: Optional[str]` field for remediation guidance. `detect_progressive_compression()` accepts optional `agents_dir` parameter and populates `recommended_action` with prompt reload instructions. `get_minimum_prompt_content(agent_type, agents_dir)` reads baseline prompt content from agent `.md` files with `VALID_AGENT_TYPES` whitelist path validation (Issue #561). `detect_doc_verdict_missing()` uses `_correlate_invocation_completion()` to pair PostToolUse invocation events with SubagentStop completion events by subagent type and temporal proximity, enabling accurate verdict detection from completion word counts rather than invocation placeholders; `MIN_DOC_VERDICT_WORDS = 30` constant sets minimum output threshold (Issue #562). `PipelineEvent` dataclass includes `session_id: str` field populated from JSONL log entries. `validate_pipeline_intent()` is now session-scoped: when no `session_id` filter is provided, events are grouped by their `session_id` field and each session's events are checked independently, preventing false CRITICAL `step_ordering` findings from cross-session event comparisons in a shared daily log file; legacy events with an empty `session_id` are grouped together as a fallback virtual session (Issue #587). `parse_session_logs()` accepts an optional `additional_log_paths` parameter to merge events from multiple JSONL files; duplicates are removed by `(timestamp, tool, session_id)` key before sorting. `validate_pipeline_intent()` automatically detects worktree context via `path_utils.get_main_repo_activity_log_dir()` and passes the corresponding main-repo log file as `additional_log_paths`, preventing false INCOMPLETE findings when logs are split across the worktree and its parent repository (Issue #593)
 60. **pipeline_state.py** - Pipeline state tracker with gate enforcement (stdlib only, zero dependencies) (Issue #402). HMAC integrity protection added in Issue #557: `_compute_state_hmac(state, session_id)` computes HMAC-SHA256 over critical state fields (session_start, mode, run_id, explicitly_invoked, nonce) keyed by session_id+nonce; `verify_state_hmac(state, session_id)` verifies the stored HMAC — backward compatible (returns True when no hmac field present), returns False when nonce is missing with hmac present (tampering indicator). Consumed by `unified_pre_tool.py` to reject forged pipeline state files.
 61. **step5_quality_gate.py** - STEP 5 quality gate: runs tests with smart routing or full suite, checks coverage regression, enforces skip baseline (Issue #508)
 62. **test_routing.py** - Smart test routing: classifies changed files into categories and computes minimal pytest marker expression to skip irrelevant test tiers; `--full-tests` override runs complete suite (Issue #508)
@@ -2690,9 +2690,16 @@ except GitHubAPIError as e:
 - **Returns**: `bool` - True if in worktree, False otherwise
 - **Lazy Import**: Imports git_operations.is_worktree() on first call to avoid circular dependencies
 - **Fallback**: Returns False if import fails or detection raises exception
-- **Used By**: get_batch_state_file()
+- **Used By**: get_batch_state_file(), get_main_repo_activity_log_dir()
 - **Caching**: Module-level function cache for performance
 - **Testing**: Can be mocked by patching `path_utils.is_worktree`
+
+#### `get_main_repo_activity_log_dir()` (NEW - Issue #593)
+- **Purpose**: Get the activity log directory of the main (parent) repository when running inside a git worktree
+- **Returns**: `Optional[Path]` - Path to `<parent_repo>/.claude/logs/activity/` if in a worktree and the directory exists; `None` otherwise
+- **Behavior**: Returns `None` immediately when not in a worktree; resolves parent repo path via `git_operations.get_worktree_parent()`
+- **Used By**: `pipeline_intent_validator.validate_pipeline_intent()` to merge main repo logs and prevent false INCOMPLETE findings in worktree context
+- **Fallback**: Returns `None` if worktree detection fails, parent resolution fails, or the activity directory does not exist
 
 #### `reset_project_root_cache()`
 - **Purpose**: Reset cached project root (testing only)
@@ -2704,7 +2711,7 @@ except GitHubAPIError as e:
 
 ### Test Coverage
 
-- **Total**: 45+ tests in `tests/unit/test_tracking_path_resolution.py` + 15 tests in `tests/unit/lib/test_policy_path_resolution.py` + 15 tests in `tests/unit/lib/test_path_utils_worktree.py` + 9 integration tests in `tests/integration/test_worktree_batch_isolation.py` (NEW v3.45.0)
+- **Total**: 45+ tests in `tests/unit/test_tracking_path_resolution.py` + 15 tests in `tests/unit/lib/test_policy_path_resolution.py` + 15 tests in `tests/unit/lib/test_path_utils_worktree.py` + 9 integration tests in `tests/integration/test_worktree_batch_isolation.py` (NEW v3.45.0) + 9 tests in `tests/unit/lib/test_worktree_log_resolution.py` (Issue #593)
 - **Areas**:
   - PROJECT_ROOT detection from various directories
   - Marker file priority (`.git` over `.claude`)
@@ -4097,6 +4104,7 @@ Features are only marked as completed when they truly pass ALL quality gates:
   - Auto-detects project root from any subdirectory
   - Creates `docs/sessions/` directory if missing
   - Finds or creates JSON session files with timestamp naming: `YYYYMMDD-HHMMSS-pipeline.json`
+  - Session isolation via `CLAUDE_SESSION_ID`: when the env var is set, file selection filters to pipeline.json files whose stored `claude_session_id` field matches the current session, preventing cross-session pollution when multiple batches run on the same day (Issue #594). Falls back to latest file when env var is absent.
   - Atomic writes using tempfile + rename pattern (Issue #45 security)
   - Path validation via shared security_utils module
 
@@ -4311,6 +4319,7 @@ JSON session files stored in `docs/sessions/YYYYMMDD-HHMMSS-pipeline.json`:
 ```json
 {
   "session_id": "20251119-143022",
+  "claude_session_id": "abc123",
   "started": "2025-11-19T14:30:22.123456",
   "github_issue": 79,
   "agents": [
