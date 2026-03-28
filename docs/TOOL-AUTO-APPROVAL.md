@@ -493,14 +493,19 @@ cp plugins/autonomous-dev/config/auto_approve_policy.json .claude/config/auto_ap
 Only auto-approve tool calls from subagents (not from main Claude session):
 
 ```python
-# Check CLAUDE_AGENT_NAME environment variable
-agent_name = os.getenv("CLAUDE_AGENT_NAME")
+# Determine agent identity (Issue #591):
+# 1. agent_type from hook stdin JSON (primary — available inside subagents
+#    even when CLAUDE_AGENT_NAME is absent from subprocess env)
+# 2. CLAUDE_AGENT_NAME env var (fallback for older contexts)
+agent_name = _get_active_agent_name()
 if not agent_name:
     # Not in subagent context → manual approval
     return {"approved": False, "reason": "Not in subagent context"}
 ```
 
 **Why**: Prevents accidental auto-approval of user's manual tool invocations. Only autonomous workflows use auto-approval.
+
+**Note (Issue #591)**: `CLAUDE_AGENT_NAME` may be absent from the subprocess environment when hooks fire inside a subagent. The hook reads `agent_type` from the stdin JSON payload first (populated by Claude Code even in subprocess contexts) and falls back to the env var. Both sources are consulted; `CLAUDE_AGENT_NAME` alone is no longer the sole identity signal.
 
 **2. Agent Whitelist** (subagent_only mode)
 
@@ -670,8 +675,8 @@ if denial_count >= CIRCUIT_BREAKER_THRESHOLD:
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 5. Validate Subagent Context                                │
-│    Check CLAUDE_AGENT_NAME env var                          │
-│    If not set: return {"approved": False}                   │
+│    Check agent_type (stdin JSON) then CLAUDE_AGENT_NAME     │
+│    If neither set: return {"approved": False}               │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
@@ -1206,7 +1211,10 @@ from plugins.autonomous_dev.hooks.unified_pre_tool_use import on_pre_tool_use
 import os
 
 def test_custom_agent_auto_approved():
-    # Set CLAUDE_AGENT_NAME to your new agent
+    # Set CLAUDE_AGENT_NAME as the env-var fallback for agent identity.
+    # In real subagent execution, agent_type from stdin JSON takes precedence
+    # (Issue #591). The env var remains valid for unit test contexts where
+    # stdin JSON is not present.
     os.environ["CLAUDE_AGENT_NAME"] = "your-new-agent"
     os.environ["MCP_AUTO_APPROVE"] = "true"
 

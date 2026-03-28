@@ -72,6 +72,10 @@ from typing import Dict, Tuple, List
 # Logging functions fall back to this when CLAUDE_SESSION_ID env var is absent.
 _session_id: str = "unknown"
 
+# Module-level agent_type extracted from hook stdin JSON (set in main()).
+# Used by _get_active_agent_name() as primary identity source (Issue #591).
+_agent_type: str = ""
+
 
 def is_running_under_uv() -> bool:
     """Detect if script is running under UV."""
@@ -507,6 +511,12 @@ def _is_protected_infrastructure(file_path: str) -> bool:
     # Extensions directory is user-owned — never protected
     if "/extensions/" in normalized:
         return False
+    # Test files are never protected — even if they live under hooks/ or lib/
+    if "/tests/" in normalized or "/test/" in normalized:
+        return False
+    path_basename = Path(file_path).name
+    if path_basename.startswith("test_") or path_basename.endswith("_test.py"):
+        return False
     # Ensure leading slash or check for bare directory name at start
     for segment, extensions in PROTECTED_INFRA_SEGMENTS.items():
         # segment is like '/agents/' — check both embedded and path-start forms
@@ -515,6 +525,51 @@ def _is_protected_infrastructure(file_path: str) -> bool:
             ext = Path(file_path).suffix.lower()
             if ext in extensions:
                 return True
+    return False
+
+
+def _get_active_agent_name() -> str:
+    """Get the active agent name from available sources (Issue #591).
+
+    Priority order:
+    1. agent_type from hook stdin JSON (available inside subagents)
+    2. CLAUDE_AGENT_NAME env var (set by Claude Code in some contexts)
+
+    Returns:
+        Lowercase agent name, or empty string if not in an agent context.
+    """
+    if _agent_type:
+        return _agent_type.strip().lower()
+    env_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+    return env_name
+
+
+def _is_stale_session(state: dict, state_path: "Path") -> bool:
+    """Check if pipeline state belongs to a different (stale) session (Issue #592).
+
+    Compares session_id in state file against current session's _session_id.
+    If different and both are non-empty/non-unknown, state is stale -- remove file.
+
+    Args:
+        state: Parsed pipeline state dict.
+        state_path: Path to the state file (for removal).
+
+    Returns:
+        True if state is stale (file removed), False if current or indeterminate.
+    """
+    stored_sid = state.get("session_id", "")
+    current_sid = os.getenv("CLAUDE_SESSION_ID") or _session_id
+
+    if not stored_sid or stored_sid == "unknown" or not current_sid or current_sid == "unknown":
+        return False  # Cannot determine, fall through to TTL/HMAC
+
+    if stored_sid != current_sid:
+        try:
+            state_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
+
     return False
 
 
@@ -528,8 +583,8 @@ def _is_pipeline_active() -> bool:
     Returns:
         True if pipeline is active
     """
-    # Check agent name
-    agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+    # Check agent name (Issue #591: prefer stdin agent_type over env var)
+    agent_name = _get_active_agent_name()
     if agent_name in PIPELINE_AGENTS:
         return True
 
@@ -542,6 +597,10 @@ def _is_pipeline_active() -> bool:
             from datetime import datetime as _datetime
             with open(state_path) as f:
                 state = _json.load(f)
+
+            # Session staleness check (Issue #592)
+            if _is_stale_session(state, state_path):
+                return False
 
             # HMAC integrity check (Issue #557)
             if state.get("hmac") is not None:
@@ -588,6 +647,10 @@ def _is_explicit_implement_active() -> bool:
 
         with open(state_path) as f:
             state = _json.load(f)
+
+        # Session staleness check (Issue #592)
+        if _is_stale_session(state, state_path):
+            return False
 
         # HMAC integrity check (Issue #557)
         if state.get("hmac") is not None:
@@ -637,6 +700,10 @@ def _has_alignment_passed() -> bool:
 
         with open(state_path) as f:
             state = _json.load(f)
+
+        # Session staleness check (Issue #592)
+        if _is_stale_session(state, state_path):
+            return False
 
         # HMAC integrity check — fail closed on any verification failure
         if state.get("hmac") is not None:
@@ -874,6 +941,47 @@ def _extract_bash_file_writes(command: str) -> list:
     for match in re.finditer(dd_pattern, command):
         file_paths.append(match.group(1).strip())
 
+    # sed -i (in-place edit) — Issue #589
+    sed_pattern = r'\bsed\s+(?:-[^i]*)?-i[^\s]*\s+(?:[\'"][^\'"]*[\'"]\s+)?([^\s;&|]+)'
+    for match in re.finditer(sed_pattern, command):
+        file_paths.append(match.group(1).strip())
+
+    # cp / mv destination (last argument) — Issue #589
+    cp_mv_pattern = r'\b(?:cp|mv)\s+(?:-[^\s]+\s+)*(?:[^\s]+\s+)+([^\s;&|]+)'
+    for match in re.finditer(cp_mv_pattern, command):
+        file_paths.append(match.group(1).strip())
+
+    # python3 -c with file writes (open(), Path.write_text/write_bytes) — Issue #589
+    py_c_patterns = [
+        r'python3?\s+-c\s+"([^"]+)"',   # double-quoted
+        r"python3?\s+-c\s+'([^']+)'",    # single-quoted
+    ]
+    py_c_snippets = []
+    for py_c_pattern in py_c_patterns:
+        for match in re.finditer(py_c_pattern, command):
+            py_c_snippets.append(match.group(1))
+    for snippet in py_c_snippets:
+        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
+        for open_match in re.finditer(open_pattern, snippet):
+            file_paths.append(open_match.group(1))
+        path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
+        for path_match in re.finditer(path_write_pattern, snippet):
+            file_paths.append(path_match.group(1))
+
+    # python3 heredoc with file writes — Issue #589
+    py_heredoc_pattern = r'python3?\s+.*?<<\s*[\'"]?(\w+)[\'"]?'
+    for match in re.finditer(py_heredoc_pattern, command):
+        marker = match.group(1)
+        heredoc_start = match.end()
+        remaining = command[heredoc_start:]
+        _end_match = re.search(r'(?:^|\n)' + re.escape(marker) + r'(?:\n|$)', remaining)
+        end_idx = _end_match.start() if _end_match else -1
+        heredoc_body = remaining[:end_idx] if end_idx >= 0 else remaining
+        for open_match in re.finditer(r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]', heredoc_body):
+            file_paths.append(open_match.group(1))
+        for path_match in re.finditer(r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)", heredoc_body):
+            file_paths.append(path_match.group(1))
+
     return file_paths
 
 
@@ -922,7 +1030,7 @@ def validate_agent_authorization(tool_name: str, tool_input: Dict) -> Tuple[str,
 
     # Check if pipeline is active (agent name or state file)
     if _is_pipeline_active():
-        agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+        agent_name = _get_active_agent_name()
         if agent_name in PIPELINE_AGENTS:
             return ("allow", f"Pipeline agent '{agent_name}' authorized")
         # Issue #585: Block ALL code writes before alignment passes
@@ -1162,7 +1270,7 @@ def _log_pretool_activity(tool_name: str, tool_input: Dict, decision: str, reaso
             "decision": decision,
             "reason": reason[:300],
             "session_id": os.getenv("CLAUDE_SESSION_ID") or _session_id,
-            "agent": os.environ.get("CLAUDE_AGENT_NAME", "main"),
+            "agent": _get_active_agent_name() or "main",
             **summary,
         }
         with open(log_dir / f"{date_str}.jsonl", "a") as f:
@@ -1498,8 +1606,15 @@ def main():
         # Extract session_id from hook stdin for logging functions (Issue #504).
         # The env var CLAUDE_SESSION_ID is absent in most hook contexts, so we
         # store the stdin value at module level as a fallback.
-        global _session_id
+        global _session_id, _agent_type
         _session_id = input_data.get("session_id", "unknown")
+
+        # Extract agent_type from hook stdin JSON (Issue #591).
+        # When fired inside a subagent, Claude Code populates agent_type in the
+        # hook payload even though CLAUDE_AGENT_NAME may be absent from the
+        # subprocess environment.  _get_active_agent_name() uses this as primary
+        # identity source.
+        _agent_type = input_data.get("agent_type", "")
 
         # Extract tool information
         tool_name = input_data.get("tool_name", "")
@@ -1596,7 +1711,7 @@ def main():
             # This is CRITICAL for external repo coverage — native tools bypass all
             # validation layers, so this check must be in the fast path.
             if tool_name in ("Write", "Edit", "Bash"):
-                agent_name = os.getenv("CLAUDE_AGENT_NAME", "").strip().lower()
+                agent_name = _get_active_agent_name()
                 if (agent_name not in PIPELINE_AGENTS
                         and _is_explicit_implement_active()
                         and os.getenv("ENFORCEMENT_LEVEL", "block").strip().lower() != "off"):

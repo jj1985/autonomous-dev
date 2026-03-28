@@ -152,13 +152,14 @@ python3 -c "
 import sys, os, json
 sys.path.insert(0, 'plugins/autonomous-dev/lib')
 from pipeline_state import sign_state
+sid = os.environ.get('CLAUDE_SESSION_ID', 'unknown')
 state = {
     'session_start': '$(date +%Y-%m-%dT%H:%M:%S)',
     'mode': 'MODE',
     'run_id': '$RUN_ID',
-    'explicitly_invoked': True
+    'explicitly_invoked': True,
+    'session_id': sid
 }
-sid = os.environ.get('CLAUDE_SESSION_ID', 'unknown')
 state = sign_state(state, sid)
 with open('/tmp/implement_pipeline_state.json', 'w') as f:
     json.dump(state, f)

@@ -1,14 +1,17 @@
 """
-Tests for Bash write bypass detection in unified_pre_tool.py (Issue #558).
+Tests for Bash write bypass detection in unified_pre_tool.py (Issue #558, #589).
 
 Validates detection of:
 - cat > file << 'EOF' (cat-before-heredoc)
 - dd of=FILE
 - Path.write_text/write_bytes in python3 -c
 - python3 heredoc with open()/Path.write_text inside
+- sed -i (in-place edit)
+- cp/mv destination detection
 - Deny cache recording and lookup
 
 Date: 2026-03-25
+Updated: 2026-03-28 (Issue #589)
 """
 
 import json
@@ -116,6 +119,80 @@ class TestExtractBashFileWrites:
     def test_safe_dd_without_of(self):
         """dd without of= should not produce write targets."""
         cmd = "dd if=/dev/zero bs=1024 count=1"
+        result = hook._extract_bash_file_writes(cmd)
+        assert len(result) == 0
+
+    # --- Issue #589: New bypass pattern detection in _extract_bash_file_writes ---
+
+    def test_cp_destination_detected(self):
+        """cp source dest should detect destination as write target (Issue #589)."""
+        cmd = "cp /tmp/staged.py agents/foo.py"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.py" in result
+
+    def test_mv_destination_detected(self):
+        """mv source dest should detect destination as write target (Issue #589)."""
+        cmd = "mv /tmp/staged.py hooks/bar.py"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "hooks/bar.py" in result
+
+    def test_cp_with_flags_detected(self):
+        """cp -f source dest should detect destination as write target (Issue #589)."""
+        cmd = "cp -f /tmp/x lib/y.py"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "lib/y.py" in result
+
+    def test_sed_i_detected(self):
+        """sed -i should detect the target file as write target (Issue #589)."""
+        cmd = "sed -i 's/old/new/' hooks/test.py"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "hooks/test.py" in result
+
+    def test_python3_c_open_write_detected(self):
+        """python3 -c with open(..., 'w') should detect the file path (Issue #589)."""
+        cmd = 'python3 -c "open(\'agents/foo.md\',\'w\').write(\'x\')"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in result
+
+    def test_python3_c_path_write_text_detected(self):
+        """python3 -c with Path.write_text should detect the file path (Issue #589)."""
+        cmd = 'python3 -c "Path(\'lib/util.py\').write_text(\'x\')"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert "lib/util.py" in result
+
+    def test_python3_c_path_write_bytes_detected(self):
+        """python3 -c with Path.write_bytes should detect the file path (Issue #589)."""
+        cmd = 'python3 -c "Path(\'lib/x.py\').write_bytes(b\'y\')"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert "lib/x.py" in result
+
+    def test_python3_heredoc_open_detected(self):
+        """python3 heredoc with open(..., 'w') should detect the file path (Issue #589)."""
+        cmd = "python3 << PYEOF\nopen('agents/x.md','w').write('y')\nPYEOF"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/x.md" in result
+
+    def test_python3_heredoc_path_write_detected(self):
+        """python3 heredoc with Path.write_text should detect the file path (Issue #589)."""
+        cmd = "python3 << EOF\nPath('lib/util.py').write_text('code')\nEOF"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "lib/util.py" in result
+
+    def test_python3_c_no_write_safe(self):
+        """python3 -c with no file write should not produce write targets (Issue #589)."""
+        cmd = 'python3 -c "print(1)"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert len(result) == 0
+
+    def test_python3_c_read_only_safe(self):
+        """python3 -c reading a file (no write mode) should not produce targets (Issue #589)."""
+        cmd = 'python3 -c "open(\'agents/foo.md\').read()"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" not in result
+
+    def test_sed_without_i_safe(self):
+        """sed without -i should not produce write targets (Issue #589)."""
+        cmd = "sed 's/old/new/' file"
         result = hook._extract_bash_file_writes(cmd)
         assert len(result) == 0
 
