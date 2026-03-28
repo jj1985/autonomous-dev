@@ -113,16 +113,50 @@ class AgentTracker:
             today = datetime.now().strftime("%Y%m%d")
             json_files = list(self.session_dir.glob(f"{today}-*-pipeline.json"))
 
+            # Read CLAUDE_SESSION_ID to isolate concurrent sessions (Issue #594)
+            claude_session_id = os.environ.get("CLAUDE_SESSION_ID")
+
             if json_files:
-                # Use most recent session file from today
-                self.session_file = sorted(json_files)[-1]
-                self.session_data = json.loads(self.session_file.read_text())
+                if claude_session_id:
+                    # Filter to files belonging to this Claude session ID
+                    matching_files = []
+                    for f in json_files:
+                        try:
+                            data = json.loads(f.read_text())
+                            if data.get("claude_session_id") == claude_session_id:
+                                matching_files.append(f)
+                        except (json.JSONDecodeError, OSError):
+                            # Skip corrupt or unreadable files gracefully
+                            continue
+
+                    if matching_files:
+                        # Use most recent file matching this session
+                        self.session_file = sorted(matching_files)[-1]
+                        self.session_data = json.loads(self.session_file.read_text())
+                    else:
+                        # No file matches this session — create a new one
+                        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                        self.session_file = self.session_dir / f"{timestamp}-pipeline.json"
+                        self.session_data = {
+                            "session_id": timestamp,
+                            "claude_session_id": claude_session_id,
+                            "started": datetime.now().isoformat(),
+                            "github_issue": None,
+                            "agents": []
+                        }
+                        self._initialize_delegates()
+                        self._state_manager.save()
+                else:
+                    # No CLAUDE_SESSION_ID — fall back to latest file (backward compat)
+                    self.session_file = sorted(json_files)[-1]
+                    self.session_data = json.loads(self.session_file.read_text())
             else:
                 # Create new session file
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 self.session_file = self.session_dir / f"{timestamp}-pipeline.json"
                 self.session_data = {
                     "session_id": timestamp,
+                    "claude_session_id": claude_session_id,  # Store if available, None otherwise
                     "started": datetime.now().isoformat(),
                     "github_issue": None,  # Track linked GitHub issue
                     "agents": []

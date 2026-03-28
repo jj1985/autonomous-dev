@@ -800,6 +800,40 @@ def _has_significant_additions(old_string: str, new_string: str, file_path: str 
     return False, "", ""
 
 
+def _strip_quoted_segments(command: str) -> str:
+    """Remove single- and double-quoted segments from a command string (Issue #590).
+
+    This prevents false-positive env-var spoofing detection when a protected
+    variable name appears inside a quoted argument (e.g., a --body flag to gh).
+
+    Single-quoted strings in bash have no escape sequences, so the pattern is
+    simple: everything between the first ``'`` and the next ``'``.
+
+    Double-quoted strings support backslash escaping, so ``\\"`` inside a
+    double-quoted segment does NOT end the string.
+
+    On any regex error the original command is returned unchanged (fail-open for
+    the stripping step, but the caller still applies the detection patterns to
+    the original on error).
+
+    Args:
+        command: The raw Bash command string.
+
+    Returns:
+        Command with quoted segments replaced by empty strings.
+    """
+    import re
+
+    try:
+        # Remove single-quoted segments first (no escape sequences in single quotes)
+        result = re.sub(r"'[^']*'", "", command)
+        # Remove double-quoted segments (backslash can escape a quote inside)
+        result = re.sub(r'"(?:[^"\\]|\\.)*"', "", result)
+        return result
+    except re.error:
+        return command
+
+
 def _detect_env_spoofing(command: str) -> "Optional[str]":
     """Detect inline environment variable spoofing in Bash commands (Issue #557).
 
@@ -819,6 +853,8 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
     """
     import re
 
+    stripped = _strip_quoted_segments(command)
+
     for var in PROTECTED_ENV_VARS:
         # Pattern 1: VAR=value command (inline prefix)
         # Matches: VAR=value, VAR='value', VAR="value" followed by a command
@@ -826,7 +862,7 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
             r'(?:^|[;&|]\s*)' + re.escape(var)
             + r"""=['""]?[^\s'"";|&]*['""]?\s+\S"""
         )
-        if re.search(pattern1, command):
+        if re.search(pattern1, stripped):
             return (
                 f"BLOCKED: Inline env var spoofing detected — '{var}' cannot be "
                 f"set inline in Bash commands. Protected environment variables "
@@ -835,7 +871,7 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
 
         # Pattern 2: export VAR=value
         pattern2 = r'\bexport\s+' + re.escape(var) + r'\s*='
-        if re.search(pattern2, command):
+        if re.search(pattern2, stripped):
             return (
                 f"BLOCKED: Export of protected env var '{var}' detected. "
                 f"Protected environment variables cannot be overridden via "
@@ -844,7 +880,7 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
 
         # Pattern 3: env VAR=value command
         pattern3 = r'\benv\s+(?:[^\s=]+=\S+\s+)*' + re.escape(var) + r'\s*='
-        if re.search(pattern3, command):
+        if re.search(pattern3, stripped):
             return (
                 f"BLOCKED: Env command spoofing detected — '{var}' cannot be "
                 f"set via the env command. Protected environment variables "
