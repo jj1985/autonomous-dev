@@ -5797,7 +5797,7 @@ Evaluate whether a tool call should be auto-approved.
 - `confidence_score` (float): 0.0-1.0 confidence in decision
 
 **Validation Layers** (defense-in-depth):
-1. **Subagent Context** - Only auto-approve if running as subagent (`CLAUDE_AGENT_NAME` set)
+1. **Subagent Context** - Only auto-approve if running as subagent (agent identity resolved via `agent_type` from stdin JSON, falling back to `CLAUDE_AGENT_NAME` env var — Issue #591)
 2. **User Consent** - Verify user has opted in via `MCP_AUTO_APPROVE` env var
 3. **Agent Whitelist** - Check if current agent is in allowed list
 4. **Tool Whitelist** - Validate tool name against approved tools list

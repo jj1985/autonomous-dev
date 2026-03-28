@@ -153,6 +153,14 @@ class TestValidateMcpSecurity:
 class TestValidateAgentAuthorization:
     """Test agent authorization layer."""
 
+    def setup_method(self):
+        """Reset module state to avoid cross-test contamination."""
+        upt._agent_type = ""
+
+    def teardown_method(self):
+        """Clean up module state."""
+        upt._agent_type = ""
+
     def test_disabled_via_env(self):
         with patch.dict(os.environ, {"PRE_TOOL_AGENT_AUTH": "false"}):
             decision, reason = upt.validate_agent_authorization("Edit", {"file_path": "app.py"})
@@ -376,6 +384,30 @@ class TestHelperFunctions:
         files = upt._extract_bash_file_writes("ls -la")
         assert len(files) == 0
 
+    def test_is_protected_infrastructure_excludes_test_files(self):
+        """Regression: test files under tests/unit/hooks/ must NOT be protected.
+
+        Bug: _is_protected_infrastructure matched '/hooks/' anywhere in the path,
+        so 'tests/unit/hooks/test_unified_pre_tool.py' was incorrectly blocked.
+        Fix: test files (paths containing /tests/ or /test/) are excluded before
+        the segment loop runs.
+        """
+        # These are absolute paths so _is_autonomous_dev_repo is irrelevant — we
+        # test the segment-match exclusion logic directly via a relative-style path
+        # that wouldn't resolve to a real repo root, which means the function returns
+        # False early (not an autonomous-dev repo). The important assertion is that
+        # a test file in a hooks subdir is NOT flagged even when the repo check passes.
+        #
+        # Patch _is_autonomous_dev_repo to return True so we can exercise the
+        # exclusion logic that comes after it.
+        with patch.object(upt, "_is_autonomous_dev_repo", return_value=True):
+            # A test file under tests/unit/hooks/ — must NOT be protected
+            assert upt._is_protected_infrastructure("tests/unit/hooks/test_unified_pre_tool.py") is False
+            # A real hook file — must still be protected
+            assert upt._is_protected_infrastructure("plugins/autonomous-dev/hooks/unified_pre_tool.py") is True
+            # A test file that starts with test_ under hooks/ — must NOT be protected
+            assert upt._is_protected_infrastructure("tests/unit/hooks/test_foo.py") is False
+
 
 class TestLoadEnv:
     """Test .env loading."""
@@ -442,4 +474,127 @@ class TestMain:
                 assert exc_info.value.code == 0
         captured = capsys.readouterr()
         output = json.loads(captured.out)
+        assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+class TestGetActiveAgentName:
+    """Test _get_active_agent_name() helper (Issue #591).
+
+    Verifies that agent_type from hook stdin JSON is preferred over
+    CLAUDE_AGENT_NAME env var, which may be absent in subprocess contexts.
+    """
+
+    def setup_method(self):
+        """Reset module-level _agent_type before each test."""
+        upt._agent_type = ""
+
+    def teardown_method(self):
+        """Clean up module-level _agent_type after each test."""
+        upt._agent_type = ""
+
+    def test_agent_type_from_stdin_preferred(self):
+        """stdin agent_type takes priority over env var."""
+        upt._agent_type = "implementer"
+        with patch.dict(os.environ, {"CLAUDE_AGENT_NAME": "coordinator"}, clear=False):
+            result = upt._get_active_agent_name()
+        assert result == "implementer"
+
+    def test_env_var_fallback_when_no_stdin(self):
+        """Falls back to CLAUDE_AGENT_NAME when stdin agent_type is empty."""
+        upt._agent_type = ""
+        with patch.dict(os.environ, {"CLAUDE_AGENT_NAME": "test-master"}, clear=False):
+            result = upt._get_active_agent_name()
+        assert result == "test-master"
+
+    def test_empty_when_neither_available(self):
+        """Returns empty string when both sources are absent."""
+        upt._agent_type = ""
+        with patch.dict(os.environ, {"CLAUDE_AGENT_NAME": ""}, clear=False):
+            result = upt._get_active_agent_name()
+        assert result == ""
+
+    def test_agent_type_normalized(self):
+        """agent_type is stripped and lowercased."""
+        upt._agent_type = "  Test-Master  "
+        result = upt._get_active_agent_name()
+        assert result == "test-master"
+
+
+class TestStdinAgentTypeIntegration:
+    """Integration tests for stdin agent_type propagation (Issue #591).
+
+    Verifies that the agent_type from hook stdin JSON correctly flows
+    through to pipeline detection, agent authorization, and coordinator
+    blocking logic.
+    """
+
+    def setup_method(self):
+        """Reset module-level _agent_type before each test."""
+        upt._agent_type = ""
+
+    def teardown_method(self):
+        """Clean up module-level _agent_type after each test."""
+        upt._agent_type = ""
+
+    def test_pipeline_active_via_stdin_agent_type(self):
+        """Pipeline detected as active when stdin agent_type is a pipeline agent."""
+        upt._agent_type = "test-master"
+        with patch.dict(os.environ, {"CLAUDE_AGENT_NAME": ""}, clear=False):
+            os.environ.pop("PIPELINE_STATE_FILE", None)
+            result = upt._is_pipeline_active()
+        assert result is True
+
+    def test_validate_agent_auth_allows_stdin_agent(self):
+        """Agent authorization allows writes when stdin identifies a pipeline agent."""
+        upt._agent_type = "implementer"
+        with patch.dict(
+            os.environ,
+            {"PRE_TOOL_AGENT_AUTH": "true", "CLAUDE_AGENT_NAME": ""},
+            clear=False,
+        ):
+            decision, reason = upt.validate_agent_authorization(
+                "Write", {"file_path": "lib/foo.py", "content": "code"}
+            )
+        assert decision == "allow"
+        assert "implementer" in reason.lower()
+
+    def test_coordinator_block_still_works_without_agent(self):
+        """Coordinator writes are still blocked when no agent identity is available."""
+        upt._agent_type = ""
+        with patch.dict(
+            os.environ,
+            {
+                "PRE_TOOL_AGENT_AUTH": "true",
+                "CLAUDE_AGENT_NAME": "",
+                "ENFORCEMENT_LEVEL": "block",
+                "PIPELINE_STATE_FILE": "/nonexistent/state.json",
+            },
+            clear=False,
+        ):
+            new_code = "def foo():\n    pass\ndef bar():\n    pass\ndef baz():\n    x=1\n    y=2\n    z=3\n"
+            decision, reason = upt.validate_agent_authorization(
+                "Edit", {"file_path": "app.py", "old_string": "", "new_string": new_code}
+            )
+        assert decision == "deny"
+
+    def test_native_fast_path_recognizes_stdin_agent(self, capsys):
+        """Native tool fast path uses stdin agent_type to avoid coordinator block."""
+        upt._agent_type = "implementer"
+        inp = json.dumps({
+            "tool_name": "Write",
+            "tool_input": {"file_path": "/tmp/test.py", "content": "x = 1"},
+            "agent_type": "implementer",
+        })
+        with patch("sys.stdin", StringIO(inp)):
+            with patch.dict(
+                os.environ,
+                {"CLAUDE_AGENT_NAME": "", "ENFORCEMENT_LEVEL": "block"},
+                clear=False,
+            ):
+                with pytest.raises(SystemExit) as exc_info:
+                    upt.main()
+                assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        # implementer is a pipeline agent — should NOT be blocked by coordinator check
         assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
