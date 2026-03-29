@@ -197,7 +197,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Purpose**: Quality gate (code review) — read-only; reports issues, never modifies files
 **Model**: Haiku (Tier 1 - cost optimized for pattern-based code review)
 **Skills**: code-review, python-standards
-**Execution**: Step 6 of /implement workflow — runs first in the validation phase (sequential before security-auditor), ensuring STEP 6.5 Remediation Gate has the full reviewer verdict before security-auditor begins
+**Execution**: STEP 10 of /implement workflow — in parallel mode (default, low-risk changesets), runs simultaneously with security-auditor and doc-master in a single Agent call; in sequential mode (security-sensitive files detected), runs first (STEP 10a) before security-auditor (STEP 10b), ensuring the STEP 11 Remediation Gate has the full reviewer verdict before security-auditor begins. In both modes, the reviewer consumes STEP 8 test results passed in context — it does NOT re-run pytest
 **Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
 **FINDINGS Format**: Each finding uses a structured `FINDING-{N}` schema with mandatory `file:line` reference, severity (`BLOCKING` or `WARNING`), category, issue description, detail, and suggested fix. BLOCKING findings trigger the STEP 6.5 Remediation Gate; WARNING findings are advisory only.
 **Verdict**: `APPROVE` (all findings WARNING or none) or `REQUEST_CHANGES` (any BLOCKING finding present). STEP 6.5 parses this verdict to determine whether to enter the remediation loop.
@@ -208,14 +208,14 @@ These agents execute the main autonomous development workflow and provide specia
 **Purpose**: Security scanning and vulnerability detection
 **Model**: Opus (Tier 3 - maximum depth for critical security analysis)
 **Skills**: security-patterns, python-standards
-**Execution**: Step 6 of /implement workflow — runs after reviewer verdict is known (sequential), enabling the STEP 6.5 Remediation Gate to have complete information before deciding to re-invoke the implementer
+**Execution**: STEP 10 of /implement workflow — in parallel mode (default, low-risk changesets), runs simultaneously with reviewer and doc-master; in sequential mode (security-sensitive files detected), runs as STEP 10b strictly after reviewer (STEP 10a) has returned its verdict, enabling the STEP 11 Remediation Gate to have complete information before deciding to re-invoke the implementer
 
 ### doc-master
 
 **Purpose**: Semantic documentation drift detection — reads changed source files and compares prose descriptions against actual code behavior to find and fix factual drift
 **Model**: Sonnet (Tier 2 - judgment required for comparing prose against code semantics)
 **Skills**: documentation-guide
-**Execution**: Step 6 of /implement workflow — runs in background (non-blocking) after reviewer and security-auditor complete
+**Execution**: STEP 10 of /implement workflow — runs in background (non-blocking). In parallel mode, launched simultaneously with reviewer and security-auditor. In sequential mode, launched alongside STEP 10a (reviewer), not waiting for security-auditor to finish. Collected at STEP 12
 **Drift Detection**: Uses `covers:` YAML frontmatter in `docs/*.md` files to map source paths to docs, then applies LLM judgment to detect factual drift, behavioral drift, structural drift, and missing coverage
 
 ### data-curator
@@ -382,17 +382,20 @@ Active agents reference relevant skills via `skills:` frontmatter (Issue #35, #1
 
 ---
 
-## Parallel Validation (Phase 7)
+## Validation Modes (STEP 10, Phase 7)
 
-Three agents execute in parallel during Step 5 of /implement:
+STEP 10 of /implement routes to one of two modes based on changeset risk:
 
-- **reviewer**: Code quality validation
-- **security-auditor**: Security scanning
-- **doc-master**: Documentation updates
+**Parallel mode** (default — low-risk changesets, no security-sensitive files):
+- reviewer, security-auditor, and doc-master all launched in a single Agent call
+- Performance: 60% faster — ~5 min sequential → ~2 min parallel
 
-**Performance**: Sequential 5 minutes → Parallel 2 minutes (60% faster)
+**Sequential mode** (security-sensitive files detected — hooks/*, lib/*auth*, lib/*token*, config/auto_approve_policy.json, etc.):
+- STEP 10a: reviewer runs first
+- STEP 10b: security-auditor runs only after reviewer returns its verdict
+- STEP 10c: doc-master runs in background (can start with 10a)
 
-**Implementation**: Three Task tool calls in single response enables parallel execution
+**Implementation**: Parallel mode uses three Agent tool calls in a single message; sequential mode uses separate messages.
 
 ---
 

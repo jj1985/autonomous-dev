@@ -29,7 +29,7 @@ user-invocable: true
 - ❌ You MUST NOT summarize agent output instead of passing full results to next agent
 - ❌ You MUST NOT declare "good enough" on failing tests (STEP 8 HARD GATE is absolute)
 - ❌ You MUST NOT run STEP 10 before STEP 8 test gate passes
-- ❌ You MUST NOT combine or parallelize sequential steps (e.g., implementer + reviewer)
+- ❌ You MUST NOT parallelize agents from different pipeline phases (e.g., implementer + reviewer) — within-phase parallel validation in STEP 10 is permitted for low-risk changesets per STEP 10 routing rules
 - ❌ You MUST NOT treat STEP 13 as the final step (STEP 15 is mandatory)
 - ❌ You MUST NOT clean up pipeline state before STEP 15 launches
 - ❌ You MUST NOT write implementation code yourself instead of delegating to agents
@@ -118,8 +118,10 @@ Parse ARGUMENTS: `--batch` → see [implement-batch.md](implement-batch.md), `--
 **Auto-mode detection** — If no mode flag was explicitly provided (no `--fix`, `--light`, `--batch`, `--issues`, `--resume`, `--tdd-first` in ARGUMENTS), scan the feature description (case-insensitive) for signal patterns:
 
 - **Fix signals**: "fix test", "failing test", "broken test", "test failure", "flaky test", "skip test" → candidate: `--fix`
-- **Light signals**: "update docs", "update readme", "readme", "changelog", "typo", "rename", "config change", "update comment" → candidate: `--light`
-- **Tie-break**: If both fix and light patterns match, suggest `--fix`.
+- **Light signals (keyword-based)**: "update docs", "update readme", "readme", "changelog", "typo", "rename", "config change", "update comment" → candidate: `--light`
+- **Light signals (file-path-based)**: If the feature description contains an explicit file path matching `*.md`, `*.json`, `*.yaml`, `*.yml`, `*.toml`, `docs/**`, `*.txt`, `*.cfg` AND that file path does NOT match any security-sensitive pattern (`*.py`, `*.sh`, `hooks/*`, `lib/*`, `.env*`, `*secret*`, `*auth*`, `*token*`) → candidate: `--light`
+- **Tie-break**: If both fix and light patterns match (keyword or file-path), suggest `--fix`. If file-path suggests `--light` but keywords suggest `--fix`, use `--fix`.
+- **Agent count optimization**: File-path light detection and fully-specified research skip (see STEP 3.5) reduce effective agent count for simple changes.
 
 If a candidate is detected, output and STOP — wait for user response before proceeding:
 
@@ -250,7 +252,32 @@ cached = check_cache('FEATURE_TOPIC', max_age_days=7)
 print('CACHE_HIT' if cached else 'CACHE_MISS')
 "
 ```
-CACHE_HIT → load cached research, skip STEP 4, pass to STEP 5. CACHE_MISS → proceed to STEP 4.
+CACHE_HIT → load cached research, skip STEP 4, pass to STEP 5. CACHE_MISS → proceed to STEP 3.5.
+
+### STEP 3.5: Fully-Specified Change Detection
+
+**Progress**: Output step banner (STEP 3.5/15 — Fully-Specified Change Detection). Output skip decision after.
+
+Before invoking research agents, check if the feature description is a **fully-specified change** — one where both of the following conditions are met:
+1. The description contains a **specific file path** (e.g., `plugins/autonomous-dev/agents/reviewer.md`, `config/settings.json`)
+2. The description contains a **specific modification instruction** (e.g., "change X to Y", "add Z after line N", "remove section X", "replace X with Y", "set X to Y")
+
+If BOTH conditions are met AND ALL of the following safeguards pass:
+- The referenced file(s) do NOT match security-sensitive patterns: `hooks/*.py`, `lib/*security*`, `lib/*auth*`, `lib/*token*`, `*.env*`, `*secret*`, `*auth*`, `config/auto_approve_policy.json`, `templates/settings.*.json`
+- The feature description does NOT contain security/authentication/encryption/sso/oauth/rbac/permission/session/jwt keywords
+- The description references 3 or fewer files
+
+Then: **skip STEP 4**, proceed directly to STEP 5. Output:
+```
+Research: SKIPPED (fully-specified change — file path + instruction provided, no security topics)
+```
+
+Otherwise: proceed to STEP 4.
+
+**FORBIDDEN** — You MUST NOT skip research when:
+- ❌ Only a file path is given without a specific modification instruction
+- ❌ The change touches security-sensitive files or topics (authentication, encryption, tokens, secrets, sso, oauth, rbac, permission, session, jwt)
+- ❌ More than 3 files are referenced in the description
 
 ### STEP 4: Parallel Research (2 agents)
 
@@ -344,17 +371,49 @@ You MUST invoke the missing agents before proceeding to STEP 10.
 
 **FORBIDDEN**: Proceeding to STEP 10 with fewer than the minimum agents. If an agent was skipped due to a crash, the crash retry rule (forbidden list) applies — retry once, then block.
 
-### STEP 10: Ordered Validation — Reviewer then Security then Docs (3 agents)
+### STEP 10: Validation — Reviewer, Security, and Docs (3 agents)
 
-**Progress**: Output step banner (STEP 10/15 — Ordered Validation, Agents: reviewer (Sonnet) → security-auditor (Sonnet) → doc-master (Sonnet)). Output each agent completion as they return.
+**Progress**: Output step banner (STEP 10/15 — Validation). Output each agent completion as they return.
+
+**Validation mode routing**: Before launching any validator, check if any changed files match security-sensitive patterns:
+- Security-sensitive patterns: `hooks/*.py`, `lib/*security*`, `lib/*auth*`, `lib/*token*`, `*.env*`, `*secret*`, `config/auto_approve_policy.json`, `templates/settings.*.json`
+
+Output the selected mode before proceeding:
+```
+Validation mode: parallel (low-risk change)
+```
+or:
+```
+Validation mode: sequential (security-sensitive files detected: [list of matched files])
+```
+
+---
+
+**DEFAULT: Parallel mode** (no security-sensitive files in changeset)
+
+Invoke reviewer, security-auditor, and doc-master in a SINGLE message (all three parallel). Pass STEP 8 test results to the reviewer along with the implementer output (see VERBATIM PASSING requirement below).
+
+**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
+
+- **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
+- **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list with complete diffs. Output: PASS/FAIL (OWASP Top 10).
+- **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. Collected at STEP 12.
+
+**FORBIDDEN** — Parallel mode violations:
+- ❌ You MUST NOT use parallel mode when any security-sensitive file is in the changeset
+- ❌ You MUST NOT skip any of the three validators (reviewer, security-auditor, doc-master) in parallel mode
+
+---
+
+**SEQUENTIAL mode** (security-sensitive files detected — keep strict ordering)
 
 Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — they MUST NOT be launched in the same message.
 
 **STEP 10a: Reviewer (MUST complete before 10b)**
 
-**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer. Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
+**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
-**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVAL or issues.
+**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
 
 **Runtime Verification**: When changed files include frontend (HTML/TSX/Vue), API routes, or CLI tools, the reviewer MAY perform targeted runtime verification after completing static review. This is opt-in and does not change the pipeline structure. See reviewer.md for details.
 
@@ -370,7 +429,7 @@ Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — 
 
 **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. MAY be launched in parallel with STEP 10a for efficiency — collected at STEP 12.
 
-**FORBIDDEN** — STEP 10 ordering violations:
+**FORBIDDEN** — Sequential mode ordering violations:
 - ❌ You MUST NOT launch reviewer and security-auditor in the same Agent tool call message
 - ❌ You MUST NOT invoke security-auditor before the reviewer has returned its verdict
 - ❌ You MUST NOT skip reviewer and go directly to security-auditor

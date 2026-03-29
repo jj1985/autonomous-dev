@@ -21,7 +21,7 @@ Specialized agents with skill integration for autonomous development. See [docs/
 
 **Key Features**:
 - Native skill integration (Issue #143): Agents declare skills via `skills:` frontmatter field - Claude Code 2.0 auto-loads skills when agent spawned
-- Sequential validation: reviewer → security-auditor (ensures Remediation Gate has full verdict), doc-master in background
+- Adaptive STEP 10 validation: parallel mode by default (all three agents launched simultaneously for low-risk changesets); sequential mode for security-sensitive files (reviewer → security-auditor strict ordering, doc-master in background alongside reviewer)
 - Pipeline agents used in `/implement`, utility agents for specialized tasks
 
 ---
@@ -122,11 +122,11 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - Default mode: validation-first approach (specification → acceptance tests → implementation)
    - Optional `--tdd-first` flag reverts to legacy TDD-first (failing unit tests first)
 7. **Implementation**: implementer makes tests pass
-8. **Sequential Validation** (reviewer before security-auditor, then doc-master in background):
-   - reviewer checks code quality first (structured FINDING-{N} schema, BLOCKING/WARNING severity)
-   - security-auditor runs after reviewer verdict is known
-   - doc-master updates documentation (runs in background, non-blocking)
-   - Sequential reviewer→security-auditor ordering ensures STEP 6.5 Remediation Gate has full reviewer verdict before deciding whether to re-invoke implementer
+8. **Validation** (implement.md STEP 10) — mode selected based on changeset risk:
+   - **Parallel mode** (default): reviewer, security-auditor, and doc-master launched simultaneously in one message (low-risk changesets with no security-sensitive files)
+   - **Sequential mode** (security-sensitive files): reviewer runs first (10a), security-auditor runs only after reviewer returns (10b), doc-master runs in background alongside reviewer (10c)
+   - reviewer consumes STEP 8 test artifact (pytest results passed in context) — does NOT re-run pytest
+   - doc-master runs non-blocking in both modes; result collected at STEP 12
 8.5. **Remediation Gate** (HARD GATE): If reviewer or security-auditor return findings, auto-loop:
    - Re-invokes implementer in Remediation Mode with BLOCKING findings verbatim (max 2 cycles)
    - Re-runs only the failing validators after each cycle

@@ -100,7 +100,7 @@ Every review MUST conclude with exactly one of:
 **REQUIRED**:
 - Per-file summary with specific line references for each finding
 - Explicit pass/fail on each of the 10 checklist items
-- Test results included (run `pytest` and report output)
+- Test results included from STEP 8 artifact provided in context — do NOT re-run pytest
 - Security checklist explicitly addressed
 - BLOCKING vs ADVISORY clearly labeled on every finding
 
@@ -128,7 +128,7 @@ Every review MUST conclude with exactly one of:
 - [Nit:] file.py:88 — suggestion
 
 ### Test Results
-[paste pytest output summary]
+[from STEP 8 artifact provided in context — do NOT re-run pytest]
 
 ### Verdict: APPROVED / REQUEST_CHANGES
 ```
