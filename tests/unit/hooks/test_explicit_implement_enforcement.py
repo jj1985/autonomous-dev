@@ -318,6 +318,71 @@ class TestIsCodeFileTarget:
     def test_read_tool_is_not_code(self):
         assert hook._is_code_file_target("Read", {"file_path": "/tmp/app.py"}) is False
 
+    # Issue #623: infrastructure .md files must be treated as code targets
+
+    def test_write_infra_agent_md_is_code(self):
+        """Write to agents/*.md is a code target — infrastructure file (Issue #623)."""
+        with patch.object(hook, "_is_autonomous_dev_repo", return_value=True):
+            result = hook._is_code_file_target(
+                "Write",
+                {"file_path": "/repo/plugins/autonomous-dev/agents/implementer.md"},
+            )
+        assert result is True
+
+    def test_write_infra_commands_md_is_code(self):
+        """Write to commands/*.md is a code target — infrastructure file (Issue #623)."""
+        with patch.object(hook, "_is_autonomous_dev_repo", return_value=True):
+            result = hook._is_code_file_target(
+                "Write",
+                {"file_path": "/repo/plugins/autonomous-dev/commands/implement.md"},
+            )
+        assert result is True
+
+    def test_write_infra_skills_md_is_code(self):
+        """Write to skills/*/SKILL.md is a code target — infrastructure file (Issue #623)."""
+        with patch.object(hook, "_is_autonomous_dev_repo", return_value=True):
+            result = hook._is_code_file_target(
+                "Write",
+                {"file_path": "/repo/plugins/autonomous-dev/skills/testing-guide/SKILL.md"},
+            )
+        assert result is True
+
+    def test_write_regular_md_still_not_code(self):
+        """Write to README.md is NOT a code target — regular doc file (Issue #623)."""
+        with patch.object(hook, "_is_protected_infrastructure", return_value=False):
+            result = hook._is_code_file_target("Write", {"file_path": "/repo/README.md"})
+        assert result is False
+
+    def test_write_docs_md_still_not_code(self):
+        """Write to docs/*.md is NOT a code target — regular doc file (Issue #623)."""
+        with patch.object(hook, "_is_protected_infrastructure", return_value=False):
+            result = hook._is_code_file_target(
+                "Write", {"file_path": "/repo/docs/ARCHITECTURE.md"}
+            )
+        assert result is False
+
+    def test_bash_infra_md_redirect_is_code(self):
+        """Bash redirect to agents/*.md is a code target — infrastructure file (Issue #623)."""
+        with patch.object(hook, "_is_autonomous_dev_repo", return_value=True):
+            result = hook._is_code_file_target(
+                "Bash",
+                {"command": "echo 'content' > plugins/autonomous-dev/agents/foo.md"},
+            )
+        assert result is True
+
+    def test_coordinator_infra_md_blocked_in_fast_path(
+        self, valid_state, monkeypatch
+    ):
+        """Coordinator + explicit /implement + Write to agents/*.md → blocked (Issue #623)."""
+        monkeypatch.setenv("CLAUDE_AGENT_NAME", "")
+        with patch.object(hook, "_is_autonomous_dev_repo", return_value=True):
+            decision, reason = hook.validate_agent_authorization(
+                "Write",
+                {"file_path": "/repo/plugins/autonomous-dev/agents/implementer.md", "content": "x"},
+            )
+        assert decision == "deny"
+        assert "WORKFLOW ENFORCEMENT" in reason
+
 
 # ---------------------------------------------------------------------------
 # 7. NATIVE_TOOLS fast path (integration-level)

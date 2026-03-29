@@ -766,19 +766,27 @@ _NON_CODE_EXTENSIONS = {
 def _is_code_file_target(tool_name: str, tool_input: Dict) -> bool:
     """Check if the tool operation targets a code file (Issue #528).
 
+    Protected infrastructure files (agents/*.md, commands/*.md, skills/*.md)
+    are treated as code targets regardless of their .md extension (Issue #623).
+    The extension-based exemption only applies to regular docs and config files.
+
     Args:
         tool_name: Name of the tool (Write, Edit, Bash)
         tool_input: Tool input parameters
 
     Returns:
-        True if the tool targets a code file (not config/docs)
+        True if the tool targets a code file or protected infrastructure file
     """
     if tool_name in ("Write", "Edit"):
         file_path = tool_input.get("file_path", "")
         if not file_path:
             return False
+        # Issue #623: Protected infrastructure files (agents/*.md, commands/*.md,
+        # skills/*.md) must be treated as code targets regardless of extension.
+        if _is_protected_infrastructure(file_path):
+            return True
         suffix = Path(file_path).suffix.lower()
-        # Exempt non-code files
+        # Exempt non-code files (README.md, docs/*.md, config files, etc.)
         if suffix in _NON_CODE_EXTENSIONS:
             return False
         # Check against known code extensions
@@ -789,6 +797,9 @@ def _is_code_file_target(tool_name: str, tool_input: Dict) -> bool:
             return False
         target_files = _extract_bash_file_writes(command)
         for fp in target_files:
+            # Issue #623: Infrastructure .md files in Bash redirects are code targets
+            if _is_protected_infrastructure(fp):
+                return True
             suffix = Path(fp).suffix.lower()
             if suffix in _NON_CODE_EXTENSIONS:
                 continue
