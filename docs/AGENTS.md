@@ -14,9 +14,9 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-11 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+12 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, researcher, researcher-local, reviewer, security-auditor, test-coverage-auditor, test-master
+**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, test-coverage-auditor, test-master
 
 **Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
 
@@ -24,7 +24,7 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Model Tier Strategy (Issue #108, Updated #147)
 
-Agent model assignments optimized for cost-performance balance (11 active agents):
+Agent model assignments optimized for cost-performance balance (12 active agents):
 
 ### Tier 1: Haiku (2 agents)
 
@@ -33,7 +33,7 @@ Fast, cost-effective for pattern matching:
 - **researcher-local**: Search codebase patterns
 - **test-coverage-auditor**: AST-based coverage analysis
 
-### Tier 2: Sonnet (6 agents)
+### Tier 2: Sonnet (7 agents)
 
 Balanced reasoning for judgment tasks:
 
@@ -43,6 +43,7 @@ Balanced reasoning for judgment tasks:
 - **continuous-improvement-analyst**: Pipeline QA and gaming detection
 - **issue-creator**: GitHub issue creation
 - **planner**: Architecture planning
+- **retrospective-analyst**: Intent evolution and session drift detection
 
 ### Tier 3: Opus (3 agents)
 
@@ -66,8 +67,8 @@ Deep reasoning for complex synthesis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Active Agents**: 13
-**Note**: 11 active agents, all under 3,000 token target
+**Total Active Agents**: 12
+**Note**: 12 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
@@ -88,7 +89,7 @@ Deep reasoning for complex synthesis:
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 11 active agents under 3,000 token target
+- All 12 active agents under 3,000 token target
 
 ---
 
