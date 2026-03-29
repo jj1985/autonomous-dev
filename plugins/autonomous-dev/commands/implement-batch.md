@@ -152,8 +152,11 @@ Starting batch processing in worktree: .worktrees/$BATCH_ID
 
 For each feature in the list:
 
-1. Display progress using per-feature header: `Feature M/N — "feature description"` (see Batch Mode Progress Protocol). After each feature completes, output per-feature footer with elapsed time and running total.
-2. Execute the **full pipeline (STEPS 1-8)** for this feature, with BATCH CONTEXT prepended to ALL agent prompts
+1. Display progress using per-feature header: `Feature M/N — "feature description" [mode]` (see Batch Mode Progress Protocol). The `[mode]` suffix shows the detected pipeline mode (full/--fix/--light) from STEP I1.5. After each feature completes, output per-feature footer with elapsed time and running total.
+2. Execute the **detected pipeline** for this feature, with BATCH CONTEXT prepended to ALL agent prompts. The pipeline variant is determined by the issue's mode from STEP I1.5:
+   - `full` → full pipeline (STEPS 1-8)
+   - `fix` → fix pipeline (implement-fix.md)
+   - `light` → light pipeline (implement.md --light)
 3. If a feature fails, log the failure and continue to the next feature
 
 **Per-Issue Doc-Drift Verdict Collection** (Issue #559):
@@ -455,16 +458,38 @@ Manual merge required:
 
 Process multiple GitHub issues with automatic worktree isolation.
 
-**STEP I1: Fetch Issue Titles**
+**STEP I1: Fetch Issue Details**
 
 Parse issue numbers from ARGUMENTS (after `--issues`).
 
-For each issue number, fetch the title:
+For each issue number, fetch title, body, and labels:
 ```bash
-gh issue view [number] --json title -q '.title'
+gh issue view [number] --json title,body,labels
 ```
 
 Create feature list: "Issue #N: [title]"
+
+**STEP I1.5: Mode Detection and Confirmation**
+
+Use `batch_mode_detector.detect_batch_modes()` to analyze each issue's title, body, and labels.
+Display the mode summary table using `format_mode_summary_table()`:
+
+```
+Per-Issue Pipeline Mode Detection:
+
+Issue  Title                          Detected Mode  Signals
+#101   Fix failing auth test          --fix          "failing test" (title)
+#102   Add JWT authentication         full           (no signals)
+#103   Update README setup section    --light        "readme" (title)
+```
+
+Accept user overrides if provided (e.g., "change #102 to --fix").
+Store final modes in `BatchState.feature_modes` (maps feature index to mode string).
+
+Each issue's detected mode determines which pipeline variant runs in STEP B3:
+- `full` → full pipeline (implement.md STEPS 1-8)
+- `fix` → fix pipeline (implement-fix.md)
+- `light` → light pipeline (implement.md --light)
 
 **STEP I2: Create Worktree and Process**
 

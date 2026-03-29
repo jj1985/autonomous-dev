@@ -5,7 +5,7 @@ covers:
 
 # Shared Libraries Reference
 
-**Last Updated**: 2026-03-08 (Issue #402 - Added pipeline_state.py)
+**Last Updated**: 2026-03-29 (Issue #600 - Added batch_mode_detector.py)
 **Purpose**: Comprehensive API documentation for autonomous-dev shared libraries
 
 This document provides detailed API documentation for shared libraries in `plugins/autonomous-dev/lib/` and `plugins/autonomous-dev/scripts/`. For high-level overview, see [CLAUDE.md](../CLAUDE.md) Architecture section.
@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (69)
+### Core Libraries (71)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -85,6 +85,8 @@ The autonomous-dev plugin includes shared libraries organized into the following
 67. **reviewer_weakness_analyzer.py** - Analyzes benchmark scoring reports to identify weak defect categories and generate improvement instructions for the reviewer agent. `analyze_weaknesses(report, *, samples, taxonomy, threshold, min_samples)` returns a `WeaknessReport` with `WeaknessItem` entries sorted by priority (accuracy deficit × failure-mode weight × sample count). Failure-mode weights: `silent-failure` 1.5×, `concurrency` 1.4×, `cross-path-parity` 1.3×, `security` 1.2×. `generate_improvement_instructions(weaknesses, *, max_instructions)` produces up to N markdown instructions targeting the top weaknesses. Used by `scripts/improve_reviewer.py`. (Issue #578)
 68. **runtime_data_aggregator.py** - Collect, normalize, rank, and persist improvement signals from 4 sources: session activity logs (tool failures, hook errors, agent crashes), benchmark history (per-category accuracy deficits), CI/session logs (known bypass pattern matches), and GitHub issues (auto-improvement labeled issues). `aggregate(project_root, *, window_days, top_n, repo)` collects all signals, computes priority using `SEVERITY_WEIGHTS` × severity × log(1+frequency), sorts descending, caps at top_n, persists to `.claude/logs/aggregated_reports.jsonl`, and returns `AggregatedReport`. Security: CWE-532 secret scrubbing, CWE-400 line cap (MAX_LINES=100,000), CWE-78 subprocess argument lists, CWE-22 path validation. (Issue #579)
 69. **runtime_verification_classifier.py** - Classifies changed files into runtime verification categories (frontend, API, CLI) so the reviewer can perform targeted runtime checks after static code review. `classify_runtime_targets(file_paths)` returns a `RuntimeVerificationPlan` with `has_targets` flag and typed target lists (`FrontendTarget`, `ApiTarget`, `CliTarget`). Frontend detection matches `.html`, `.tsx`, `.jsx`, `.vue`, `.svelte` extensions with per-framework suggested checks. API detection matches `routes/`, `api/`, `endpoints/`, `views/` path patterns and common server filenames, guessing framework (fastapi, flask, express) from path. CLI detection matches scripts and named CLI tools. All detection excludes test files. (v1.0.0, Issue #564)
+70. **retrospective_analyzer.py** - Session log analysis and drift detection for the `/retrospective` command. Reads JSONL activity logs from `.claude/logs/activity/`, groups events by session, and runs three drift detectors: `detect_repeated_corrections(summaries, *, min_threshold)` flags correction patterns (revert, wrong, stop, etc.) recurring across multiple sessions; `detect_config_drift(project_root, *, baseline_commits)` uses `git diff HEAD~N` to surface large changes to `PROJECT.md` and `CLAUDE.md`; `detect_memory_rot(memory_dir, summaries, *, decay_days)` flags date-stamped memory sections older than `decay_days` with no recent corroboration. `load_session_summaries(logs_dir, *, max_sessions)` returns `SessionSummary` dataclasses. `format_as_unified_diff(edit)` renders `ProposedEdit` objects as unified diffs. Resource limits: `MAX_SESSIONS=50`, `MAX_EVENTS_PER_SESSION=200`, `MAX_LOG_FILES=100`. Security: CWE-22 path validation, CWE-400 resource caps, CWE-116 untrusted log content. (v1.0.0, Issue #598)
+71. **batch_mode_detector.py** - Per-issue pipeline mode detection for `/implement --batch --issues`. Analyzes issue title, body, and labels to automatically select the appropriate pipeline variant (full/fix/light) for each issue. `PipelineMode` enum: `FULL`, `FIX`, `LIGHT`. `ModeDetection` dataclass: `mode`, `confidence` (0.0–1.0), `signals` (list of matched signal descriptions), `source` ("label"/"title"/"body"/"default"). `detect_issue_mode(title, body, labels)` applies priority: (1) label override — "bug" → FIX, "documentation" → LIGHT at confidence 1.0; (2) signal matching — `FIX_SIGNALS` / `LIGHT_SIGNALS` with title worth 2 pts, body worth 1 pt; (3) tie-break: fix wins over light; (4) default: FULL. `detect_batch_modes(issues)` accepts a list of dicts with "title", "body", "labels" keys (labels as list of strings or GitHub API dicts). `format_mode_summary_table(issue_numbers, titles, modes)` returns a formatted text table for display. (v1.0.0, Issue #600)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
@@ -2217,6 +2219,7 @@ Batch processing state with persistent storage.
 - `status` (str): Batch status ("in_progress", "completed", "failed")
 - `issue_numbers` (Optional[List[int]]): GitHub issue numbers for --issues flag (v3.24.0)
 - `source_type` (str): Source type ("file" or "issues") (v3.24.0)
+- `feature_modes` (Dict[int, str]): Maps feature index to detected pipeline mode ("full", "fix", "light") (v1.0.0, Issue #600)
 - `state_file` (str): Path to state file
 
 ### Functions
@@ -2519,6 +2522,41 @@ from github_issue_fetcher import format_feature_description
 
 feature = format_feature_description(72, "Add logging feature")
 # Returns: "Issue #72: Add logging feature"
+```
+
+#### `fetch_issue_details(issue_number)` (v1.0.0, Issue #600)
+- **Purpose**: Fetch issue title, body, and labels via gh CLI for per-issue mode detection
+- **Parameters**: `issue_number` (int): GitHub issue number
+- **Returns**: `Optional[Dict]` with "title", "body", "labels" keys if found; `None` if not found. Labels are list of dicts with "name" key (GitHub API format).
+- **Raises**:
+  - `FileNotFoundError` if gh CLI is not installed
+  - `TimeoutExpired` if gh CLI hangs (>10 seconds)
+  - `OSError` for network or system errors
+- **Security**: CWE-78 (same command injection prevention as `fetch_issue_title`)
+
+**Example**:
+```python
+from github_issue_fetcher import fetch_issue_details
+
+details = fetch_issue_details(72)
+# Returns: {"title": "Fix auth bug", "body": "Steps to reproduce...", "labels": [{"name": "bug"}]}
+```
+
+#### `fetch_issues_details(issue_numbers)` (v1.0.0, Issue #600)
+- **Purpose**: Batch fetch issue details (title, body, labels) for multiple issues
+- **Parameters**: `issue_numbers` (List[int]): List of GitHub issue numbers
+- **Returns**: `Dict[int, Dict]` mapping issue number to details dict. Only includes successfully fetched issues.
+- **Raises**:
+  - `ValueError` if ALL issues fail to fetch
+  - `FileNotFoundError` if gh CLI is not installed
+  - `TimeoutExpired` if gh CLI hangs
+
+**Example**:
+```python
+from github_issue_fetcher import fetch_issues_details
+
+all_details = fetch_issues_details([72, 73, 74])
+# Returns: {72: {"title": "...", "body": "...", "labels": [...]}, ...}
 ```
 
 ### Security Features

@@ -44,6 +44,7 @@ Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` t
 | `/refactor` | Unified code, docs, test optimization (--tests, --docs, --code, --fix, --quick) |
 | `/sweep` | Alias for /refactor --quick |
 | `/improve` | Automation health analysis — pipeline enforcement, bypasses |
+| `/retrospective` | Session drift detection — intent evolution, repeated corrections, memory rot |
 | `/mem-search` | Search claude-mem persistent memory (optional) |
 
 ## Session Continuity
@@ -57,7 +58,7 @@ The `SessionStart-batch-recovery.sh` hook automatically restores batch state aft
 
 ## Component Counts
 
-11 agents, 17 skills, 19 active commands, 176 libraries, 25 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
+12 agents, 17 skills, 20 active commands, 177 libraries, 25 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
 
 ## Detailed Guides
 

@@ -64,7 +64,7 @@ Design Patterns:
 import json
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from subprocess import TimeoutExpired
 
 # Import security utilities for audit logging
@@ -468,3 +468,159 @@ def format_feature_description(issue_number: int, title: str) -> str:
         title = title[:MAX_TITLE_LENGTH] + "..."
 
     return f"Issue #{issue_number}: {title}"
+
+
+# =============================================================================
+# ISSUE DETAILS FETCHING (title + body + labels)
+# =============================================================================
+
+
+def fetch_issue_details(issue_number: int) -> Optional[Dict[str, Any]]:
+    """Fetch issue title, body, and labels via gh CLI.
+
+    Used by batch mode detector to determine pipeline mode (full/fix/light)
+    per issue based on content and labels.
+
+    Security (CWE-78): Same command injection prevention as fetch_issue_title.
+
+    Args:
+        issue_number: GitHub issue number
+
+    Returns:
+        Dict with "title", "body", "labels" keys if found, None if not found.
+        Labels are list of dicts with "name" key (GitHub API format).
+
+    Raises:
+        FileNotFoundError: If gh CLI is not installed
+        TimeoutExpired: If gh CLI hangs (>10 seconds)
+        OSError: If network or system errors occur
+    """
+    try:
+        result = subprocess.run(
+            ['gh', 'issue', 'view', str(issue_number), '--json', 'title,body,labels'],
+            capture_output=True,
+            text=True,
+            timeout=GH_CLI_TIMEOUT,
+            shell=False,
+        )
+
+        if result.returncode != 0:
+            stderr_lower = result.stderr.lower()
+            if 'no pull requests or issues found' in stderr_lower or 'not found' in stderr_lower:
+                audit_log(f"Issue #{issue_number} not found (404)", "not_found", {
+                    "operation": "fetch_issue_details",
+                    "issue_number": issue_number,
+                })
+                return None
+
+            audit_log("github_issue_fetch", "error", {
+                "operation": "fetch_issue_details",
+                "issue_number": issue_number,
+                "error": result.stderr[:200],
+            })
+            return None
+
+        try:
+            data = json.loads(result.stdout)
+            audit_log(f"Successfully fetched issue #{issue_number} details", "success", {
+                "operation": "fetch_issue_details",
+                "issue_number": issue_number,
+            })
+            return {
+                "title": data.get("title", ""),
+                "body": data.get("body", ""),
+                "labels": data.get("labels", []),
+            }
+        except json.JSONDecodeError as e:
+            audit_log("github_issue_fetch", "error", {
+                "operation": "fetch_issue_details",
+                "issue_number": issue_number,
+                "error": f"JSON parse error: {e}",
+            })
+            return None
+
+    except FileNotFoundError:
+        audit_log("github_issue_fetch", "error", {
+            "operation": "fetch_issue_details",
+            "issue_number": issue_number,
+            "error": "gh CLI not found",
+        })
+        raise FileNotFoundError(
+            "gh CLI not found. Install from: https://cli.github.com\n"
+            "After installing, authenticate with: gh auth login"
+        )
+
+    except TimeoutExpired:
+        audit_log("github_issue_fetch", "error", {
+            "operation": "fetch_issue_details",
+            "issue_number": issue_number,
+            "error": f"Timeout after {GH_CLI_TIMEOUT} seconds",
+        })
+        raise
+
+    except OSError as e:
+        audit_log("github_issue_fetch", "error", {
+            "operation": "fetch_issue_details",
+            "issue_number": issue_number,
+            "error": str(e),
+        })
+        raise
+
+
+def fetch_issues_details(issue_numbers: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Batch fetch issue details (title, body, labels) for multiple issues.
+
+    Args:
+        issue_numbers: List of GitHub issue numbers
+
+    Returns:
+        Dict mapping issue_number to details dict with "title", "body", "labels".
+        Only includes successfully fetched issues.
+
+    Raises:
+        ValueError: If ALL issues are missing or failed to fetch
+        FileNotFoundError: If gh CLI is not installed
+        TimeoutExpired: If gh CLI hangs
+    """
+    audit_log("github_issue_fetch_details_batch start", "info", {
+        "operation": "fetch_issues_details",
+        "count": len(issue_numbers),
+        "issue_numbers": issue_numbers[:10],
+    })
+
+    results: Dict[int, Dict[str, Any]] = {}
+    missing_issues: List[int] = []
+
+    for num in issue_numbers:
+        details = fetch_issue_details(num)
+        if details is not None:
+            results[num] = details
+        else:
+            missing_issues.append(num)
+
+    if not results:
+        audit_log("github_issue_fetch_details_batch", "error", {
+            "operation": "fetch_issues_details",
+            "error": "All issues failed to fetch",
+            "missing_issues": missing_issues,
+        })
+        raise ValueError(
+            f"No issues found. All issue numbers are invalid or don't exist: {missing_issues}\n"
+            f"Please verify the issue numbers and try again."
+        )
+
+    if missing_issues:
+        audit_log("github_issue_fetch_details_batch", "warning", {
+            "operation": "fetch_issues_details",
+            "successful": len(results),
+            "missing": len(missing_issues),
+            "missing_issues": missing_issues,
+        })
+
+    audit_log("github_issue_fetch_details_batch complete", "info", {
+        "operation": "fetch_issues_details",
+        "successful": len(results),
+        "total": len(issue_numbers),
+    })
+
+    return results

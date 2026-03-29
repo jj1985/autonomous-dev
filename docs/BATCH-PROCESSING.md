@@ -59,6 +59,24 @@ Fetch feature titles directly from GitHub issues:
 # Fetches: "Issue #72: [title]", "Issue #73: [title]", "Issue #74: [title]"
 ```
 
+After fetching, **STEP I1.5 (Mode Detection and Confirmation)** automatically analyzes each issue's title, body, and labels to select the appropriate pipeline variant. A summary table is displayed before processing begins:
+
+```
+Per-Issue Pipeline Mode Detection:
+
+Issue  Title                          Detected Mode  Signals
+#72    Fix failing auth test          --fix          "failing test" (title)
+#73    Add JWT authentication         full           (no signals)
+#74    Update README setup section    --light        "readme" (title)
+```
+
+The detected mode determines which pipeline runs for each issue:
+- `full` — full 8-step pipeline (default when no signals match)
+- `--fix` — fix pipeline for bug/test issues (triggered by "bug" label or fix-related title/body signals)
+- `--light` — light pipeline for docs/config changes (triggered by "documentation" label or doc-related signals)
+
+Label overrides ("bug" → --fix, "documentation" → --light) take highest priority. User overrides are accepted before processing begins. Final modes are stored in `BatchState.feature_modes` (maps feature index to mode string). See `lib/batch_mode_detector.py` for signal definitions and detection logic.
+
 ### 3. Resume Interrupted Batch
 
 Continue a batch that was interrupted:

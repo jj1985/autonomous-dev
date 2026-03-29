@@ -272,6 +272,9 @@ class BatchState:
     skipped_features: List[Dict[str, Any]] = field(default_factory=list)  # Skipped feature records
     quality_metrics: Dict[str, Any] = field(default_factory=dict)  # Quality metrics per feature
 
+    # Issue #600: Per-issue pipeline mode detection
+    feature_modes: Dict[int, str] = field(default_factory=dict)  # Maps feature index to mode ("full", "fix", "light")
+
     # Issue #276: Checkpoint tracking
     last_checkpoint_at: Optional[str] = None  # Timestamp of last checkpoint
     checkpoint_count: int = 0  # Number of checkpoints created
