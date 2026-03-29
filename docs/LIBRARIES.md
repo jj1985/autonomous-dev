@@ -15884,3 +15884,53 @@ print(plan.summary)      # "Frontend: 1 target(s), API: 1 target(s)"
 - `tests/genai/test_acceptance_runtime_verification.py` — acceptance tests
 
 **Version History**: v1.0.0 (2026-03-28) - Initial release for runtime data aggregation (Issue #579, Component 1)
+
+## 176+2. python_write_detector.py (299 lines, v1.0.0 - Issue #589)
+
+**Purpose**: Detect file-write operations in Python code snippets (e.g., `python3 -c` arguments, heredoc bodies) using AST-based extraction with regex fallback. Used by `unified_pre_tool.py` to close the Bash-wrapped write bypass gap — wrapping a `Path.write_text()` call in a Bash command would otherwise evade the infrastructure-file write guard.
+
+**GitHub Issue**: #589 — Python3 Path.write_text() bypass detection hardening
+
+### Public API
+
+```python
+from python_write_detector import extract_write_targets, has_suspicious_exec, SUSPICIOUS_EXEC_SENTINEL
+
+# Primary entry point: AST first, regex fallback
+targets = extract_write_targets('from pathlib import Path as P; P("hooks/foo.py").write_text("x")')
+# => ["hooks/foo.py"]
+
+# Quick check for dynamic eval/exec
+is_suspicious = has_suspicious_exec("exec(user_input)")
+# => True
+```
+
+### Functions
+
+- **`extract_write_targets(code: str) -> List[str]`** — Main entry point. Tries AST parsing first; falls back to regex on `SyntaxError`, `RecursionError`, `MemoryError`, `ValueError`, `TypeError`. Returns list of file paths that would be written to. May include `SUSPICIOUS_EXEC_SENTINEL` if `eval()`/`exec()` with dynamic (non-constant) arguments is detected. Truncates input to `MAX_SNIPPET_LENGTH = 10_000` characters before parsing. Pre-processes literal `\n`/`\t` escape sequences (common in shell `-c` strings) before AST parsing.
+- **`extract_write_targets_ast(code: str) -> List[str]`** — AST-only extraction. Raises `SyntaxError` on invalid Python. Detects: `Path(...).write_text/write_bytes` with any import alias; `open(path, 'w'/'a'/'wb'/'ab')`; `shutil.copy/copy2/move/copyfile` destination arguments; `eval()`/`exec()` with non-constant first argument.
+- **`extract_write_targets_regex(code: str) -> List[str]`** — Regex fallback. Less accurate but handles syntactically invalid snippets. Same detection categories as AST variant.
+- **`has_suspicious_exec(code: str) -> bool`** — Quick check for `eval()`/`exec()` with dynamic arguments.
+
+### Constants
+
+- **`SUSPICIOUS_EXEC_SENTINEL`** (`"__SUSPICIOUS_EXEC__"`) — Sentinel string appended to results when dynamic `eval()`/`exec()` is detected. Callers check `t != SUSPICIOUS_EXEC_SENTINEL` when iterating targets to separate real paths from this flag.
+- **`MAX_SNIPPET_LENGTH`** (`10_000`) — Maximum input length; longer snippets are truncated before parsing to prevent DoS.
+
+### Detection Coverage
+
+| Pattern | AST | Regex |
+|---------|-----|-------|
+| `Path("f").write_text(...)` | Yes | Yes |
+| `from pathlib import Path as P; P("f").write_text(...)` | Yes (alias tracking) | Yes |
+| `open("f", "w")` / `open("f", "a")` | Yes | Yes |
+| `shutil.copy(src, "dst")` / `copy2` / `move` / `copyfile` | Yes | Yes |
+| `import shutil as s; s.copy(src, "dst")` | Yes (alias tracking) | No |
+| `eval(var)` / `exec(var)` | Yes | Yes |
+| `exec("literal string")` | Not flagged (safe) | Not flagged |
+
+### Testing
+
+- `tests/unit/lib/test_python_write_detector.py` — unit tests
+
+**Version History**: v1.0.0 (2026-03-29) - Initial release for AST-based Python write detection in Bash bypass hardening (Issue #589)

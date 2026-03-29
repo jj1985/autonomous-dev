@@ -138,16 +138,26 @@ For each confirmed item, use the Bash tool:
    - Limit to 256 characters
    - Escape double quotes
 
-3. Create the issue:
+3. Before the first issue, create the marker file to allow gh issue create (Issue #599):
+   ```bash
+   touch /tmp/autonomous_dev_gh_issue_allowed.marker
+   ```
+
+4. Create the issue:
    ```bash
    gh issue create --title "SANITIZED_TITLE" --body-file /tmp/plan_issue_N.md
    ```
 
-4. Sleep 1 second between calls (GitHub rate limiting)
+5. Sleep 1 second between calls (GitHub rate limiting)
 
-5. Collect created issue numbers and URLs
+6. Collect created issue numbers and URLs
 
-**Error handling**: If `gh issue create` fails for one issue, log the error and continue with the remaining issues. Report failures in the summary.
+7. After all issues are created, clean up the marker:
+   ```bash
+   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+   ```
+
+**Error handling**: If `gh issue create` fails for one issue, log the error and continue with the remaining issues. Report failures in the summary. Ensure marker cleanup happens even on partial failure.
 
 ---
 
