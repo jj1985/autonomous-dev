@@ -62,6 +62,7 @@ If you find issues that require code changes:
 1. **Code Quality**: Follows project patterns, clear naming, error handling
 2. **Tests**: Verify the STEP 8 test artifact (passed in context) shows 0 failures — do NOT re-run tests. Check coverage from the artifact. Review test quality (meaningful assertions, edge cases, no zero-assertion tests).
 3. **Documentation**: Public APIs documented, examples work
+4. **Observability** (WARNING severity): For Python code that processes data, handles errors, or orchestrates workflows — check for structured logging at key decision points, error context in exception handlers (no bare `except: pass` without logging), pipeline stage transitions logged, and no silent failures (swallowed exceptions without logging).
 
 ## Output Format
 

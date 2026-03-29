@@ -1117,12 +1117,86 @@ def _track_spoofing_escalation(
         return False
 
 
+def _contains_gh_issue_create_bypass(command: str) -> bool:
+    """Detect subprocess-wrapped 'gh issue create' bypass patterns (Issue #618).
+
+    Checks the RAW (unstripped) command string for patterns where 'gh issue create'
+    is invoked indirectly via subprocess wrappers, shell wrappers, or backtick
+    substitution. These bypasses escape the normal stripped-string detection
+    because the 'gh issue create' text lives inside a quoted string argument.
+
+    Patterns detected:
+    - python3 -c "... subprocess.run(['gh', 'issue', 'create'] ...)"
+    - python -c "... subprocess.call(['gh', 'issue', 'create'] ...)"
+    - python3 -c "... subprocess.Popen(['gh', 'issue', 'create'] ...)"
+    - python3 -c "... os.system('gh issue create ...')"
+    - sh -c "gh issue create ..."
+    - bash -c "gh issue create ..."
+    - `gh issue create ...` (backtick substitution)
+    - $(gh issue create ...) (command substitution)
+
+    Args:
+        command: The raw (unstripped) Bash command string.
+
+    Returns:
+        True if a bypass pattern is detected, False otherwise.
+    """
+    import re
+
+    try:
+        # Pattern 1: Python subprocess wrappers — subprocess.run/call/Popen/check_output
+        # with 'gh' and 'issue' and 'create' appearing as list elements or in a string.
+        # We look for the subprocess family of calls followed by gh issue create nearby.
+        subprocess_pattern = (
+            r'subprocess\s*\.\s*(?:run|call|Popen|check_output|check_call)'
+            r'[^)]*\bgh\b[^)]*\bissue\b[^)]*\bcreate\b'
+        )
+        if re.search(subprocess_pattern, command, re.IGNORECASE | re.DOTALL):
+            return True
+
+        # Pattern 2: os.system('gh issue create ...') or os.system("gh issue create ...")
+        os_system_pattern = r'os\s*\.\s*system\s*\([^)]*\bgh\s+issue\s+create\b'
+        if re.search(os_system_pattern, command, re.IGNORECASE | re.DOTALL):
+            return True
+
+        # Pattern 3: sh -c "gh issue create ..." or bash -c "gh issue create ..."
+        # Also covers: /bin/sh -c, /bin/bash -c, /usr/bin/env sh -c, etc.
+        shell_wrapper_pattern = (
+            r'(?:^|[|;&\s])(?:/\S+/)?(?:sh|bash|zsh|dash)\s+-c\s+'
+            r'["\'](?:[^"\'\\]|\\.)*\bgh\s+issue\s+create\b'
+        )
+        if re.search(shell_wrapper_pattern, command, re.IGNORECASE | re.DOTALL):
+            return True
+
+        # Pattern 4: Backtick command substitution: `gh issue create ...`
+        # Only matches when gh issue create is the direct command inside backticks
+        # (i.e., gh appears right after the opening backtick, with optional whitespace).
+        backtick_pattern = r'`\s*gh\s+issue\s+create\b'
+        if re.search(backtick_pattern, command, re.IGNORECASE | re.DOTALL):
+            return True
+
+        # Pattern 5: $(...) command substitution with gh issue create as the direct command
+        # e.g. $(gh issue create --title "test")
+        # NOT matched: $(cat <<'EOF'\ngh issue create\nEOF\n) — heredoc body, not a command
+        dollar_subst_pattern = r'\$\(\s*gh\s+issue\s+create\b'
+        if re.search(dollar_subst_pattern, command, re.IGNORECASE | re.DOTALL):
+            return True
+
+        return False
+    except re.error:
+        return False  # Fail-open on regex error
+
+
 def _detect_gh_issue_create(command: str) -> "Optional[str]":
     """Detect direct 'gh issue create' usage outside approved contexts (Issue #599).
 
     Blocks direct GitHub issue creation via the gh CLI to enforce the
     /create-issue pipeline which includes research, duplicate detection,
     and proper formatting.
+
+    Also detects subprocess-bypass patterns (Issue #618) where 'gh issue create'
+    is wrapped inside python3 -c subprocess calls, sh/bash -c, or backtick
+    substitutions to evade the normal stripped-string detection.
 
     Args:
         command: The raw Bash command string to inspect.
@@ -1139,8 +1213,15 @@ def _detect_gh_issue_create(command: str) -> "Optional[str]":
         stripped = _strip_heredoc_content(command)
         stripped = _strip_quoted_segments(stripped)
 
-        # Match 'gh issue create' in the stripped command (no quoted/heredoc content)
-        if not re.search(r'\bgh\s+issue\s+create\b', stripped, re.IGNORECASE):
+        # Check 1: Direct 'gh issue create' in the stripped command
+        direct_match = bool(re.search(r'\bgh\s+issue\s+create\b', stripped, re.IGNORECASE))
+
+        # Check 2: Subprocess bypass patterns in the RAW command (Issue #618).
+        # These wrappers embed 'gh issue create' inside quoted strings, which
+        # stripping would normally remove — so we scan the original command.
+        bypass_match = _contains_gh_issue_create_bypass(command)
+
+        if not direct_match and not bypass_match:
             return None
 
         # Allow-through 1: Pipeline is active (implementer/test-master/doc-master)

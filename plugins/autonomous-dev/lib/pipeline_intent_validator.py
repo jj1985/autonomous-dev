@@ -206,6 +206,16 @@ def _parse_single_log(
         if not isinstance(batch_issue_number, int):
             batch_issue_number = 0
 
+        # Detect raw Bash pytest commands (Bug #620): PreToolUse Bash entries
+        # where the command contains "pytest" but pipeline_action is not set.
+        # Normalise these as test_run events so hard-gate ordering can find them.
+        bash_command: str = input_summary.get("command", "") if isinstance(input_summary, dict) else ""
+        is_pytest_bash = (
+            tool == "Bash"
+            and pipeline_action != "test_run"
+            and "pytest" in bash_command
+        )
+
         # Include Task (agent invocations) and Bash test_run events
         if tool in AGENT_TOOL_NAMES and pipeline_action == "agent_invocation":
             events.append(PipelineEvent(
@@ -222,6 +232,21 @@ def _parse_single_log(
                 session_id=entry.get("session_id", ""),
             ))
         elif tool == "Bash" and pipeline_action == "test_run":
+            events.append(PipelineEvent(
+                timestamp=entry.get("timestamp", ""),
+                tool=tool,
+                agent=entry.get("agent", "main"),
+                subagent_type="",
+                pipeline_action="test_run",
+                duration_ms=entry.get("duration_ms", 0),
+                success=output_summary.get("success", True),
+                session_id=entry.get("session_id", ""),
+            ))
+        elif is_pytest_bash:
+            # Raw PreToolUse Bash entries with pytest in the command — treated
+            # as test_run events.  success defaults to True since raw Bash
+            # PreToolUse entries don't carry an output_summary yet; the check
+            # for "no tests ran" only cares that pytest was invoked.
             events.append(PipelineEvent(
                 timestamp=entry.get("timestamp", ""),
                 tool=tool,
@@ -293,15 +318,40 @@ def parse_session_logs(
 
 
 def _parse_timestamp(ts: str) -> Optional[datetime]:
-    """Parse ISO timestamp string to datetime."""
+    """Parse ISO timestamp string to datetime.
+
+    Handles timestamps with and without microseconds, e.g.:
+    - ``2026-01-01T12:00:00Z``
+    - ``2026-01-01T12:00:00.123456Z``
+    - ``2026-01-01T12:00:00+00:00``
+    - ``2026-01-01T12:00:00.123456+00:00``
+
+    Uses ``datetime.fromisoformat()`` first (handles all Python 3.11+
+    ISO formats natively), with a manual fallback for older runtimes.
+    """
     try:
-        # Handle various ISO formats
-        ts = ts.replace("+00:00", "+0000").replace("Z", "+0000")
-        if "+" in ts[10:]:
-            return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S%z")
-        return datetime.fromisoformat(ts)
-    except (ValueError, IndexError):
-        return None
+        # Normalise timezone suffixes so fromisoformat() accepts them on
+        # Python 3.7-3.10 as well (3.11+ handles "+00:00" directly).
+        normalised = ts.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalised)
+    except (ValueError, AttributeError):
+        pass
+
+    # Legacy fallback: try explicit strptime patterns (microseconds first)
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S.%f%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+    ):
+        try:
+            # strptime needs numeric timezone like +0000, not +00:00
+            ts_norm = ts.replace("+00:00", "+0000").replace("Z", "+0000")
+            return datetime.strptime(ts_norm, fmt)
+        except ValueError:
+            continue
+
+    return None
 
 
 def _seconds_between(ts1: str, ts2: str) -> Optional[float]:
@@ -339,7 +389,19 @@ def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
     # (the default), test-master is never invoked — it only runs in --tdd-first mode.
     # The pipeline coordinator (implement.md STEP 7) is responsible for mode-specific agent
     # inclusion. Post-hoc log validation must not second-guess mode selection. (#518)
+
+    # Detect parallel STEP 10 mode upfront so we can skip intra-STEP-6 ordering
+    # checks (Issue #615): reviewer/security-auditor/doc-master complete in
+    # non-deterministic order when launched in parallel.
+    step6_are_parallel = _is_parallel_step10_launch(events)
+    # Set of STEP 6 pairs where ordering should not be flagged in parallel mode
+    STEP6_PAIRS = frozenset({("reviewer", "security-auditor"), ("security-auditor", "reviewer")})
+
     for first_type, second_type in SEQUENTIAL_REQUIRED:
+        # Skip STEP 6 inter-ordering when parallel launch detected (#615)
+        if step6_are_parallel and (first_type, second_type) in STEP6_PAIRS:
+            continue
+
         first_events = [e for e in agent_events if e.subagent_type == first_type]
         second_events = [e for e in agent_events if e.subagent_type == second_type]
 
@@ -365,6 +427,45 @@ def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
     return findings
 
 
+def _is_parallel_step10_launch(events: List[PipelineEvent]) -> bool:
+    """Detect whether STEP 6 agents were launched in parallel (commit 2b87c40 mode).
+
+    In parallel STEP 10 mode, reviewer, security-auditor, and doc-master are
+    launched in a single message, so their start timestamps are nearly identical.
+    If all present STEP 6 agents started within TIMESTAMP_WINDOW_SECONDS of each
+    other, they were launched in parallel and ordering between them does not apply.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        True if STEP 6 agents appear to have been launched in parallel.
+    """
+    step6_events = [e for e in events if e.subagent_type in STEP6_AGENTS]
+    if len(step6_events) < 2:
+        # Only one STEP 6 agent — no ordering concern
+        return False
+
+    # Collect earliest launch timestamp per STEP 6 agent type
+    agent_first_ts: dict[str, str] = {}
+    for e in step6_events:
+        if e.subagent_type not in agent_first_ts:
+            agent_first_ts[e.subagent_type] = e.timestamp
+
+    timestamps = list(agent_first_ts.values())
+    if len(timestamps) < 2:
+        return False
+
+    # If every pair of STEP 6 launch timestamps is within the window, parallel mode
+    for i in range(len(timestamps)):
+        for j in range(i + 1, len(timestamps)):
+            gap = _seconds_between(timestamps[i], timestamps[j])
+            if gap is None or gap > TIMESTAMP_WINDOW_SECONDS:
+                return False
+
+    return True
+
+
 def detect_hard_gate_ordering(events: List[PipelineEvent]) -> List[Finding]:
     """Detect STEP 6 agents running before STEP 5 test gate passes.
 
@@ -381,7 +482,9 @@ def detect_hard_gate_ordering(events: List[PipelineEvent]) -> List[Finding]:
     if not step6_events:
         return findings
 
-    # Find successful test_run events
+    # Find test_run events (pipeline_action == "test_run")
+    # Also detect raw PreToolUse Bash entries where the command contains "pytest"
+    # (Bug #620: pipeline_action may be absent for raw Bash log entries)
     test_runs = [e for e in events if e.pipeline_action == "test_run"]
     successful_test_runs = [e for e in test_runs if e.success]
 

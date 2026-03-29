@@ -1373,3 +1373,285 @@ class TestSessionScopedOrdering:
             "#587: Ordering finding description must reference the violating agents"
         )
 
+
+# ---------------------------------------------------------------------------
+# Regression tests for Issues #617, #615, #620
+# ---------------------------------------------------------------------------
+
+class TestParseTimestampMicroseconds:
+    """Regression tests for Issue #617: _parse_timestamp fails on microsecond timestamps."""
+
+    def test_timestamp_with_microseconds_and_z_suffix(self):
+        """#617: Microsecond timestamp with Z suffix parses to datetime."""
+        from pipeline_intent_validator import _parse_timestamp
+
+        result = _parse_timestamp("2026-03-28T10:00:00.123456Z")
+        assert result is not None, (
+            "#617: Timestamp with microseconds + Z suffix must parse to datetime, got None"
+        )
+        assert result.microsecond == 123456
+
+    def test_timestamp_with_microseconds_and_utc_offset(self):
+        """#617: Microsecond timestamp with +00:00 offset parses to datetime."""
+        from pipeline_intent_validator import _parse_timestamp
+
+        result = _parse_timestamp("2026-03-28T10:00:00.123456+00:00")
+        assert result is not None, (
+            "#617: Timestamp with microseconds + +00:00 offset must parse to datetime, got None"
+        )
+        assert result.microsecond == 123456
+
+    def test_timestamp_without_microseconds_still_works(self):
+        """#617: Timestamps without microseconds continue to parse correctly."""
+        from pipeline_intent_validator import _parse_timestamp
+
+        result = _parse_timestamp("2026-03-28T10:00:00+00:00")
+        assert result is not None
+        assert result.microsecond == 0
+
+    def test_timestamp_with_z_suffix_no_microseconds(self):
+        """#617: Z-suffix timestamp without microseconds parses correctly."""
+        from pipeline_intent_validator import _parse_timestamp
+
+        result = _parse_timestamp("2026-03-28T10:00:00Z")
+        assert result is not None
+        assert result.microsecond == 0
+
+    def test_seconds_between_uses_microsecond_timestamps(self):
+        """#617: _seconds_between works when both timestamps have microseconds."""
+        from pipeline_intent_validator import _seconds_between
+
+        ts1 = "2026-03-28T10:00:00.000000Z"
+        ts2 = "2026-03-28T10:00:02.500000Z"
+        gap = _seconds_between(ts1, ts2)
+        assert gap is not None, (
+            "#617: _seconds_between must not return None for microsecond timestamps"
+        )
+        assert abs(gap - 2.5) < 0.001
+
+    def test_event_correlation_works_with_microsecond_timestamps(self):
+        """#617: Event correlation does not break when events use microsecond timestamps.
+
+        Previously _parse_timestamp returned None for microsecond timestamps,
+        causing _correlate_invocation_completion to skip all pairs.
+        """
+        base_ts = "2026-03-28T10:00:00.000000Z"
+        comp_ts = "2026-03-28T10:01:30.123456Z"
+
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                pipeline_action="agent_invocation",
+                timestamp=base_ts,
+            ),
+            PipelineEvent(
+                timestamp=comp_ts,
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=100,
+                success=True,
+                session_id="",
+            ),
+        ]
+
+        from pipeline_intent_validator import _correlate_invocation_completion
+
+        pairs = _correlate_invocation_completion(events)
+        assert len(pairs) == 1
+        inv, comp = pairs[0]
+        assert comp is not None, (
+            "#617: invocation must be paired with its completion when timestamps have microseconds"
+        )
+
+
+class TestParallelStep10Mode:
+    """Regression tests for Issue #615: false positives in parallel STEP 10 mode."""
+
+    def _make_parallel_step10_events(self, base_ts: str = "2026-03-28T10:05:00+00:00") -> list:
+        """Build a valid pipeline where STEP 6 agents are launched at the same second."""
+        from datetime import datetime, timezone, timedelta
+
+        base = datetime.fromisoformat(base_ts)
+
+        def ts(offset_secs: float) -> str:
+            return (base + timedelta(seconds=offset_secs)).isoformat()
+
+        return [
+            _make_event(subagent_type="implementer", timestamp=ts(-300)),
+            # Successful test run before STEP 6
+            _make_event(
+                subagent_type="",
+                pipeline_action="test_run",
+                tool="Bash",
+                timestamp=ts(-60),
+                success=True,
+            ),
+            # reviewer and security-auditor launched at nearly the same time (<5s apart)
+            _make_event(subagent_type="reviewer", timestamp=ts(0)),
+            _make_event(subagent_type="security-auditor", timestamp=ts(2)),
+            _make_event(subagent_type="doc-master", timestamp=ts(1)),
+        ]
+
+    def test_no_false_positive_when_step6_parallel_within_window(self):
+        """#615: reviewer/security-auditor launched within 5s should NOT generate CRITICAL ordering finding."""
+        events = self._make_parallel_step10_events()
+        findings = validate_step_ordering(events)
+        ordering_findings = [
+            f for f in findings
+            if f.finding_type == "step_ordering"
+            and "security-auditor" in f.description
+            and "reviewer" in f.description
+        ]
+        assert len(ordering_findings) == 0, (
+            f"#615: Parallel STEP 10 launch must not produce false-positive ordering findings. "
+            f"Got: {[f.description for f in ordering_findings]}"
+        )
+
+    def test_is_parallel_step10_launch_true_within_window(self):
+        """#615: _is_parallel_step10_launch returns True when STEP 6 agents start within window."""
+        from pipeline_intent_validator import _is_parallel_step10_launch
+
+        events = self._make_parallel_step10_events()
+        assert _is_parallel_step10_launch(events) is True
+
+    def test_is_parallel_step10_launch_false_when_sequential(self):
+        """#615: _is_parallel_step10_launch returns False when STEP 6 agents start far apart."""
+        from pipeline_intent_validator import _is_parallel_step10_launch
+        from datetime import datetime, timezone, timedelta
+
+        base = datetime.fromisoformat("2026-03-28T10:05:00+00:00")
+
+        def ts(offset_secs: float) -> str:
+            return (base + timedelta(seconds=offset_secs)).isoformat()
+
+        events = [
+            _make_event(subagent_type="reviewer", timestamp=ts(0)),
+            # security-auditor starts 60 seconds later — not parallel
+            _make_event(subagent_type="security-auditor", timestamp=ts(60)),
+        ]
+        assert _is_parallel_step10_launch(events) is False
+
+    def test_still_flags_real_step6_after_sequential_launch(self):
+        """#615: When STEP 6 agents are not in parallel, ordering violations are still flagged."""
+        from datetime import datetime, timezone, timedelta
+
+        base = datetime.fromisoformat("2026-03-28T10:05:00+00:00")
+
+        def ts(offset_secs: float) -> str:
+            return (base + timedelta(seconds=offset_secs)).isoformat()
+
+        events = [
+            # security-auditor started BEFORE reviewer (60s before), NOT in parallel
+            _make_event(subagent_type="security-auditor", timestamp=ts(0)),
+            _make_event(subagent_type="reviewer", timestamp=ts(60)),
+        ]
+        findings = validate_step_ordering(events)
+        ordering_findings = [f for f in findings if f.finding_type == "step_ordering"]
+        # Should flag that security-auditor ran before reviewer when gap > window
+        # (sequential mode — the ordering check applies)
+        # Note: this pair IS in SEQUENTIAL_REQUIRED as ("reviewer", "security-auditor")
+        assert len(ordering_findings) >= 1, (
+            "#615: Non-parallel STEP 6 ordering violation must still be flagged"
+        )
+
+
+class TestRawBashPytestDetection:
+    """Regression tests for Issue #620: raw Bash pytest commands not detected."""
+
+    def _make_raw_pytest_bash_jsonl(self, timestamp: str, success: bool = True) -> str:
+        """Create a raw PreToolUse Bash entry with pytest in the command (no pipeline_action)."""
+        entry = {
+            "timestamp": timestamp,
+            "tool": "Bash",
+            "input_summary": {
+                "command": "python -m pytest tests/ -v --tb=short --no-cov",
+                # No pipeline_action key — this is a raw PreToolUse Bash entry
+            },
+            "output_summary": {"success": success},
+            "session_id": "test-session",
+            "agent": "implementer",
+        }
+        return json.dumps(entry)
+
+    def test_raw_pytest_bash_counts_as_test_run(self, tmp_path):
+        """#620: Raw Bash entry with pytest command is recognised as a test_run event."""
+        log_file = tmp_path / "session.jsonl"
+        lines = [
+            # Implementer invocation
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:00:00+00:00"),
+            # Raw Bash pytest (no pipeline_action)
+            self._make_raw_pytest_bash_jsonl("2026-03-28T10:05:00+00:00", success=True),
+            # Reviewer after pytest
+            _make_jsonl_line(subagent_type="reviewer", timestamp="2026-03-28T10:10:00+00:00"),
+            _make_jsonl_line(subagent_type="security-auditor", timestamp="2026-03-28T10:10:02+00:00"),
+            _make_jsonl_line(subagent_type="doc-master", timestamp="2026-03-28T10:10:01+00:00"),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = parse_session_logs(log_file)
+        test_run_events = [e for e in events if e.pipeline_action == "test_run"]
+        assert len(test_run_events) >= 1, (
+            "#620: Raw Bash entry with pytest command must be parsed as a test_run event"
+        )
+
+    def test_no_hard_gate_false_positive_with_raw_pytest(self, tmp_path):
+        """#620: detect_hard_gate_ordering must not flag bypass when pytest ran via raw Bash."""
+        log_file = tmp_path / "session.jsonl"
+        lines = [
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:00:00+00:00"),
+            # Raw Bash pytest — no pipeline_action
+            self._make_raw_pytest_bash_jsonl("2026-03-28T10:05:00+00:00", success=True),
+            # Reviewer + security-auditor + doc-master in parallel after pytest passes
+            _make_jsonl_line(subagent_type="reviewer", timestamp="2026-03-28T10:10:00+00:00"),
+            _make_jsonl_line(subagent_type="security-auditor", timestamp="2026-03-28T10:10:02+00:00"),
+            _make_jsonl_line(subagent_type="doc-master", timestamp="2026-03-28T10:10:01+00:00"),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = parse_session_logs(log_file)
+        findings = detect_hard_gate_ordering(events)
+        hard_gate_findings = [f for f in findings if f.finding_type == "hard_gate_ordering"]
+        assert len(hard_gate_findings) == 0, (
+            f"#620: No hard gate violation when pytest ran via raw Bash. "
+            f"Got findings: {[f.description for f in hard_gate_findings]}"
+        )
+
+    def test_hard_gate_bypass_still_detected_without_any_pytest(self, tmp_path):
+        """#620: Hard gate bypass is still detected when no pytest at all (neither raw nor tagged)."""
+        log_file = tmp_path / "session.jsonl"
+        lines = [
+            _make_jsonl_line(subagent_type="implementer", timestamp="2026-03-28T10:00:00+00:00"),
+            # No pytest at all
+            _make_jsonl_line(subagent_type="reviewer", timestamp="2026-03-28T10:10:00+00:00"),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = parse_session_logs(log_file)
+        findings = detect_hard_gate_ordering(events)
+        hard_gate_findings = [f for f in findings if f.finding_type == "hard_gate_ordering"]
+        assert len(hard_gate_findings) >= 1, (
+            "#620: Hard gate bypass must be detected when no pytest ran at all"
+        )
+
+    def test_raw_bash_without_pytest_not_treated_as_test_run(self, tmp_path):
+        """#620: Raw Bash entry without pytest in command is NOT a test_run event."""
+        log_file = tmp_path / "session.jsonl"
+        # Bash entry with a different command
+        entry = {
+            "timestamp": "2026-03-28T10:05:00+00:00",
+            "tool": "Bash",
+            "input_summary": {"command": "git status"},
+            "output_summary": {"success": True},
+            "session_id": "test-session",
+            "agent": "main",
+        }
+        log_file.write_text(json.dumps(entry) + "\n")
+
+        events = parse_session_logs(log_file)
+        test_run_events = [e for e in events if e.pipeline_action == "test_run"]
+        assert len(test_run_events) == 0, (
+            "#620: 'git status' Bash entry must not be treated as a test_run event"
+        )
+

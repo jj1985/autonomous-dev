@@ -301,6 +301,21 @@ Validation: If web researcher shows 0 tool uses, retry. Merge both outputs. Pers
 
 Skip if `--tdd-first`. Check `tests/genai/conftest.py` exists (if not, fall back to TDD-first). Generate `tests/genai/test_acceptance_{slug}.py` with one `genai.judge()` test per acceptance criterion from planner output.
 
+**Test Placement Classification Rule** — Before writing any acceptance test, classify it by what it actually does:
+
+| Test Type | Placement | Marker |
+|-----------|-----------|--------|
+| Calls `genai.judge()` or makes any LLM API call | `tests/genai/` | `@pytest.mark.genai` |
+| Static file inspection: regex, string matching, file existence, line counts | `tests/unit/` | none |
+| Parses output structure without LLM | `tests/unit/` | none |
+
+**Why this matters**: Tests in `tests/genai/` require the `--genai` flag to run. The standard test gate (`pytest --tb=short -q`) does NOT run them. If a static file inspection test is placed in `tests/genai/`, it becomes invisible to the STEP 8 test gate and the acceptance criterion is effectively unverified.
+
+**Classification rule**:
+- If the test body contains `genai.judge(` → `tests/genai/` with `@pytest.mark.genai`
+- If the test body only reads files, checks strings, runs regex, or asserts on file contents → `tests/unit/` without `@pytest.mark.genai`
+- When in doubt: static checks belong in unit, LLM calls belong in genai
+
 ### STEP 7: Test-Master (--tdd-first only)
 
 **Progress**: Output step banner (STEP 7/15 — Test-Master, Agent: test-master (Opus)). Skip banner if not --tdd-first. Output agent completion after.
