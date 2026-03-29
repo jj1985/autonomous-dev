@@ -867,6 +867,36 @@ def _strip_quoted_segments(command: str) -> str:
         return command
 
 
+def _strip_heredoc_content(command: str) -> str:
+    """Remove heredoc content from a command string.
+
+    Strips content between heredoc delimiters (<<EOF...EOF, <<'EOF'...EOF,
+    <<"EOF"...EOF) to prevent false-positive detection when keywords appear
+    inside heredoc bodies (e.g., commit messages passed via heredoc).
+
+    Args:
+        command: The raw Bash command string.
+
+    Returns:
+        Command with heredoc body content replaced by empty strings.
+    """
+    import re
+
+    try:
+        # Match heredoc start: <<EOF, <<'EOF', <<"EOF", <<-EOF, <<-'EOF', etc.
+        # Capture the delimiter word, then remove everything up to the matching
+        # delimiter on its own line (or end of string).
+        result = re.sub(
+            r"<<-?\s*['\"]?(\w+)['\"]?.*?\n(.*?\n)*?\1\b",
+            "",
+            command,
+            flags=re.DOTALL,
+        )
+        return result
+    except re.error:
+        return command
+
+
 def _is_protected_env_var(var_name: str) -> bool:
     """Check if a variable name is protected by individual listing or prefix matching.
 
@@ -1104,8 +1134,13 @@ def _detect_gh_issue_create(command: str) -> "Optional[str]":
     import re
 
     try:
-        # Match 'gh issue create' in the raw command
-        if not re.search(r'\bgh\s+issue\s+create\b', command, re.IGNORECASE):
+        # Strip quoted segments and heredoc content to avoid false positives
+        # when 'gh issue create' appears inside commit messages, echo strings, etc.
+        stripped = _strip_heredoc_content(command)
+        stripped = _strip_quoted_segments(stripped)
+
+        # Match 'gh issue create' in the stripped command (no quoted/heredoc content)
+        if not re.search(r'\bgh\s+issue\s+create\b', stripped, re.IGNORECASE):
             return None
 
         # Allow-through 1: Pipeline is active (implementer/test-master/doc-master)

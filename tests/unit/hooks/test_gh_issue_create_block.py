@@ -214,3 +214,86 @@ class TestGhIssueCreateEdgeCases:
         assert "/create-issue" in result
         assert "/create-issue --quick" in result
         assert "duplicate detection" in result
+
+
+# ---------------------------------------------------------------------------
+# TestGhIssueCreateFalsePositives — regression tests for Issue #601
+# ---------------------------------------------------------------------------
+
+class TestGhIssueCreateFalsePositives:
+    """Regression tests: text mentioning 'gh issue create' inside strings/heredocs
+    should NOT trigger blocking. Only actual command invocations should be blocked."""
+
+    def test_commit_message_with_gh_issue_create_allowed(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """git commit -m with 'gh issue create' in the message should NOT be blocked."""
+        cmd = 'git commit -m "fix: write gh-issue-create marker file"'
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is None, (
+            "Commit message mentioning 'gh issue create' should not be blocked"
+        )
+
+    def test_heredoc_commit_message_allowed(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """Heredoc commit message mentioning 'gh issue create' should NOT be blocked."""
+        cmd = (
+            "git commit -m \"$(cat <<'EOF'\n"
+            "fix gh issue create bug\n"
+            "EOF\n"
+            ")\""
+        )
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is None, (
+            "Heredoc body mentioning 'gh issue create' should not be blocked"
+        )
+
+    def test_echo_mentioning_allowed(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """echo statement mentioning 'gh issue create' should NOT be blocked."""
+        cmd = 'echo "use gh issue create to file bugs"'
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is None, (
+            "echo with quoted 'gh issue create' should not be blocked"
+        )
+
+    def test_actual_gh_issue_create_still_blocked(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """Actual 'gh issue create' command must STILL be blocked."""
+        cmd = 'gh issue create --title "test" --body "details"'
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_gh_issue_create_after_heredoc_blocked(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """Heredoc followed by actual gh issue create should still be blocked."""
+        cmd = (
+            "cat <<'EOF'\nsome docs\nEOF\n"
+            "gh issue create --title \"real command\""
+        )
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is not None, (
+            "Actual gh issue create after a heredoc should still be blocked"
+        )
+        assert "BLOCKED" in result
+
+    def test_single_quoted_mention_allowed(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """Single-quoted string mentioning 'gh issue create' should NOT be blocked."""
+        cmd = "echo 'run gh issue create for issues'"
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is None
+
+    def test_commit_message_double_quoted_allowed(
+        self, no_pipeline, no_agent, no_marker
+    ):
+        """Double-quoted commit message with 'gh issue create' should NOT be blocked."""
+        cmd = 'git commit -m "docs: document gh issue create workflow"'
+        result = hook._detect_gh_issue_create(cmd)
+        assert result is None
