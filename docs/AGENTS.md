@@ -363,6 +363,7 @@ These agents provide specialized functionality for alignment, git operations, pr
   - Suspicious agents (timing anomalies, zero operations)
   - Hook health (errors, missing layers, silent failures)
   - Rule bypasses (steps skipped, raw edits, nudges ignored)
+  - Pipeline timing analysis (slow, wasteful, ghost invocations via `pipeline_timing_analyzer.py`; check #11)
 **Excluded**: Feature code quality, security vulnerabilities, documentation completeness (handled by other agents)
 **Mission**: "Is autonomous-dev's automation working correctly?"
 

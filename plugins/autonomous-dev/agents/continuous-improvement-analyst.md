@@ -44,7 +44,7 @@ Models predictably game evaluations. Detect these patterns:
    ```bash
    python -m pytest tests/unit/hooks/ -q --tb=line 2>&1 | tail -5
    ```
-   Compare failure count against the known pre-existing failures (batch_permission_approver: 8, unified_pre_tool MCP: 1 = 9 total). Any NEW failures → `[HOOK-REGRESSION]`. This catches bugs like the one where infrastructure protection blocked all repos instead of just autonomous-dev repos.
+   Compare failure count against the known pre-existing failures (batch_permission_approver: 8, unified_pre_tool: 6 = 14 total). Any NEW failures → `[HOOK-REGRESSION]`. This catches bugs like the one where infrastructure protection blocked all repos instead of just autonomous-dev repos.
 7. **Bypass Detection**: Cross-reference against `known_bypass_patterns.json` for known patterns → `[BYPASS]`. Behavior that circumvents automation but doesn't match known patterns → `[NEW-BYPASS]`. Steps skipped, raw edits instead of `/implement`, nudges ignored.
 8. **Deny-then-workaround detection** (severity: warning): Check session logs for the pattern where a tool call is denied by a hook, then the model immediately tries to achieve the same goal via a different tool. Signs:
    - Edit blocked → Bash with sed/awk to same file within 60s → `[DENY-WORKAROUND]`
@@ -66,6 +66,17 @@ Models predictably game evaluations. Detect these patterns:
     ls .claude/hooks/extensions/*.py 2>/dev/null && echo "Extensions present" || echo "No extensions"
     ```
 
+11. **Pipeline Timing Analysis** (severity: warning): Use `pipeline_timing_analyzer.py` to detect slow, wasteful, and ghost agent invocations:
+    - Import and call `extract_agent_timings(events)` then `analyze_timings(timings, history_path=Path("logs/timing_history.jsonl"))`
+    - For each finding, use find-or-create+comment dedup:
+      - Search: `gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state open --search "[TIMING] {agent_type}"`
+      - If found: `gh issue comment {number} --body "..."`
+      - If not found: `gh issue create --title "[TIMING] {agent}: {finding_type}" --label "auto-improvement" --body-file <temp>`
+    - Circuit breaker: max 3 timing issues per run
+    - 3-consecutive-violation minimum before filing (use `check_consecutive_violations()`)
+    - Print timing summary table to CLI output via `format_timing_report()`
+    - Use `save_timing_entry()` to persist timings for adaptive threshold computation
+
 Includes Intent-Level Pipeline Validation via `pipeline_intent_validator` (step ordering, hard gate ordering, context dropping).
 
 **Repo-aware calibration**: If analyzing a consumer repo (not autonomous-dev itself), calibrate expectations against the target repo's `settings.json` and `registered_hooks`. Consumer repos may legitimately have fewer hook layers or agents registered.
@@ -79,6 +90,8 @@ Includes Intent-Level Pipeline Validation via `pipeline_intent_validator` (step 
 3. **Short agent output word count**: Agents returning structured verdicts (PASS/FAIL, APPROVE/REQUEST_CHANGES) have low word counts (30-100 words). This is correct behavior. Only flag as `[GHOST]` when duration <10s AND result_word_count <50 AND the agent did zero tool uses.
 
 4. **test-master absent in default mode**: test-master only runs in `--tdd-first` mode. Default acceptance-first mode uses 7 agents, not 8. Do NOT flag test-master as missing unless `--tdd-first` was specified.
+
+5. **Implementer duration varies greatly with feature complexity**: Only flag implementer as SLOW when duration >8min AND word output is low (words_per_second < 1.0). Large implementations producing substantial output are expected to take longer.
 
 ## What NOT to Check
 

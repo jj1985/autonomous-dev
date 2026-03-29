@@ -1655,3 +1655,31 @@ class TestRawBashPytestDetection:
             "#620: 'git status' Bash entry must not be treated as a test_run event"
         )
 
+
+class TestPublicTimestampAPI:
+    """Tests for public parse_timestamp and seconds_between aliases (Issue #621)."""
+
+    def test_parse_timestamp_public_api(self):
+        """parse_timestamp is importable and returns same result as _parse_timestamp."""
+        from pipeline_intent_validator import parse_timestamp, _parse_timestamp
+
+        ts = "2026-03-01T10:00:00+00:00"
+        assert parse_timestamp(ts) == _parse_timestamp(ts)
+        assert parse_timestamp(ts) is not None
+
+    def test_seconds_between_public_api(self):
+        """seconds_between is importable and returns same result as _seconds_between."""
+        from pipeline_intent_validator import seconds_between, _seconds_between
+
+        ts1 = "2026-03-01T10:00:00+00:00"
+        ts2 = "2026-03-01T10:01:30+00:00"
+        assert seconds_between(ts1, ts2) == _seconds_between(ts1, ts2)
+        assert seconds_between(ts1, ts2) == 90.0
+
+    def test_parse_timestamp_public_with_microseconds(self):
+        """parse_timestamp handles microsecond timestamps."""
+        from pipeline_intent_validator import parse_timestamp
+
+        result = parse_timestamp("2026-03-01T10:00:00.123456+00:00")
+        assert result is not None
+

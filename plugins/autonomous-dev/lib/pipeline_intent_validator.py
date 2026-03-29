@@ -317,7 +317,7 @@ def parse_session_logs(
     return unique_events
 
 
-def _parse_timestamp(ts: str) -> Optional[datetime]:
+def parse_timestamp(ts: str) -> Optional[datetime]:
     """Parse ISO timestamp string to datetime.
 
     Handles timestamps with and without microseconds, e.g.:
@@ -354,13 +354,18 @@ def _parse_timestamp(ts: str) -> Optional[datetime]:
     return None
 
 
-def _seconds_between(ts1: str, ts2: str) -> Optional[float]:
+def seconds_between(ts1: str, ts2: str) -> Optional[float]:
     """Get seconds between two timestamps."""
-    dt1 = _parse_timestamp(ts1)
-    dt2 = _parse_timestamp(ts2)
+    dt1 = parse_timestamp(ts1)
+    dt2 = parse_timestamp(ts2)
     if dt1 is None or dt2 is None:
         return None
     return abs((dt2 - dt1).total_seconds())
+
+
+# Backward-compatible aliases for internal/external callers using the old private names
+_parse_timestamp = parse_timestamp
+_seconds_between = seconds_between
 
 
 def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
@@ -459,7 +464,7 @@ def _is_parallel_step10_launch(events: List[PipelineEvent]) -> bool:
     # If every pair of STEP 6 launch timestamps is within the window, parallel mode
     for i in range(len(timestamps)):
         for j in range(i + 1, len(timestamps)):
-            gap = _seconds_between(timestamps[i], timestamps[j])
+            gap = seconds_between(timestamps[i], timestamps[j])
             if gap is None or gap > TIMESTAMP_WINDOW_SECONDS:
                 return False
 
@@ -604,7 +609,7 @@ def detect_parallelization_violations(events: List[PipelineEvent]) -> List[Findi
         if first_type not in agent_timestamps or second_type not in agent_timestamps:
             continue
 
-        gap = _seconds_between(agent_timestamps[first_type], agent_timestamps[second_type])
+        gap = seconds_between(agent_timestamps[first_type], agent_timestamps[second_type])
         if gap is not None and gap <= TIMESTAMP_WINDOW_SECONDS:
             findings.append(Finding(
                 finding_type="parallelization_violation",
@@ -626,7 +631,7 @@ def detect_parallelization_violations(events: List[PipelineEvent]) -> List[Findi
         if a_type not in agent_timestamps or b_type not in agent_timestamps:
             continue
 
-        gap = _seconds_between(agent_timestamps[a_type], agent_timestamps[b_type])
+        gap = seconds_between(agent_timestamps[a_type], agent_timestamps[b_type])
         if gap is not None and gap > PARALLEL_SERIALIZED_THRESHOLD:
             findings.append(Finding(
                 finding_type="parallelization_suggestion",
@@ -879,13 +884,13 @@ def _correlate_invocation_completion(
             if comp.subagent_type != inv.subagent_type:
                 continue
 
-            gap = _seconds_between(inv.timestamp, comp.timestamp)
+            gap = seconds_between(inv.timestamp, comp.timestamp)
             if gap is None:
                 continue
 
             # Completion must be AFTER invocation (or very close)
-            inv_dt = _parse_timestamp(inv.timestamp)
-            comp_dt = _parse_timestamp(comp.timestamp)
+            inv_dt = parse_timestamp(inv.timestamp)
+            comp_dt = parse_timestamp(comp.timestamp)
             if inv_dt is None or comp_dt is None:
                 continue
             if comp_dt < inv_dt:

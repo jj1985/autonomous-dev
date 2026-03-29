@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 12 agents (18 archived), 17 skills, 20 active commands, 180 libraries, 25 active hooks (62 archived).
+**Component Counts**: 12 agents (18 archived), 17 skills, 20 active commands, 181 libraries, 25 active hooks (62 archived).
 
 ---
 
@@ -83,7 +83,7 @@ Reusable Python libraries for security, validation, automation, and more. See [d
 - **Validation**: validation.py, alignment_validator.py, project_validator.py
 - **Automation**: unified_git_automation.py (git operations), batch_processor.py, session_tracker.py
 - **State Management**: session_state_manager.py (session persistence), batch_state_manager.py, user_state_manager.py, session_resource_manager.py (resource tracking), pipeline_state.py (pipeline progression tracking)
-- **Infrastructure**: path_utils.py, performance_timer.py, agent_tracker.py
+- **Infrastructure**: path_utils.py, performance_timer.py, agent_tracker.py, pipeline_timing_analyzer.py
 - **See**: [docs/LIBRARIES.md](docs/LIBRARIES.md) for complete API reference
 
 **Note on auto_git_workflow.py**: A backward compatibility shim exists at `.claude/hooks/auto_git_workflow.py` (56 lines) that redirects to `unified_git_automation.py`. The original hook was consolidated in Issue #144. Duplicate resolution completed in Issue #212. See `plugins/autonomous-dev/hooks/archived/README.md` for details.

@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+### Added
+- **Automatic pipeline timing analysis via continuous-improvement-analyst** (#621): New `pipeline_timing_analyzer.py` library detects slow, wasteful, and ghost agent invocations from session logs. `extract_agent_timings(events)` pairs invocation/completion events by subagent type and computes wall-clock durations from timestamp deltas. `analyze_timings(timings, history_path)` applies per-agent static thresholds and adaptive p95-based thresholds (when 10+ historical observations exist), emitting `TimingFinding` entries with types `SLOW`, `WASTEFUL`, `GHOST`, and `SLOW_REGRESSION`. `save_timing_entry()` persists to a JSONL history file (thread-safe, capped at 20 entries per agent). `check_consecutive_violations()` requires 3 consecutive violations before an issue is filed (circuit breaker). `format_timing_report()` renders a CLI summary table. The continuous-improvement-analyst gains check #11 (Pipeline Timing Analysis) in Full Mode: runs the analyzer, deduplicates findings against open GitHub issues via find-or-create+comment, and caps new issue creation at 3 per run. 31 unit tests in `tests/unit/lib/test_pipeline_timing_analyzer.py`.
+
+### Changed
+- **docs/LIBRARIES.md updated for Issue #621**: `pipeline_timing_analyzer.py` added as Core Library entry 74. Core Libraries count updated from 73 to 74.
+- **docs/ARCHITECTURE-OVERVIEW.md updated for Issue #621**: Component Counts library count updated from 180 to 181. `pipeline_timing_analyzer.py` added to Infrastructure key libraries.
+- **docs/AGENTS.md updated for Issue #621**: `continuous-improvement-analyst` Detection Coverage section updated to reflect new timing analysis capability (check #11).
+
 ### Changed
 - **Pipeline validation mode is now adaptive**: STEP 10 of `/implement` routes to parallel mode (all three agents — reviewer, security-auditor, doc-master — launched simultaneously) for low-risk changesets, and sequential mode (reviewer → security-auditor strict ordering, doc-master in background alongside reviewer) for security-sensitive files. `docs/AGENTS.md` and `docs/ARCHITECTURE-OVERVIEW.md` updated to reflect both modes; the previous description of exclusively sequential validation was stale.
 - **Reviewer is static-only; no longer re-runs pytest**: The reviewer agent consumes STEP 8 test artifacts (pass/fail/skip counts, coverage) passed in context by the coordinator. It MUST NOT and does not re-execute pytest. `docs/AGENTS.md` reviewer execution description updated to clarify the test-artifact consumption model.
