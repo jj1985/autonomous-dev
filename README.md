@@ -221,6 +221,7 @@ For existing projects, use:
 /audit                   # Quality audit (--quick, --security, --docs, --code, --tests)
 /advise                  # Critical thinking analysis
 /improve                 # Automation health analysis
+/retrospective           # Session drift detection and alignment updates
 ```
 
 ### Other Commands

@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 12 agents (18 archived), 17 skills, 20 active commands, 181 libraries, 25 active hooks (62 archived).
+**Component Counts**: 12 agents (18 archived), 17 skills, 20 active commands, 183 libraries, 25 active hooks (62 archived).
 
 ---
 
