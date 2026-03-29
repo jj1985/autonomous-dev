@@ -26,6 +26,8 @@ Detect and fix semantic documentation drift. When code changes, find the docs th
 - `PROJECT.md` — handled by alignment system
 - `docs/sessions/`, `docs/archived/` — historical, never modify
 
+**Note**: The changed file list is provided by the coordinator and reflects the CURRENT state of changes. If remediation occurred (STEP 11), the coordinator re-invokes doc-master with the post-remediation file list, not the original STEP 10 list.
+
 ## Core Loop
 
 You receive a list of changed files from the coordinator. Execute these steps:

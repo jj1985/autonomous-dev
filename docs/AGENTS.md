@@ -215,7 +215,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Purpose**: Semantic documentation drift detection — reads changed source files and compares prose descriptions against actual code behavior to find and fix factual drift
 **Model**: Sonnet (Tier 2 - judgment required for comparing prose against code semantics)
 **Skills**: documentation-guide
-**Execution**: STEP 10 of /implement workflow — runs in background (non-blocking). In parallel mode, launched simultaneously with reviewer and security-auditor. In sequential mode, launched alongside STEP 10a (reviewer), not waiting for security-auditor to finish. Collected at STEP 12
+**Execution**: STEP 10 of /implement workflow — runs in background (non-blocking). In parallel mode, launched simultaneously with reviewer and security-auditor. In sequential mode, launched alongside STEP 10a (reviewer), not waiting for security-auditor to finish. Collected at STEP 12. If STEP 11 remediation occurred, the STEP 10 background result is discarded as stale; STEP 12 re-invokes doc-master BLOCKING with a fresh post-remediation file list (#624)
 **Drift Detection**: Uses `covers:` YAML frontmatter in `docs/*.md` files to map source paths to docs, then applies LLM judgment to detect factual drift, behavioral drift, structural drift, and missing coverage
 
 ### data-curator

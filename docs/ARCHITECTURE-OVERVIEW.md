@@ -126,11 +126,12 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - **Parallel mode** (default): reviewer, security-auditor, and doc-master launched simultaneously in one message (low-risk changesets with no security-sensitive files)
    - **Sequential mode** (security-sensitive files): reviewer runs first (10a), security-auditor runs only after reviewer returns (10b), doc-master runs in background alongside reviewer (10c)
    - reviewer consumes STEP 8 test artifact (pytest results passed in context) — does NOT re-run pytest
-   - doc-master runs non-blocking in both modes; result collected at STEP 12
+   - doc-master runs non-blocking in both modes; result collected at STEP 12 — unless remediation occurred (see 8.5 below)
 8.5. **Remediation Gate** (HARD GATE): If reviewer or security-auditor return findings, auto-loop:
    - Re-invokes implementer in Remediation Mode with BLOCKING findings verbatim (max 2 cycles)
-   - Re-runs only the failing validators after each cycle
+   - Re-runs only the failing validators after each cycle (doc-master excluded from remediation loop)
    - Files GitHub issues and blocks pipeline if findings persist after 2 cycles
+   - **Remediation-Aware Doc-Drift (STEP 12)**: If remediation occurred, the STEP 10 background doc-master result is discarded as stale; STEP 12 discards it and re-invokes doc-master BLOCKING with a fresh `git diff` file list reflecting post-remediation changes (#624)
 9. **Memory Recording** (v3.45.0): Cross-session context after validation
 10. **Automated Git Operations**: SubagentStop hook handles commit/push/PR
 11. **Context Clear** (Optional): `/clear` for next feature
