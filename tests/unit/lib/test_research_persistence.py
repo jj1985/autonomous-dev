@@ -1485,6 +1485,100 @@ class TestCacheIntegrationWorkflow:
 
 
 # ============================================================================
+# TEST: Regression - Issue #622 validate_session_path error string mismatch
+# ============================================================================
+
+
+@pytest.mark.skipif(not LIB_RESEARCH_PERSISTENCE_EXISTS, reason="Library not implemented yet (TDD red phase)")
+class TestIssue622ValidateSessionPathErrorString:
+    """Regression tests for Issue #622: research cache save broken due to
+    validate_path error string mismatch.
+
+    Bug: save_research() and load_cached_research() checked for
+    "Path outside project" in the error message, but validate_session_path()
+    raises with "Path outside session directories". This caused the expected
+    error to be misclassified as a security issue, silently failing the save/load.
+    """
+
+    def test_save_research_succeeds_with_session_path_validation_error(
+        self, temp_project, mock_path_utils
+    ):
+        """
+        Regression test for Issue #622 (save path).
+
+        GIVEN: validate_path raises ValueError with the actual
+               validate_session_path message "Path outside session directories"
+        WHEN: Saving research to docs/research/
+        THEN: save_research succeeds (the error is expected and should be bypassed)
+
+        This test FAILS without the fix (old code checked "Path outside project").
+        """
+        mock_path_utils.return_value = temp_project
+
+        # Simulate the actual error from validate_session_path (validation.py line 108)
+        error_msg = (
+            "Path outside session directories for research persistence: "
+            f"{temp_project / 'docs' / 'research' / 'TEST_TOPIC.md'}\n"
+            f"Resolved to: {temp_project / 'docs' / 'research' / 'TEST_TOPIC.md'}\n"
+            "Allowed session directories:\n"
+            f"  - {temp_project / 'docs' / 'sessions'}\n"
+            f"  - {temp_project / '.claude'}"
+        )
+
+        with patch("research_persistence.validation.validate_path") as mock_validate:
+            mock_validate.side_effect = ValueError(error_msg)
+
+            # This should NOT raise - the error is expected for docs/research paths
+            result = save_research(
+                "Test Topic",
+                "Research findings content here",
+                ["https://example.com/source"],
+            )
+
+            # Verify the file was actually written
+            assert result is not None
+            assert result.exists()
+            content = result.read_text()
+            assert "Research findings content here" in content
+
+    def test_load_cached_research_succeeds_with_session_path_validation_error(
+        self, temp_project, mock_path_utils
+    ):
+        """
+        Regression test for Issue #622 (load path).
+
+        GIVEN: validate_path raises ValueError with the actual
+               validate_session_path message "Path outside session directories"
+        AND: A cached research file exists
+        WHEN: Loading cached research
+        THEN: load_cached_research succeeds (returns parsed data, not None)
+
+        This test FAILS without the fix (old code checked "Path outside project").
+        """
+        mock_path_utils.return_value = temp_project
+
+        # Use the existing research file from temp_project fixture
+        error_msg = (
+            "Path outside session directories for research loading: "
+            f"{temp_project / 'docs' / 'research' / 'EXISTING_RESEARCH.md'}\n"
+            f"Resolved to: {temp_project / 'docs' / 'research' / 'EXISTING_RESEARCH.md'}\n"
+            "Allowed session directories:\n"
+            f"  - {temp_project / 'docs' / 'sessions'}\n"
+            f"  - {temp_project / '.claude'}"
+        )
+
+        with patch("research_persistence.validation.validate_path") as mock_validate:
+            mock_validate.side_effect = ValueError(error_msg)
+
+            result = load_cached_research("Existing Research")
+
+            # Should return parsed data, NOT None (which was the bug behavior)
+            assert result is not None
+            assert "topic" in result
+            assert result["topic"] == "Existing Research"
+
+
+# ============================================================================
 # CHECKPOINT: Save Test Creation Checkpoint
 # ============================================================================
 

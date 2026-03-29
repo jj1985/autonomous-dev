@@ -278,7 +278,7 @@ def save_research(topic: str, findings: str, sources: List[str]) -> Path:
             # Check if this is an expected "path outside project" error for docs/research
             # or a real security issue (path traversal, symlink)
             error_msg = str(e)
-            if "Path outside project" in error_msg and "docs/research" in str(research_file):
+            if "Path outside session directories" in error_msg and "docs/research" in str(research_file):
                 # Expected failure for docs/research paths - path is still safe, continue
                 pass
             else:
@@ -489,7 +489,7 @@ def load_cached_research(topic: str) -> Optional[Dict[str, Any]]:
             # Check if this is an expected "path outside project" error for docs/research
             # or a real security issue (path traversal, symlink)
             error_msg = str(e)
-            if "Path outside project" in error_msg and "docs/research" in str(research_file):
+            if "Path outside session directories" in error_msg and "docs/research" in str(research_file):
                 # Expected failure for docs/research paths - path is still safe, continue
                 pass
             else:
