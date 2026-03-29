@@ -72,6 +72,27 @@ from typing import Dict, Tuple, List
 # Logging functions fall back to this when CLAUDE_SESSION_ID env var is absent.
 _session_id: str = "unknown"
 
+# Defensive import of python_write_detector (Issue #589).
+# Falls back to None so inline regex continues to work if import fails.
+_python_write_detector = None
+try:
+    _hook_path = Path(__file__).resolve().parent
+    _lib_candidates = [
+        _hook_path.parent / "lib",           # plugins/autonomous-dev/lib
+        _hook_path.parents[2] / "lib",        # fallback
+    ]
+    for _lib_dir in _lib_candidates:
+        _detector_path = _lib_dir / "python_write_detector.py"
+        if _detector_path.exists():
+            import importlib.util as _ilu
+            _spec = _ilu.spec_from_file_location("python_write_detector", str(_detector_path))
+            if _spec and _spec.loader:
+                _python_write_detector = importlib.util.module_from_spec(_spec)
+                _spec.loader.exec_module(_python_write_detector)
+            break
+except Exception:
+    _python_write_detector = None  # Fallback: inline regex in _extract_bash_file_writes
+
 # Module-level agent_type extracted from hook stdin JSON (set in main()).
 # Used by _get_active_agent_name() as primary identity source (Issue #591).
 _agent_type: str = ""
@@ -149,6 +170,12 @@ PIPELINE_AGENTS = [
     'test-master',
     'doc-master',
 ]
+
+# Agents authorized to create GitHub issues directly (Issue #599)
+GH_ISSUE_AGENTS = {'continuous-improvement-analyst', 'issue-creator'}
+
+# Marker file path for allowing gh issue create from commands (Issue #599)
+GH_ISSUE_MARKER_PATH = "/tmp/autonomous_dev_gh_issue_allowed.marker"
 
 # Environment variables protected from inline spoofing in Bash commands (Issue #557)
 PROTECTED_ENV_VARS = {
@@ -905,6 +932,57 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
     return None
 
 
+def _detect_gh_issue_create(command: str) -> "Optional[str]":
+    """Detect direct 'gh issue create' usage outside approved contexts (Issue #599).
+
+    Blocks direct GitHub issue creation via the gh CLI to enforce the
+    /create-issue pipeline which includes research, duplicate detection,
+    and proper formatting.
+
+    Args:
+        command: The raw Bash command string to inspect.
+
+    Returns:
+        Block reason string if gh issue create detected and not allowed,
+        None if the command is clean or allowed.
+    """
+    import re
+
+    try:
+        # Match 'gh issue create' in the raw command
+        if not re.search(r'\bgh\s+issue\s+create\b', command, re.IGNORECASE):
+            return None
+
+        # Allow-through 1: Pipeline is active (implementer/test-master/doc-master)
+        if _is_pipeline_active():
+            return None
+
+        # Allow-through 2: Agent is authorized for issue creation
+        agent_name = _get_active_agent_name()
+        if agent_name in GH_ISSUE_AGENTS:
+            return None
+
+        # Allow-through 3: Marker file exists and is fresh (< 1 hour)
+        try:
+            marker_path = Path(GH_ISSUE_MARKER_PATH)
+            if marker_path.exists():
+                import time
+                age = time.time() - marker_path.stat().st_mtime
+                if age < 3600:
+                    return None
+        except OSError:
+            pass  # Marker check failed, continue to block
+
+        return (
+            "BLOCKED: Cannot create GitHub issues with 'gh issue create' directly.\n"
+            "Use '/create-issue' or '/create-issue --quick' instead.\n\n"
+            "/create-issue includes research, duplicate detection, and ensures "
+            "proper formatting."
+        )
+    except Exception:
+        return None  # Fail-open on any error
+
+
 def _detect_settings_json_write(command: str) -> "Optional[str]":
     """Detect Bash commands that write to settings.json or settings.local.json.
 
@@ -987,7 +1065,7 @@ def _extract_bash_file_writes(command: str) -> list:
     for match in re.finditer(cp_mv_pattern, command):
         file_paths.append(match.group(1).strip())
 
-    # python3 -c with file writes (open(), Path.write_text/write_bytes) — Issue #589
+    # python3 -c with file writes — Issue #589 (enhanced with python_write_detector)
     py_c_patterns = [
         r'python3?\s+-c\s+"([^"]+)"',   # double-quoted
         r"python3?\s+-c\s+'([^']+)'",    # single-quoted
@@ -996,13 +1074,6 @@ def _extract_bash_file_writes(command: str) -> list:
     for py_c_pattern in py_c_patterns:
         for match in re.finditer(py_c_pattern, command):
             py_c_snippets.append(match.group(1))
-    for snippet in py_c_snippets:
-        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
-        for open_match in re.finditer(open_pattern, snippet):
-            file_paths.append(open_match.group(1))
-        path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
-        for path_match in re.finditer(path_write_pattern, snippet):
-            file_paths.append(path_match.group(1))
 
     # python3 heredoc with file writes — Issue #589
     py_heredoc_pattern = r'python3?\s+.*?<<\s*[\'"]?(\w+)[\'"]?'
@@ -1013,10 +1084,27 @@ def _extract_bash_file_writes(command: str) -> list:
         _end_match = re.search(r'(?:^|\n)' + re.escape(marker) + r'(?:\n|$)', remaining)
         end_idx = _end_match.start() if _end_match else -1
         heredoc_body = remaining[:end_idx] if end_idx >= 0 else remaining
-        for open_match in re.finditer(r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]', heredoc_body):
-            file_paths.append(open_match.group(1))
-        for path_match in re.finditer(r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)", heredoc_body):
-            file_paths.append(path_match.group(1))
+        py_c_snippets.append(heredoc_body)
+
+    # Use python_write_detector if available, else fall back to inline regex
+    for snippet in py_c_snippets:
+        if _python_write_detector is not None:
+            targets = _python_write_detector.extract_write_targets(snippet)
+            for t in targets:
+                if t != _python_write_detector.SUSPICIOUS_EXEC_SENTINEL:
+                    file_paths.append(t)
+        else:
+            # Inline regex fallback (original patterns)
+            open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
+            for open_match in re.finditer(open_pattern, snippet):
+                file_paths.append(open_match.group(1))
+            path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
+            for path_match in re.finditer(path_write_pattern, snippet):
+                file_paths.append(path_match.group(1))
+            # shutil fallback — Issue #589
+            shutil_pattern = r'(?:\w+)\.(?:copy|copy2|move|copyfile)\s*\(\s*[\'"][^\'"]*[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)'
+            for shutil_match in re.finditer(shutil_pattern, snippet):
+                file_paths.append(shutil_match.group(1))
 
     return file_paths
 
@@ -1466,9 +1554,7 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
     redirect_targets = _extract_bash_file_writes(command)
     target_paths.extend(redirect_targets)
 
-    # 4. python3 -c with open() writing — very conservative, only match explicit paths
-    # Only flag if the python -c snippet contains open(...) with a protected path literal
-    # Use two patterns: double-quoted outer (allows single quotes inside) and vice versa
+    # 4. python3 -c with file writes — Issue #589 (enhanced with python_write_detector)
     py_c_patterns = [
         r'python3?\s+-c\s+"([^"]+)"',   # double-quoted: python3 -c "..."
         r"python3?\s+-c\s+'([^']+)'",   # single-quoted: python3 -c '...'
@@ -1477,39 +1563,50 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
     for py_c_pattern in py_c_patterns:
         for match in re.finditer(py_c_pattern, command):
             py_c_snippets.append(match.group(1))
-    for snippet in py_c_snippets:
-        # Look for open('path', 'w') patterns with protected paths
-        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
-        for open_match in re.finditer(open_pattern, snippet):
-            target_paths.append(open_match.group(1))
-        # Path.write_text / Path.write_bytes (Issue #558)
-        path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
-        for path_match in re.finditer(path_write_pattern, snippet):
-            target_paths.append(path_match.group(1))
 
-    # 5. python3 heredoc — python3 << 'EOF' with file writes inside (Issue #558)
+    # 5. python3 heredoc — python3 << 'EOF' with file writes inside (Issue #558, #589)
     py_heredoc_pattern = r'python3?\s+.*?<<\s*[\'"]?(\w+)[\'"]?'
     for match in re.finditer(py_heredoc_pattern, command):
-        # Extract everything after the heredoc marker as potential Python code
         marker = match.group(1)
         heredoc_start = match.end()
         remaining = command[heredoc_start:]
-        # Look for the closing marker (line-start-aware to avoid collision with substrings)
         import re as _re
         _end_match = _re.search(r'(?:^|\n)' + _re.escape(marker) + r'(?:\n|$)', remaining)
         end_idx = _end_match.start() if _end_match else -1
-        if end_idx >= 0:
-            heredoc_body = remaining[:end_idx]
+        heredoc_body = remaining[:end_idx] if end_idx >= 0 else remaining
+        py_c_snippets.append(heredoc_body)
+
+    # Use python_write_detector if available, else fall back to inline regex
+    for snippet in py_c_snippets:
+        if _python_write_detector is not None:
+            targets = _python_write_detector.extract_write_targets(snippet)
+            for t in targets:
+                if t == _python_write_detector.SUSPICIOUS_EXEC_SENTINEL:
+                    # Directly block if command references protected path segments
+                    for seg in ["agents/", "hooks/", "lib/", "skills/", "commands/"]:
+                        if seg in command:
+                            return (
+                                f"__suspicious_exec__ ({seg})",
+                                f"BLOCKED: Bash command contains exec/eval with dynamic arguments "
+                                f"that reference protected path '{seg}'. This pattern may be "
+                                f"attempting to bypass write enforcement. "
+                                f"Infrastructure files require the /implement pipeline. "
+                                f"Run: /implement \"description\""
+                            )
+                else:
+                    target_paths.append(t)
         else:
-            # No closing marker found — use rest of command (conservative)
-            heredoc_body = remaining
-        # Scan heredoc body for open() and Path.write_text/write_bytes
-        open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
-        for open_match in re.finditer(open_pattern, heredoc_body):
-            target_paths.append(open_match.group(1))
-        path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
-        for path_match in re.finditer(path_write_pattern, heredoc_body):
-            target_paths.append(path_match.group(1))
+            # Inline regex fallback (original patterns)
+            open_pattern = r'open\s*\(\s*[\'"]([^\'"]+)[\'"]\s*,\s*[\'"][wa]'
+            for open_match in re.finditer(open_pattern, snippet):
+                target_paths.append(open_match.group(1))
+            path_write_pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\.write_(?:text|bytes)"
+            for path_match in re.finditer(path_write_pattern, snippet):
+                target_paths.append(path_match.group(1))
+            # shutil fallback — Issue #589
+            shutil_pattern = r'(?:\w+)\.(?:copy|copy2|move|copyfile)\s*\(\s*[\'"][^\'"]*[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)'
+            for shutil_match in re.finditer(shutil_pattern, snippet):
+                target_paths.append(shutil_match.group(1))
 
     # Check each target path against protected infrastructure
     for fp in target_paths:
@@ -1730,6 +1827,14 @@ def main():
                         _log_deviation("env_spoofing", tool_name, "env_var_spoofing_block")
                         _log_pretool_activity(tool_name, tool_input, "deny", spoof_reason)
                         output_decision("deny", spoof_reason, system_message=spoof_reason)
+                        sys.exit(0)
+
+                    # Issue #599: Block direct gh issue create outside approved contexts
+                    gh_block = _detect_gh_issue_create(command)
+                    if gh_block:
+                        _log_deviation("gh_issue_create", tool_name, "gh_issue_create_blocked")
+                        _log_pretool_activity(tool_name, tool_input, "deny", gh_block)
+                        output_decision("deny", gh_block, system_message=gh_block)
                         sys.exit(0)
 
                     # Issue #557: Block settings.json writes during active pipeline

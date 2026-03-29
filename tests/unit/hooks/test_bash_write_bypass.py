@@ -196,6 +196,63 @@ class TestExtractBashFileWrites:
         result = hook._extract_bash_file_writes(cmd)
         assert len(result) == 0
 
+    # --- Issue #589: Enhanced bypass detection via python_write_detector ---
+
+    def test_aliased_path_import_detected(self):
+        """python3 -c with 'from pathlib import Path as P' alias (Issue #589)."""
+        cmd = """python3 -c "from pathlib import Path as P; P('agents/foo.md').write_text('x')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in result
+
+    def test_shutil_copy_detected(self):
+        """python3 -c with shutil.copy to protected path (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.copy('/tmp/x', 'agents/foo.md')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in result
+
+    def test_shutil_move_detected(self):
+        """python3 -c with shutil.move to protected path (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.move('/tmp/x', 'hooks/bar.py')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "hooks/bar.py" in result
+
+    def test_literal_newline_in_c_string(self):
+        """python3 -c with literal \\n separating statements (Issue #589)."""
+        cmd = r'python3 -c "from pathlib import Path\nPath('"'"'agents/foo.md'"'"').write_text('"'"'x'"'"')"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in result
+
+    def test_heredoc_aliased_path_detected(self):
+        """python3 heredoc with aliased Path import (Issue #589)."""
+        cmd = "python3 << EOF\nfrom pathlib import Path as P\nP('lib/util.py').write_text('x')\nEOF"
+        result = hook._extract_bash_file_writes(cmd)
+        assert "lib/util.py" in result
+
+    def test_safe_python3_c_no_write(self):
+        """python3 -c with no file write should not produce targets (Issue #589 precision)."""
+        cmd = 'python3 -c "import json; print(json.dumps({\'key\': \'value\'}))"'
+        result = hook._extract_bash_file_writes(cmd)
+        assert len(result) == 0
+
+    def test_shutil_to_unprotected_safe(self):
+        """shutil.copy to non-protected path should be extracted but not blocked (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.copy('src', '/tmp/safe.txt')" """
+        result = hook._extract_bash_file_writes(cmd)
+        # /tmp/safe.txt IS extracted (it's a write target), but blocking is done downstream
+        assert "/tmp/safe.txt" in result
+
+    def test_shutil_copyfile_detected(self):
+        """python3 -c with shutil.copyfile to protected path (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.copyfile('/tmp/x', 'skills/test/SKILL.md')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "skills/test/SKILL.md" in result
+
+    def test_module_qualified_path_detected(self):
+        """python3 -c with pathlib.Path (module-qualified) (Issue #589)."""
+        cmd = """python3 -c "import pathlib; pathlib.Path('commands/test.md').write_text('x')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "commands/test.md" in result
+
 
 # ---------------------------------------------------------------------------
 # TestCheckBashInfraWrites — new bypass patterns
@@ -306,6 +363,35 @@ class TestCheckBashInfraWrites:
     def test_path_write_to_unprotected_path(self):
         """Path.write_text to a non-infrastructure path should not be blocked."""
         cmd = """python3 -c "from pathlib import Path; Path('/tmp/safe.txt').write_text('ok')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is None
+
+    # --- Issue #589: Enhanced detection in _check_bash_infra_writes ---
+
+    def test_aliased_path_blocked(self):
+        """python3 -c with aliased Path to protected path should be blocked (Issue #589)."""
+        cmd = """python3 -c "from pathlib import Path as P; P('agents/foo.md').write_text('x')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None
+        assert "BLOCKED" in result[1]
+
+    def test_shutil_copy_to_protected_blocked(self):
+        """python3 -c with shutil.copy to protected path should be blocked (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.copy('/tmp/x', 'agents/foo.md')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None
+        assert "BLOCKED" in result[1]
+
+    def test_shutil_move_to_protected_blocked(self):
+        """python3 -c with shutil.move to hooks/ should be blocked (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.move('/tmp/x', 'hooks/bar.py')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None
+        assert "BLOCKED" in result[1]
+
+    def test_shutil_to_unprotected_not_blocked(self):
+        """python3 -c with shutil.copy to /tmp should not be blocked (Issue #589)."""
+        cmd = """python3 -c "import shutil; shutil.copy('src', '/tmp/safe.txt')" """
         result = hook._check_bash_infra_writes(cmd)
         assert result is None
 

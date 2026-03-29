@@ -300,3 +300,128 @@ class TestIssue572WriteToTmpThenCp:
             "Issue #572: mv from /tmp to lib/reviewer_benchmark.py must be blocked"
         )
         assert "BLOCKED" in result[1]
+
+
+# ---------------------------------------------------------------------------
+# Regression tests — Issue #589: python_write_detector bypass gaps
+# ---------------------------------------------------------------------------
+
+class TestIssue589PythonWriteDetectorBypasses:
+    """Regression tests for Issue #589 bypass gaps.
+
+    These tests reproduce the specific bypass vectors identified in Issue #589:
+    aliased imports, shutil operations, and eval/exec indirection that were
+    not caught by the original inline regex patterns.
+    """
+
+    def test_issue_589_aliased_path_import_bypass(self):
+        """Issue #589: 'from pathlib import Path as P; P(...).write_text(...)' bypassed detection.
+
+        Before the fix, the regex only matched 'Path(' literally, missing aliases like P.
+        """
+        cmd = """python3 -c "from pathlib import Path as P; P('agents/foo.md').write_text('bypassed')" """
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in extracted, (
+            "Issue #589: aliased Path import must be detected by _extract_bash_file_writes"
+        )
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #589: aliased Path import write to agents/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_589_shutil_copy_bypass(self):
+        """Issue #589: 'import shutil; shutil.copy(src, dst)' bypassed detection.
+
+        Before the fix, shutil operations were not scanned at all in python3 -c snippets.
+        """
+        cmd = """python3 -c "import shutil; shutil.copy('/tmp/payload', 'agents/foo.md')" """
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in extracted, (
+            "Issue #589: shutil.copy destination must be detected by _extract_bash_file_writes"
+        )
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #589: shutil.copy to agents/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_589_shutil_move_bypass(self):
+        """Issue #589: 'import shutil; shutil.move(src, dst)' bypassed detection.
+
+        Before the fix, shutil.move was not scanned in python3 -c snippets.
+        """
+        cmd = """python3 -c "import shutil; shutil.move('/tmp/payload', 'hooks/evil.py')" """
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "hooks/evil.py" in extracted, (
+            "Issue #589: shutil.move destination must be detected by _extract_bash_file_writes"
+        )
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #589: shutil.move to hooks/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_589_exec_indirection_bypass(self):
+        """Issue #589: 'exec(open(file).read())' with protected path context.
+
+        Before the fix, eval/exec with dynamic arguments were not flagged as suspicious.
+        This test verifies that suspicious exec + protected path context triggers detection.
+        End-to-end: no mock on _is_protected_infrastructure — the sentinel path approach
+        was replaced with a direct return, so _is_protected_infrastructure is never called.
+        """
+        cmd = """python3 -c "exec(open('agents/evil.md').read())" """
+        # Temporarily restore real _is_protected_infrastructure to verify
+        # the fix works without mocking
+        real_fn = hook._is_protected_infrastructure
+        with patch.object(hook, "_is_protected_infrastructure", side_effect=real_fn):
+            result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #589: exec(open(...).read()) with protected path must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+        assert "suspicious_exec" in result[0] or "exec" in result[1].lower()
+
+    def test_issue_589_exec_constant_string_with_write(self):
+        """Issue #589 M-01: exec('Path(...).write_text(...)') with constant string.
+
+        Before the fix, exec() with a constant string argument was treated as safe.
+        The constant string should be recursively parsed to detect write operations.
+
+        Tests at the python_write_detector level (the actual fix) since the hook's
+        -c regex extraction uses [^"]+ which cannot capture nested quotes. The
+        detector itself correctly handles exec() with constant string arguments.
+        """
+        # Test the detector directly — this is where the M-01 fix lives
+        import python_write_detector as pwd
+
+        code = "exec(\"from pathlib import Path; Path('agents/foo.md').write_text('x')\")"
+        targets = pwd.extract_write_targets(code)
+        assert "agents/foo.md" in targets, (
+            "Issue #589 M-01: exec() with constant string containing Path.write_text "
+            "must detect 'agents/foo.md' as a write target"
+        )
+
+        # Also test end-to-end via heredoc (avoids shell quote escaping issues with -c)
+        cmd = (
+            "python3 << 'PYEOF'\n"
+            "exec(\"from pathlib import Path; Path('agents/foo.md').write_text('x')\")\n"
+            "PYEOF"
+        )
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #589 M-01: exec() with constant string writing to agents/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_589_newline_escape_in_c_string(self):
+        """Issue #589: literal \\n in python3 -c string bypassed AST parsing.
+
+        Before the fix, literal \\n characters in the -c string prevented
+        AST parsing from seeing multiline code.
+        """
+        cmd = r'python3 -c "from pathlib import Path\nPath('"'"'agents/foo.md'"'"').write_text('"'"'x'"'"')"'
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.md" in extracted, (
+            "Issue #589: literal \\n in -c string must be handled for AST parsing"
+        )

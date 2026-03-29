@@ -99,13 +99,19 @@ If `--auto-file` flag is set:
 
 2. For each non-duplicate finding with severity >= warning:
    ```bash
+   touch /tmp/autonomous_dev_gh_issue_allowed.marker
    gh issue create -R akaszubski/autonomous-dev \
      --title "[CI-{severity}] {title}" \
      --label "continuous-improvement,auto-improvement" \
      --body "{evidence + rule violated + suggested fix}"
    ```
 
-3. Report filed issues with URLs.
+3. After all issues are filed, clean up the marker:
+   ```bash
+   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+   ```
+
+4. Report filed issues with URLs.
 
 **Important**: Issues always go to `akaszubski/autonomous-dev` regardless of which repo this session ran in. The findings are about the automation tooling, not the user's project.
 
@@ -197,5 +203,7 @@ METRICS:
 
 If `--auto-file` is also set, create a single summary issue:
 ```bash
+touch /tmp/autonomous_dev_gh_issue_allowed.marker
 gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report}"
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
 ```

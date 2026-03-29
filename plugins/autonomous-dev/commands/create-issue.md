@@ -200,6 +200,7 @@ Extract the issue title and body from the issue-creator agent output.
 Use the Bash tool to execute:
 
 ```bash
+touch /tmp/autonomous_dev_gh_issue_allowed.marker
 gh issue create --title "TITLE_HERE" --body "BODY_HERE"
 ```
 
@@ -208,6 +209,11 @@ gh issue create --title "TITLE_HERE" --body "BODY_HERE"
 ---
 
 ### CHECKPOINT 3: Validate Issue Creation
+
+Clean up the marker file after issue creation:
+```bash
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+```
 
 Verify the gh CLI command succeeded:
 - Issue created successfully
