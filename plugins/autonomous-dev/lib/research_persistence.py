@@ -697,6 +697,95 @@ def save_merged_research(topic: str, local_json: Dict, web_json: Dict) -> Path:
     return result
 
 
+def detect_issue_research(issue_body: str) -> Dict[str, Any]:
+    """Detect if a GitHub issue body contains pre-researched content from /create-issue.
+
+    Scans issue body for H2 headings that indicate thorough research sections
+    (e.g., "Implementation Approach", "What Does NOT Work", "Security Considerations").
+    Sections like "Summary" and "Acceptance Criteria" are excluded as they appear
+    in both quick and thorough issues.
+
+    Args:
+        issue_body: Raw markdown body of a GitHub issue.
+
+    Returns:
+        Dict with keys:
+            - is_research_rich: True when section_count >= 3
+            - matched_sections: List of matched section names
+            - section_count: Number of research-indicating sections found
+            - issue_body_as_research: Concatenated content from matched sections
+    """
+    # Handle None/empty input gracefully
+    if not issue_body:
+        return {
+            "is_research_rich": False,
+            "matched_sections": [],
+            "section_count": 0,
+            "issue_body_as_research": "",
+        }
+
+    # Research-indicating section names (case-insensitive comparison)
+    # NOTE: "Summary" and "Acceptance Criteria" are NOT included — they appear
+    # in both quick and thorough issues and don't indicate research depth.
+    RESEARCH_SECTIONS = {
+        "implementation approach",
+        "what does not work",
+        "security considerations",
+        "test scenarios",
+        "scenarios",
+        "dependencies",
+        "architecture",
+        "research findings",
+        "technical details",
+        "existing patterns",
+        "edge cases",
+        "background",
+        "context",
+    }
+
+    # Strip fenced code blocks to avoid false positive heading matches
+    stripped_body = re.sub(r"```[\s\S]*?```", "", issue_body)
+
+    # Find all H2 headings
+    headings = re.findall(r"^##\s+(.+)$", stripped_body, re.MULTILINE)
+
+    # Split body by H2 headings to extract section content
+    # Use the stripped body (no code blocks) for heading detection,
+    # but extract content from the original body for completeness
+    sections = re.split(r"^##\s+.+$", stripped_body, flags=re.MULTILINE)
+    # sections[0] is content before first heading, sections[1..] correspond to headings[0..]
+
+    matched_sections: list[str] = []
+    research_parts: list[str] = []
+
+    for i, heading in enumerate(headings):
+        heading_clean = heading.strip()
+        if heading_clean.lower() in RESEARCH_SECTIONS:
+            # Get section content (index i+1 because sections[0] is pre-heading content)
+            content_idx = i + 1
+            if content_idx < len(sections):
+                section_content = sections[content_idx].strip()
+            else:
+                section_content = ""
+
+            # Only count sections that have actual content
+            if not section_content:
+                continue
+
+            matched_sections.append(heading_clean)
+            research_parts.append(f"## {heading_clean}\n\n{section_content}")
+
+    section_count = len(matched_sections)
+    issue_body_as_research = "\n\n".join(research_parts)
+
+    return {
+        "is_research_rich": section_count >= 3,
+        "matched_sections": matched_sections,
+        "section_count": section_count,
+        "issue_body_as_research": issue_body_as_research,
+    }
+
+
 def update_index() -> Path:
     """Update docs/research/README.md with research catalog.
 

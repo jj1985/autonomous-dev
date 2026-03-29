@@ -14517,7 +14517,7 @@ Integration Tests:
 100 percent compatible - optional integration layer that preserves existing /worktree --merge behavior when disabled or on errors.
 
 
-## 67. research_persistence.py (700 lines, v1.0.0 - Issue #196)
+## 67. research_persistence.py (901 lines, v1.0.0 - Issue #196, enhanced Issue #628)
 
 **Purpose**: Auto-save research findings to docs/research/ with frontmatter metadata and caching, enabling research reuse across sessions and features without duplication.
 
@@ -14554,6 +14554,12 @@ Integration Tests:
    - SCREAMING_SNAKE_CASE naming
    - Sanitizes special characters and truncates to filesystem limits
 
+6. **Issue Research Detection** (detect_issue_research):
+   - Scans a GitHub issue body for H2 headings that indicate pre-researched content from /create-issue
+   - Recognises sections: "Implementation Approach", "What Does NOT Work", "Security Considerations", "Test Scenarios", "Architecture", "Research Findings", "Technical Details", "Existing Patterns", "Edge Cases", "Background", "Context", "Dependencies", "Scenarios"
+   - Returns is_research_rich (True when section_count >= 3), matched_sections, section_count, and issue_body_as_research (concatenated content)
+   - Used by /implement STEP 3 to skip redundant STEP 4 research when the issue already contains sufficient context
+
 **Public API**:
 
 Key functions:
@@ -14562,6 +14568,7 @@ Key functions:
 - load_cached_research(topic: str) -> Optional[Dict[str, Any]]
 - update_index() -> Path
 - topic_to_filename(topic: str) -> str
+- detect_issue_research(issue_body: str) -> Dict[str, Any]
 
 Custom Exception:
 - ResearchPersistenceError - Raised on validation/IO errors

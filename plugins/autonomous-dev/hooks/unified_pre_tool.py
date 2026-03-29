@@ -1198,6 +1198,83 @@ def _contains_gh_issue_create_bypass(command: str) -> bool:
         return False  # Fail-open on regex error
 
 
+def _detect_gh_issue_marker_creation(command: str) -> "Optional[str]":
+    """Detect Bash commands that directly create the gh issue marker file (Issue #627).
+
+    The marker file ``autonomous_dev_gh_issue_allowed.marker`` is written by the
+    approved /create-issue pipeline to signal that a ``gh issue create`` call is
+    authorized.  Allowing arbitrary code to create the file directly would
+    short-circuit the entire bypass-prevention mechanism.
+
+    Detection anchors on the marker filename fragment
+    ``autonomous_dev_gh_issue_allowed`` to catch path variations, then filters to
+    write-creating operations (``touch``, redirect ``>``, ``cp``, ``mv``, ``tee``,
+    Python ``Path.touch`` / ``open`` / ``write_text``).
+
+    Read-only and delete operations (``cat``, ``ls``, ``rm``) are intentionally
+    NOT blocked.
+
+    Allow-through conditions (same guards as ``_detect_gh_issue_create``):
+    1. ``_is_pipeline_active()`` — the pipeline itself writes the marker legitimately.
+    2. Agent name in ``GH_ISSUE_AGENTS`` — authorised agents may also write it.
+    Note: there is deliberately NO marker-file allow-through here (circular).
+
+    Args:
+        command: The raw Bash command string to inspect.
+
+    Returns:
+        Block reason string if marker creation detected and not allowed,
+        None if the command is clean or allowed.
+    """
+    import re
+
+    try:
+        marker_anchor = r"autonomous_dev_gh_issue_allowed"
+
+        write_patterns = [
+            # touch <path containing marker name>
+            rf"touch\s+.*{marker_anchor}",
+            # redirect writes: > <path>, >> <path>
+            rf">+\s*\S*{marker_anchor}",
+            # cp <src> <dst containing marker name>
+            rf"cp\s+.*{marker_anchor}",
+            # mv <src> <dst containing marker name>
+            rf"mv\s+.*{marker_anchor}",
+            # tee <path containing marker name>
+            rf"tee\s+.*{marker_anchor}",
+            # Python Path(...).touch()
+            rf"Path\s*\(.*{marker_anchor}.*\)\s*\.touch\s*\(",
+            # Python open(<marker path>, ...) write modes
+            rf"open\s*\(.*{marker_anchor}.*,\s*['\"]w",
+            # Python .write_text(  near marker name in same statement
+            rf"{marker_anchor}.*\.write_text\s*\(",
+            rf"\.write_text\s*\(.*{marker_anchor}",
+        ]
+
+        matched = any(
+            re.search(pattern, command, re.IGNORECASE) for pattern in write_patterns
+        )
+
+        if not matched:
+            return None
+
+        # Allow-through 1: Pipeline is active (writes the marker legitimately)
+        if _is_pipeline_active():
+            return None
+
+        # Allow-through 2: Agent is authorised for issue creation
+        agent_name = _get_active_agent_name()
+        if agent_name in GH_ISSUE_AGENTS:
+            return None
+
+        return (
+            "BLOCKED: Cannot create gh issue marker file directly.\n"
+            "Use '/create-issue' or '/create-issue --quick' instead."
+        )
+    except Exception:
+        return None  # Fail-open on any error
+
+
 def _detect_gh_issue_create(command: str) -> "Optional[str]":
     """Detect direct 'gh issue create' usage outside approved contexts (Issue #599).
 
@@ -2120,6 +2197,14 @@ def main():
                         _log_deviation("env_spoofing", tool_name, "env_var_spoofing_block")
                         _log_pretool_activity(tool_name, tool_input, "deny", spoof_reason)
                         output_decision("deny", spoof_reason, system_message=spoof_reason)
+                        sys.exit(0)
+
+                    # Issue #627: Block direct creation of gh issue marker file
+                    marker_block = _detect_gh_issue_marker_creation(command)
+                    if marker_block:
+                        _log_deviation("gh_issue_marker", tool_name, "gh_issue_marker_creation_blocked")
+                        _log_pretool_activity(tool_name, tool_input, "deny", marker_block)
+                        output_decision("deny", marker_block, system_message=marker_block)
                         sys.exit(0)
 
                     # Issue #599: Block direct gh issue create outside approved contexts

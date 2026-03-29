@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### Added
+- **`/implement` reuses research from `/create-issue` issue body** (#628): When given an issue reference (`#NNN`), `/implement` fetches the issue body at STEP 0 and calls `detect_issue_research()` at STEP 3 to check for embedded research sections. When three or more research-indicating H2 sections are detected (`is_research_rich=True`), STEP 4 research is skipped and the issue body content is passed directly to the planner at STEP 5. This eliminates redundant research for issues authored by `/create-issue`. `research_persistence.py` gains the new `detect_issue_research(issue_body)` public function with 12 unit tests in `tests/unit/lib/test_detect_issue_research.py`. The `--no-cache` flag overrides detection and forces fresh research.
+
+### Changed
+- **docs/LIBRARIES.md updated for Issue #628**: `research_persistence.py` entry updated with `detect_issue_research()` in Public API and Key Features sections. Line count updated from 700 to 901.
+
+### Security
+- **Direct creation of gh issue marker file blocked outside approved contexts** (#627): `unified_pre_tool.py` gains `_detect_gh_issue_marker_creation()`, which prevents Bash commands from directly writing `/tmp/autonomous_dev_gh_issue_allowed.marker`. Creating the file manually would short-circuit the entire gh issue create enforcement gate added in Issue #599. Detection anchors on the filename fragment `autonomous_dev_gh_issue_allowed` and covers `touch`, redirect `>`, `cp`, `mv`, `tee`, Python `Path.touch()`, `open(..., "w")`, and `.write_text()` patterns. Read-only and delete operations are not blocked. Allow-through conditions mirror the existing gh issue create gate: active `/implement` pipeline or an authorized agent (`continuous-improvement-analyst`, `issue-creator`). No marker-file allow-through exists for this check (circular). Fails open on any detection error. 20 unit tests in `tests/unit/hooks/test_gh_issue_create_block.py`.
+
 ### Fixed
 - **doc-master now produces a verdict when pipeline has a second implementer pass** (#624): STEP 10 background doc-master ran against the pre-remediation file list when remediation occurred, producing a stale or missing verdict. STEP 12 now detects when STEP 11 remediation occurred, discards the stale background result, and re-invokes doc-master BLOCKING with a fresh `git diff` file list that reflects post-remediation changes. `agents/doc-master.md` updated with a note that the coordinator provides the current post-remediation file list. 7 unit tests in `tests/unit/test_doc_verdict_remediation.py`.
 

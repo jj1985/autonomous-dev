@@ -527,3 +527,168 @@ class TestContainsGhIssueCreateBypass:
         # Direct calls are caught by the primary detector.
         cmd = "gh issue create --title test"
         assert hook._contains_gh_issue_create_bypass(cmd) is False
+
+
+# ---------------------------------------------------------------------------
+# TestGhIssueMarkerCreationBlocking — Issue #627 regression tests
+# ---------------------------------------------------------------------------
+
+class TestGhIssueMarkerCreationBlocking:
+    """Tests for blocking direct creation of the gh issue marker file (Issue #627).
+
+    The marker file autonomous_dev_gh_issue_allowed.marker is written by the
+    /create-issue pipeline. Allowing direct creation would bypass the entire
+    gh-issue enforcement mechanism.
+    """
+
+    # ------------------------------------------------------------------
+    # Blocked scenarios (no pipeline, no authorized agent)
+    # ------------------------------------------------------------------
+
+    def test_touch_marker_direct_blocked(self, no_pipeline, no_agent):
+        """touch targeting the marker file should be blocked."""
+        cmd = "touch /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+        assert "/create-issue" in result
+
+    def test_touch_marker_extra_spaces_blocked(self, no_pipeline, no_agent):
+        """touch with extra spaces before path should be blocked."""
+        cmd = "touch  /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_redirect_write_echo_blocked(self, no_pipeline, no_agent):
+        """echo with redirect > to marker file should be blocked."""
+        cmd = 'echo "" > /tmp/autonomous_dev_gh_issue_allowed.marker'
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_redirect_write_printf_blocked(self, no_pipeline, no_agent):
+        """printf with redirect > to marker file should be blocked."""
+        cmd = 'printf "" > /tmp/autonomous_dev_gh_issue_allowed.marker'
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_cp_to_marker_blocked(self, no_pipeline, no_agent):
+        """cp targeting the marker filename should be blocked."""
+        cmd = "cp /tmp/somefile /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_mv_to_marker_blocked(self, no_pipeline, no_agent):
+        """mv targeting the marker filename should be blocked."""
+        cmd = "mv /tmp/somefile /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_tee_to_marker_blocked(self, no_pipeline, no_agent):
+        """tee targeting the marker filename should be blocked."""
+        cmd = "tee /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_python_path_touch_blocked(self, no_pipeline, no_agent):
+        """Python Path(...).touch() on the marker file should be blocked."""
+        cmd = "python3 -c \"Path('/tmp/autonomous_dev_gh_issue_allowed.marker').touch()\""
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_python_open_write_blocked(self, no_pipeline, no_agent):
+        """Python open(..., 'w') on the marker file should be blocked."""
+        cmd = "python3 -c \"open('/tmp/autonomous_dev_gh_issue_allowed.marker', 'w').close()\""
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    # ------------------------------------------------------------------
+    # Allow-through scenarios
+    # ------------------------------------------------------------------
+
+    def test_pipeline_active_allows_touch(self, no_agent):
+        """When pipeline is active, touching the marker should be allowed."""
+        with patch.object(hook, "_is_pipeline_active", return_value=True):
+            cmd = "touch /tmp/autonomous_dev_gh_issue_allowed.marker"
+            result = hook._detect_gh_issue_marker_creation(cmd)
+            assert result is None
+
+    def test_authorized_agent_allows_touch(self, no_pipeline):
+        """Authorized agent (continuous-improvement-analyst) should be allowed."""
+        with patch.object(hook, "_get_active_agent_name",
+                          return_value="continuous-improvement-analyst"):
+            cmd = "touch /tmp/autonomous_dev_gh_issue_allowed.marker"
+            result = hook._detect_gh_issue_marker_creation(cmd)
+            assert result is None
+
+    def test_issue_creator_agent_allows_touch(self, no_pipeline):
+        """issue-creator agent should be allowed to create the marker."""
+        with patch.object(hook, "_get_active_agent_name",
+                          return_value="issue-creator"):
+            cmd = "touch /tmp/autonomous_dev_gh_issue_allowed.marker"
+            result = hook._detect_gh_issue_marker_creation(cmd)
+            assert result is None
+
+    # ------------------------------------------------------------------
+    # False positive avoidance
+    # ------------------------------------------------------------------
+
+    def test_echo_no_redirect_not_blocked(self, no_pipeline, no_agent):
+        """echo mentioning the marker name without redirect should NOT be blocked."""
+        cmd = 'echo "autonomous_dev_gh_issue_allowed"'
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None
+
+    def test_cat_read_not_blocked(self, no_pipeline, no_agent):
+        """cat (reading) the marker file should NOT be blocked."""
+        cmd = "cat /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None
+
+    def test_rm_delete_not_blocked(self, no_pipeline, no_agent):
+        """rm (deleting) the marker file should NOT be blocked."""
+        cmd = "rm -f /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None
+
+    def test_ls_listing_not_blocked(self, no_pipeline, no_agent):
+        """ls (listing) the marker file should NOT be blocked."""
+        cmd = "ls -la /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None
+
+    def test_touch_different_file_not_blocked(self, no_pipeline, no_agent):
+        """touch targeting a different file should NOT be blocked."""
+        cmd = "touch /tmp/some_other_file.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None
+
+    def test_empty_command_not_blocked(self, no_pipeline, no_agent):
+        """Empty command should NOT be blocked."""
+        result = hook._detect_gh_issue_marker_creation("")
+        assert result is None
+
+    # ------------------------------------------------------------------
+    # Block message content validation
+    # ------------------------------------------------------------------
+
+    def test_block_message_contains_blocked(self, no_pipeline, no_agent):
+        """Block message must contain 'BLOCKED'."""
+        cmd = "touch /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "BLOCKED" in result
+
+    def test_block_message_contains_create_issue(self, no_pipeline, no_agent):
+        """Block message must reference /create-issue command."""
+        cmd = "touch /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None
+        assert "/create-issue" in result
