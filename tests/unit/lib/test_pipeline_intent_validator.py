@@ -823,7 +823,7 @@ class TestDetectDocVerdictMissing:
         findings = detect_doc_verdict_missing(events)
         assert len(findings) == 1
         assert findings[0].finding_type == "doc_verdict_missing"
-        assert findings[0].severity == "WARNING"
+        assert findings[0].severity == "CRITICAL"
         assert "[DOC-VERDICT-MISSING]" in findings[0].description
 
     def test_doc_master_completion_low_output_flagged(self):

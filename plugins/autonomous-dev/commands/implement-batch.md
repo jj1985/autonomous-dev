@@ -289,6 +289,20 @@ The coordinator MUST maintain consistent prompt quality across all issues in the
 - Summarizing implementer output for validation agents when full output was passed in earlier issues
 - Reducing prompt detail for any agent as the batch progresses (all issues deserve equal analysis depth)
 
+**REQUIRED** (prompt integrity prevention -- Issue #601, #603):
+
+Before each agent invocation in batch mode, the coordinator MUST:
+
+1. **First issue**: After invoking each agent, call `record_prompt_baseline(agent_type, issue_number, word_count)` to establish the baseline
+2. **Subsequent issues**: Before invoking each agent:
+   a. Get baseline: `baseline = get_prompt_baseline(agent_type)`
+   b. Validate: `result = validate_prompt_word_count(agent_type, constructed_prompt, baseline)`
+   c. If `result.should_reload` is True: re-read the agent's source file using `get_agent_prompt_template(agent_type)` and reconstruct the prompt from source + issue-specific context, NOT from context memory
+   d. Log: include word count in per-issue agent verification display
+3. **Batch start**: Call `clear_prompt_baselines()` to reset from any prior batch
+
+The library functions are in `plugins/autonomous-dev/lib/prompt_integrity.py`.
+
 **BATCH LOGGING: Coordinator-Side Agent Completion Log** (Issue #526)
 
 The session_activity_logger hook may miss agent completions in batch context (Issue #526). To ensure complete observability, the coordinator MUST emit a structured log entry after EACH agent returns in batch mode:
