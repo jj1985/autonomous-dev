@@ -178,10 +178,16 @@ GH_ISSUE_AGENTS = {'continuous-improvement-analyst', 'issue-creator'}
 GH_ISSUE_MARKER_PATH = "/tmp/autonomous_dev_gh_issue_allowed.marker"
 
 # Environment variables protected from inline spoofing in Bash commands (Issue #557)
+# Non-prefix vars that don't start with CLAUDE_ are listed individually
 PROTECTED_ENV_VARS = {
-    'CLAUDE_AGENT_NAME', 'CLAUDE_AGENT_ROLE',
-    'PIPELINE_STATE_FILE', 'ENFORCEMENT_LEVEL', 'CLAUDE_SESSION_ID',
+    'PIPELINE_STATE_FILE', 'ENFORCEMENT_LEVEL',
 }
+
+# Prefix-based protection: any env var starting with these prefixes is protected (Issue #606)
+PROTECTED_ENV_PREFIXES: "tuple[str, ...]" = ('CLAUDE_',)
+
+# Exceptions to prefix-based protection (escape hatch for legitimate user CLAUDE_ vars)
+PROTECTED_ENV_PREFIX_EXCEPTIONS: "frozenset[str]" = frozenset()
 
 # Code file extensions subject to workflow enforcement
 CODE_EXTENSIONS = {
@@ -861,15 +867,40 @@ def _strip_quoted_segments(command: str) -> str:
         return command
 
 
+def _is_protected_env_var(var_name: str) -> bool:
+    """Check if a variable name is protected by individual listing or prefix matching.
+
+    Args:
+        var_name: The environment variable name to check.
+
+    Returns:
+        True if the variable is protected and should not be set inline.
+    """
+    # Check individual protected vars first
+    if var_name in PROTECTED_ENV_VARS:
+        return True
+
+    # Check prefix-based protection (Issue #606)
+    if var_name in PROTECTED_ENV_PREFIX_EXCEPTIONS:
+        return False
+    for prefix in PROTECTED_ENV_PREFIXES:
+        if var_name.startswith(prefix):
+            return True
+
+    return False
+
+
 def _detect_env_spoofing(command: str) -> "Optional[str]":
-    """Detect inline environment variable spoofing in Bash commands (Issue #557).
+    """Detect inline environment variable spoofing in Bash commands (Issue #557, #606).
 
     Checks for patterns like:
     - CLAUDE_AGENT_NAME=implementer python3 ...
     - export CLAUDE_AGENT_NAME=implementer
     - env CLAUDE_AGENT_NAME=implementer ...
+    - CLAUDE_ANY_NEW_VAR=value cmd (prefix-based, Issue #606)
 
-    Only checks variables in PROTECTED_ENV_VARS. Legitimate env usage
+    Checks variables in PROTECTED_ENV_VARS (individual) and any variable
+    matching PROTECTED_ENV_PREFIXES. Legitimate env usage
     (e.g., PATH=foo, HOME=/tmp) is not blocked.
 
     Args:
@@ -882,9 +913,9 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
 
     stripped = _strip_quoted_segments(command)
 
+    # --- Pass 1: Check individual PROTECTED_ENV_VARS (exact match) ---
     for var in PROTECTED_ENV_VARS:
         # Pattern 1: VAR=value command (inline prefix)
-        # Matches: VAR=value, VAR='value', VAR="value" followed by a command
         pattern1 = (
             r'(?:^|[;&|]\s*)' + re.escape(var)
             + r"""=['""]?[^\s'"";|&]*['""]?\s+\S"""
@@ -905,8 +936,8 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
                 f"Bash export. (Issue #557)"
             )
 
-        # Pattern 3: env VAR=value command
-        pattern3 = r'\benv\s+(?:[^\s=]+=\S+\s+)*' + re.escape(var) + r'\s*='
+        # Pattern 3: env [-flags] [--] VAR=value command
+        pattern3 = r'\benv\s+(?:(?:-[a-zA-Z]+\s+(?:\S+\s+)?|--\s+)*)(?:[^\s=]+=\S+\s+)*' + re.escape(var) + r'\s*='
         if re.search(pattern3, stripped):
             return (
                 f"BLOCKED: Env command spoofing detected — '{var}' cannot be "
@@ -914,11 +945,65 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
                 f"are managed by the pipeline. (Issue #557)"
             )
 
+    # --- Pass 2: Prefix-based detection (Issue #606) ---
+    # Find all VAR=value assignments in the stripped command
+    # Pattern: word characters (var name) followed by = at assignment positions
+    # Inline: VAR=value cmd  (start of command or after ; & |)
+    inline_vars = re.findall(r'(?:^|[;&|]\s*)([A-Z_][A-Z0-9_]*)=', stripped, re.MULTILINE)
+    # Export: export VAR=value
+    export_vars = re.findall(r'\bexport\s+([A-Z_][A-Z0-9_]*)\s*=', stripped, re.MULTILINE)
+    # Env command: env [-flags...] [--] VAR=value
+    # Handles: env VAR=val, env -i VAR=val, env -u NAME VAR=val, env -- VAR=val
+    env_cmd_vars = re.findall(
+        r'\benv\s+(?:(?:-[a-zA-Z]+\s+(?:\S+\s+)?|--\s+)*)(?:[^\s=]+=\S+\s+)*([A-Z_][A-Z0-9_]*)=',
+        stripped,
+        re.MULTILINE,
+    )
+
+    all_assigned_vars = set(inline_vars + export_vars + env_cmd_vars)
+    for var in all_assigned_vars:
+        # Skip vars already checked in Pass 1
+        if var in PROTECTED_ENV_VARS:
+            continue
+        if _is_protected_env_var(var):
+            # Determine which pattern matched to give a specific message
+            inline_pat = (
+                r'(?:^|[;&|]\s*)' + re.escape(var)
+                + r"""=['""]?[^\s'"";|&]*['""]?\s+\S"""
+            )
+            export_pat = r'\bexport\s+' + re.escape(var) + r'\s*='
+            env_pat = r'\benv\s+(?:(?:-[a-zA-Z]+\s+(?:\S+\s+)?|--\s+)*)(?:[^\s=]+=\S+\s+)*' + re.escape(var) + r'\s*='
+
+            if re.search(export_pat, stripped):
+                return (
+                    f"BLOCKED: Export of protected env var '{var}' detected. "
+                    f"Variables matching protected prefix cannot be overridden "
+                    f"via Bash export. (Issue #606)"
+                )
+            if re.search(env_pat, stripped):
+                return (
+                    f"BLOCKED: Env command spoofing detected — '{var}' cannot be "
+                    f"set via the env command. Variables matching protected prefix "
+                    f"are managed by the pipeline. (Issue #606)"
+                )
+            if re.search(inline_pat, stripped):
+                return (
+                    f"BLOCKED: Inline env var spoofing detected — '{var}' cannot be "
+                    f"set inline in Bash commands. Variables matching protected prefix "
+                    f"are managed by the pipeline. (Issue #606)"
+                )
+            # Fallback: var was found in assignment but specific pattern didn't re-match
+            # (shouldn't happen, but fail safe)
+            return (
+                f"BLOCKED: Protected env var '{var}' assignment detected. "
+                f"Variables matching protected prefix cannot be set in "
+                f"Bash commands. (Issue #606)"
+            )
+
     # Pattern 4: bash -c / sh -c subshell containing protected var assignments
     # Catches: bash -c 'CLAUDE_AGENT_NAME=x python3 ...'
     #          sh -c "export PIPELINE_STATE_FILE=/tmp/fake.json; ..."
-    subshell_match = re.search(r'(?:ba)?sh\s+-c\s+([\x27"])(.*?)\1', command, re.DOTALL)
-    if subshell_match:
+    for subshell_match in re.finditer(r'(?:ba)?sh\s+-c\s+([\x27"])(.*?)\1', command, re.DOTALL):
         inner_cmd = subshell_match.group(2)
         # Recursively check the inner command for env spoofing
         inner_result = _detect_env_spoofing(inner_cmd)
@@ -930,6 +1015,76 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
             )
 
     return None
+
+
+def _track_spoofing_escalation(
+    session_id: str,
+    *,
+    tracker_path: "Optional[str]" = None,
+) -> bool:
+    """Track spoofing attempts per session and detect escalation (Issue #606).
+
+    Uses a file-based tracker to persist attempt counts across hook invocations
+    (each hook invocation is a separate process). Returns True when 2+ attempts
+    have occurred in the same session, indicating escalation.
+
+    Args:
+        session_id: The current session identifier.
+        tracker_path: Optional override for the tracker file path (for testing).
+
+    Returns:
+        True if this is the 2nd or later attempt in the same session (escalation).
+    """
+    import json
+    import tempfile
+    from datetime import datetime
+
+    if tracker_path is None:
+        log_dir = Path(os.environ.get("HOME", "/tmp")) / ".claude" / "logs"
+        tracker_file = log_dir / "spoofing_attempts.json"
+    else:
+        tracker_file = Path(tracker_path)
+
+    try:
+        tracker_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Read existing tracker data
+        data: "dict[str, list[str]]" = {}
+        if tracker_file.exists():
+            try:
+                data = json.loads(tracker_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                data = {}
+
+        # Record this attempt
+        if session_id not in data:
+            data[session_id] = []
+        data[session_id].append(datetime.now().isoformat())
+
+        is_escalation = len(data[session_id]) >= 2
+
+        # Atomic write: write to tmp file, then rename
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=str(tracker_file.parent), suffix=".tmp"
+        )
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp_path, str(tracker_file))
+        except OSError:
+            # Clean up temp file on failure
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            # Still return the escalation result based on in-memory data
+            pass
+
+        return is_escalation
+    except Exception:
+        # Never block on tracker failure — fail open for tracking,
+        # the spoofing block itself is already applied
+        return False
 
 
 def _detect_gh_issue_create(command: str) -> "Optional[str]":
@@ -1821,9 +1976,20 @@ def main():
                         output_decision("deny", bash_block[1], system_message=bash_block[1])
                         sys.exit(0)
 
-                    # Issue #557: Detect inline env var spoofing
+                    # Issue #557, #606: Detect inline env var spoofing
                     spoof_reason = _detect_env_spoofing(command)
                     if spoof_reason is not None:
+                        # Issue #606: Track escalation across attempts in same session
+                        # Skip escalation tracking when session_id is unknown to
+                        # prevent false escalation from unrelated invocations
+                        session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
+                        is_escalation = (
+                            _track_spoofing_escalation(session_id)
+                            if session_id != "unknown"
+                            else False
+                        )
+                        if is_escalation:
+                            spoof_reason += " [CIRCUMVENTION-ESCALATION]"
                         _log_deviation("env_spoofing", tool_name, "env_var_spoofing_block")
                         _log_pretool_activity(tool_name, tool_input, "deny", spoof_reason)
                         output_decision("deny", spoof_reason, system_message=spoof_reason)

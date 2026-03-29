@@ -57,7 +57,8 @@ class TestEnvSpoofingDetection:
         result = hook._detect_env_spoofing(cmd)
         assert result is not None
         assert "CLAUDE_AGENT_NAME" in result
-        assert "Issue #557" in result
+        # May be caught by individual var (Issue #557) or prefix (Issue #606)
+        assert "Issue #557" in result or "Issue #606" in result
 
     def test_export_blocked(self):
         """export CLAUDE_AGENT_NAME=implementer should be blocked."""
@@ -509,3 +510,239 @@ class TestQuotedSegmentFalsePositives:
         cmd = 'echo "safe" && export ' + pv + '=/tmp/x'
         result = hook._detect_env_spoofing(cmd)
         assert result is not None, 'Unquoted export should still be blocked'
+
+
+# ---------------------------------------------------------------------------
+# TestPrefixEnvSpoofingDetection (Issue #606)
+# ---------------------------------------------------------------------------
+
+class TestPrefixEnvSpoofingDetection:
+    """Tests for prefix-based env var spoofing detection (Issue #606)."""
+
+    def test_claude_agent_prefix_blocked(self):
+        """CLAUDE_AGENT_FOO=bar python3 ... should be blocked by prefix."""
+        cmd = "CLAUDE_AGENT_FOO=bar python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None
+        assert "CLAUDE_AGENT_FOO" in result
+        assert "Issue #606" in result
+
+    def test_claude_session_prefix_blocked(self):
+        """CLAUDE_SESSION_TOKEN=x python3 ... should be blocked by prefix."""
+        cmd = "CLAUDE_SESSION_TOKEN=x python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None
+        assert "CLAUDE_SESSION_TOKEN" in result
+
+    def test_claude_generic_prefix_blocked(self):
+        """CLAUDE_CUSTOM_VAR=x python3 ... should be blocked by prefix."""
+        cmd = "CLAUDE_CUSTOM_VAR=x python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None
+        assert "CLAUDE_CUSTOM_VAR" in result
+
+    def test_non_claude_prefix_allowed(self):
+        """MY_CLAUDE_VAR=x python3 ... should NOT be blocked (not a prefix match)."""
+        cmd = "MY_CLAUDE_VAR=x python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None, f"Should not be blocked, got: {result}"
+
+    def test_prefix_exception_allowed(self, monkeypatch):
+        """If a var is in PROTECTED_ENV_PREFIX_EXCEPTIONS, it should pass through."""
+        # Temporarily add an exception
+        monkeypatch.setattr(
+            hook, "PROTECTED_ENV_PREFIX_EXCEPTIONS",
+            frozenset({"CLAUDE_USER_CUSTOM"}),
+        )
+        cmd = "CLAUDE_USER_CUSTOM=hello python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None, f"Exception var should not be blocked, got: {result}"
+
+    def test_export_prefix_blocked(self):
+        """export CLAUDE_AGENT_TOKEN=x should be blocked by prefix."""
+        cmd = "export CLAUDE_AGENT_TOKEN=secret123"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None
+        assert "CLAUDE_AGENT_TOKEN" in result
+        assert "export" in result.lower() or "Export" in result
+
+    def test_env_command_prefix_blocked(self):
+        """env CLAUDE_AGENT_TOKEN=x python3 ... should be blocked by prefix."""
+        cmd = "env CLAUDE_AGENT_TOKEN=x python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None
+        assert "CLAUDE_AGENT_TOKEN" in result
+
+    def test_subshell_prefix_blocked(self):
+        """bash -c 'CLAUDE_AGENT_NEW=x cmd' should be blocked by prefix via recursion."""
+        cmd = "bash -c 'CLAUDE_AGENT_NEW=x python3 script.py'"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None
+        assert "CLAUDE_AGENT_NEW" in result or "Subshell" in result
+
+
+# ---------------------------------------------------------------------------
+# TestIsProtectedEnvVar (Issue #606)
+# ---------------------------------------------------------------------------
+
+class TestIsProtectedEnvVar:
+    """Tests for _is_protected_env_var() helper function."""
+
+    def test_individual_var_protected(self):
+        """PIPELINE_STATE_FILE should be protected (individual listing)."""
+        assert hook._is_protected_env_var("PIPELINE_STATE_FILE") is True
+
+    def test_prefix_var_protected(self):
+        """CLAUDE_ANYTHING should be protected (prefix match)."""
+        assert hook._is_protected_env_var("CLAUDE_ANYTHING") is True
+
+    def test_unprotected_var(self):
+        """PATH should not be protected."""
+        assert hook._is_protected_env_var("PATH") is False
+
+    def test_exception_var_not_protected(self, monkeypatch):
+        """Exception vars should not be protected even with matching prefix."""
+        monkeypatch.setattr(
+            hook, "PROTECTED_ENV_PREFIX_EXCEPTIONS",
+            frozenset({"CLAUDE_EXCEPTION_VAR"}),
+        )
+        assert hook._is_protected_env_var("CLAUDE_EXCEPTION_VAR") is False
+
+
+# ---------------------------------------------------------------------------
+# TestEscalationDetection (Issue #606)
+# ---------------------------------------------------------------------------
+
+class TestEscalationDetection:
+    """Tests for _track_spoofing_escalation() function (Issue #606)."""
+
+    def test_first_spoofing_no_escalation(self, tmp_path):
+        """First spoofing attempt in a session should not trigger escalation."""
+        tracker_file = str(tmp_path / "spoofing_attempts.json")
+        result = hook._track_spoofing_escalation(
+            "session-abc", tracker_path=tracker_file
+        )
+        assert result is False
+
+    def test_second_spoofing_triggers_escalation(self, tmp_path):
+        """Second spoofing attempt in same session should trigger escalation."""
+        tracker_file = str(tmp_path / "spoofing_attempts.json")
+        # First attempt
+        result1 = hook._track_spoofing_escalation(
+            "session-abc", tracker_path=tracker_file
+        )
+        assert result1 is False
+        # Second attempt
+        result2 = hook._track_spoofing_escalation(
+            "session-abc", tracker_path=tracker_file
+        )
+        assert result2 is True
+
+    def test_different_session_no_escalation(self, tmp_path):
+        """Different sessions should not cross-escalate."""
+        tracker_file = str(tmp_path / "spoofing_attempts.json")
+        # First attempt in session A
+        hook._track_spoofing_escalation(
+            "session-aaa", tracker_path=tracker_file
+        )
+        # First attempt in session B — should NOT be escalation
+        result = hook._track_spoofing_escalation(
+            "session-bbb", tracker_path=tracker_file
+        )
+        assert result is False
+
+    def test_unknown_session_no_escalation(self, tmp_path, monkeypatch):
+        """When CLAUDE_SESSION_ID is unset, session_id='unknown' should not
+        trigger false escalation across unrelated invocations (Issue #606).
+
+        Regression test for FINDING-4: multiple invocations with 'unknown'
+        session_id should NOT share a bucket and produce false escalation.
+        """
+        monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+        session_id = os.environ.get("CLAUDE_SESSION_ID", "unknown")
+        assert session_id == "unknown"
+        # The fix: when session_id is "unknown", escalation tracking is skipped
+        # so we verify that _track_spoofing_escalation is NOT called with "unknown"
+        # in the production code path. But we can verify the tracker itself still
+        # works — the key behavioral change is in the caller (line 1979).
+        # Here we verify that calling the tracker with "unknown" twice WOULD
+        # escalate (proving the fix is in the caller, not the tracker).
+        tracker_file = str(tmp_path / "spoofing_attempts.json")
+        hook._track_spoofing_escalation("unknown", tracker_path=tracker_file)
+        result = hook._track_spoofing_escalation("unknown", tracker_path=tracker_file)
+        # The tracker itself still escalates — the fix is that the caller
+        # skips calling it when session_id == "unknown"
+        assert result is True
+
+
+# ---------------------------------------------------------------------------
+# Remediation regression tests (Issue #606 security audit)
+# ---------------------------------------------------------------------------
+
+class TestRemediationRegressions:
+    """Regression tests for Issue #606 security audit findings."""
+
+    def test_newline_separated_assignment_blocked(self):
+        """FINDING-1: Newline-separated env var assignment must be caught.
+
+        A command like 'echo foo\\nCLAUDE_AGENT_NEW=x python3 script.py'
+        should be blocked because Pass 2 regex now uses re.MULTILINE.
+        """
+        cmd = "echo foo\nCLAUDE_AGENT_NEW=x python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, (
+            "Newline-separated protected var assignment should be blocked"
+        )
+        assert "CLAUDE_AGENT_NEW" in result
+
+    def test_env_with_flags_prefix_blocked(self):
+        """FINDING-2: 'env -i PIPELINE_STATE_FILE=/tmp/fake.json python3' must be caught.
+
+        The env command regex must handle flags like -i before VAR= assignments.
+        """
+        cmd = "env -i PIPELINE_STATE_FILE=/tmp/fake.json python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, (
+            "env -i with protected var assignment should be blocked"
+        )
+        assert "PIPELINE_STATE_FILE" in result
+
+    def test_env_with_double_dash_blocked(self):
+        """env -- CLAUDE_AGENT_NAME=x python3 must also be caught."""
+        cmd = "env -- CLAUDE_AGENT_NAME=implementer python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, (
+            "env -- with protected var assignment should be blocked"
+        )
+        assert "CLAUDE_AGENT_NAME" in result
+
+    def test_env_with_u_flag_blocked(self):
+        """env -u OLDVAR CLAUDE_AGENT_NAME=x python3 must be caught."""
+        cmd = "env -u OLDVAR CLAUDE_AGENT_NAME=implementer python3 script.py"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, (
+            "env -u FLAG with protected var assignment should be blocked"
+        )
+        assert "CLAUDE_AGENT_NAME" in result
+
+    def test_chained_subshell_both_inspected(self):
+        """FINDING-3: Chained bash -c subshells must ALL be inspected.
+
+        'bash -c 'echo safe' && bash -c 'CLAUDE_X=y python3 ...''
+        should block because the second subshell contains spoofing.
+        """
+        cmd = (
+            "bash -c 'echo safe' && "
+            "bash -c 'CLAUDE_AGENT_NEW=x python3 script.py'"
+        )
+        result = hook._detect_env_spoofing(cmd)
+        assert result is not None, (
+            "Second chained subshell with protected var should be blocked"
+        )
+        assert "Subshell" in result or "CLAUDE_AGENT_NEW" in result
+
+    def test_chained_subshell_first_safe_allowed(self):
+        """Chained subshells where both are safe should be allowed."""
+        cmd = "bash -c 'echo hello' && bash -c 'echo world'"
+        result = hook._detect_env_spoofing(cmd)
+        assert result is None

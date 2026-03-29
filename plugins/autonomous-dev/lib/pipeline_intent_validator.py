@@ -834,7 +834,7 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
             # No completion event found — doc-master may have timed out or crashed
             findings.append(Finding(
                 finding_type="doc_verdict_missing",
-                severity="WARNING",
+                severity="CRITICAL",
                 pattern_id="doc_verdict_missing",
                 description=(
                     f"[DOC-VERDICT-MISSING] doc-master invocation at {inv.timestamp} "
@@ -852,7 +852,7 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
             # Completion exists but failed
             findings.append(Finding(
                 finding_type="doc_verdict_missing",
-                severity="WARNING",
+                severity="CRITICAL",
                 pattern_id="doc_verdict_missing",
                 description=(
                     f"[DOC-VERDICT-MISSING] doc-master failed (success=False) "
@@ -871,7 +871,7 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
             # Completion exists but output too short for a meaningful verdict
             findings.append(Finding(
                 finding_type="doc_verdict_missing",
-                severity="WARNING",
+                severity="CRITICAL",
                 pattern_id="doc_verdict_missing",
                 description=(
                     f"[DOC-VERDICT-MISSING] doc-master produced only "

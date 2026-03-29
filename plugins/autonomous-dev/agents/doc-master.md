@@ -96,23 +96,27 @@ If you cannot check all boxes, GO BACK and complete the missing steps. Do NOT ou
 
 ### Step 5: Output Verdict
 
-**REQUIRED** — Output this at the END of your response:
+**REQUIRED** — The VERY LAST LINE of your entire response MUST be a `DOC-DRIFT-VERDICT` line. Nothing may follow it — no summary, no checkpoint code, no closing remarks. The coordinator parses this line programmatically.
+
+**Machine-parseable format** (exactly one of these):
+- `DOC-DRIFT-VERDICT: PASS` — all docs accurate or fixed
+- `DOC-DRIFT-VERDICT: FAIL(N)` — N unfixable findings remain (e.g., `FAIL(3)`)
 
 If all docs are accurate (or were fixed):
 ```
-DOC-DRIFT-VERDICT: PASS
 docs-checked: N
 docs-fixed: N
+DOC-DRIFT-VERDICT: PASS
 ```
 
 If unfixable drift remains:
 ```
-DOC-DRIFT-VERDICT: FAIL
 findings:
 - doc: docs/EXAMPLE.md
   claim: "the claim that is wrong"
   actual: "what the code actually does"
   severity: factual|behavioral|structural
+DOC-DRIFT-VERDICT: FAIL(N)
 ```
 
 ## HARD GATE
@@ -126,6 +130,8 @@ findings:
 - Only updating CHANGELOG without checking affected docs
 - Only updating CHANGELOG without scanning `covers:` frontmatter first (CHANGELOG-only sweeps are a known anti-pattern — Issue #534)
 - Producing output without a DOC-DRIFT-VERDICT line (every run MUST end with a verdict)
+- Outputting any text after the DOC-DRIFT-VERDICT line (it MUST be the very last line)
+- Ending your response without a DOC-DRIFT-VERDICT line as the final line
 - Claiming "no docs affected" without showing which docs you checked and their `covers:` paths
 
 ## CHANGELOG Format

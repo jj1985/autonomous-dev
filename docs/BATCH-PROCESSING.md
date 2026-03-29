@@ -1,6 +1,7 @@
 ---
 covers:
   - plugins/autonomous-dev/commands/implement.md
+  - plugins/autonomous-dev/commands/implement-batch.md
   - plugins/autonomous-dev/lib/batch_state_manager.py
   - plugins/autonomous-dev/lib/batch_retry_manager.py
   - plugins/autonomous-dev/lib/worktree_manager.py
@@ -201,6 +202,46 @@ verify ALL required agents ran for this issue.
 ```
 
 See `implement-batch.md` STEP B3 for complete enforcement logic.
+
+---
+
+## Prompt Integrity Across Issues (NEW in Issue #601, #603)
+
+**Progressive prompt compression — where later issues receive shorter or truncated prompts — is a known regression pattern that degrades security review quality.**
+
+### Overview
+
+As a batch progresses, context pressure can cause the coordinator to pass progressively shorter prompts to validation agents. The security-auditor and reviewer are most at risk: a compressed prompt may omit diff context or checklist items, causing the agent to produce a weaker (or absent) verdict without signaling failure.
+
+### Enforcement
+
+`implement-batch.md` STEP B3 includes a **HARD GATE: Prompt Integrity Across Issues** (Issue #544) that requires:
+
+- Each agent MUST receive prompts of comparable length across all issues in the batch
+- Security-critical agents (security-auditor, reviewer) MUST receive at least 80 words in their prompts
+- The coordinator MUST log prompt word counts per agent per issue
+
+The `pipeline_intent_validator.py` library detects compression > 25% from the baseline (first issue) after the fact. The `prompt_integrity.py` library provides real-time prevention before each agent invocation.
+
+### How prompt_integrity.py Works
+
+The coordinator uses these functions for each agent in every batch issue:
+
+1. **First issue**: After invocation, call `record_prompt_baseline(agent_type, issue_number, word_count)` to persist the baseline word count to `.claude/logs/prompt_baselines.json`
+2. **Subsequent issues**: Before invoking each agent:
+   - Get baseline: `baseline = get_prompt_baseline(agent_type)`
+   - Validate: `result = validate_prompt_word_count(agent_type, constructed_prompt, baseline)`
+   - If `result.should_reload` is True: re-read the agent source via `get_agent_prompt_template(agent_type)` and reconstruct the prompt from disk rather than context memory
+3. **Batch start**: Call `clear_prompt_baselines()` to reset state from any prior batch
+
+### FORBIDDEN Behaviors
+
+- ❌ Passing progressively shorter prompts to security-auditor or reviewer in later batch issues
+- ❌ Omitting diff context or implementation details from validation agent prompts due to context pressure
+- ❌ Summarizing implementer output for validation agents when full output was passed in earlier issues
+- ❌ Reducing prompt detail for any agent as the batch progresses
+
+**See**: `plugins/autonomous-dev/lib/prompt_integrity.py` for the full API reference. Documented in `docs/LIBRARIES.md` entry 73.
 
 ---
 
