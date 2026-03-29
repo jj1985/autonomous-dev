@@ -16,7 +16,7 @@ Automate GitHub issue creation with research-backed, well-structured content.
 | Mode | Time | Description |
 |------|------|-------------|
 | **Default (thorough)** | 8-12 min | Full analysis, blocking duplicate check |
-| **--quick** | 3-5 min | Async scan, smart sections, no prompts |
+| **--quick** | 30-60 sec | Inline scan + generation, 0 agents, no prompts |
 
 ## Implementation
 
@@ -47,7 +47,7 @@ The `{{ARGUMENTS}}` placeholder is replaced with user input at runtime.
 Parse the ARGUMENTS to detect mode flags:
 
 ```
---quick       Fast mode (async scan, smart sections, no prompts)
+--quick       Fast mode (inline scan + generation, 0 agents, no prompts)
 --thorough    (Deprecated - silently accepted, now default behavior)
 ```
 
@@ -60,6 +60,59 @@ Extract the feature request (everything except flags).
 touch /tmp/autonomous_dev_gh_issue_allowed.marker
 ```
 This marker allows the `issue-creator` agent to run `gh issue create` later. It MUST be created here, before STEP 1, because agents spawned in STEP 1-2 may need it. The marker is cleaned up at CHECKPOINT 3 or on early exit.
+
+---
+
+### QUICK MODE FAST PATH (0 agents, 30-60 sec)
+
+**HARD GATE**: If `--quick` flag is set, execute the steps below inline. Do NOT proceed to STEP 1.
+
+**Quick Step 1: Create marker file** (already done in STEP 0 above)
+
+**Quick Step 2: Inline duplicate scan**
+
+Run via Bash tool (no agent):
+```bash
+gh issue list --state open --limit 50 --json number,title
+```
+Compare issue titles against the feature request by keyword overlap. Store any matches for display after creation (no blocking prompt).
+
+**Quick Step 3: Generate issue body inline**
+
+Generate a markdown body with EXACTLY these 4 sections (no more, no less):
+
+1. **Summary**: 1-2 sentences describing the feature/fix
+2. **Implementation Approach**: Brief technical plan
+3. **Test Scenarios**: 3-5 test cases (happy path, error cases, edge cases)
+4. **Acceptance Criteria**: Checkboxes for verifiable conditions
+
+Capture the current Unix timestamp:
+```bash
+RUN_TS=$(date +%s)
+```
+
+Write the body to a temp file (CWE-78 prevention — never inline body as shell argument):
+```bash
+cat > /tmp/create_issue_body_${RUN_TS}.md << 'ISSUE_EOF'
+[generated body here]
+ISSUE_EOF
+```
+
+**Quick Step 4: Create the issue**
+```bash
+gh issue create --title "TITLE" --body-file /tmp/create_issue_body_${RUN_TS}.md
+```
+
+**Quick Step 5: Display result + cleanup**
+
+Show the created issue URL. If the duplicate scan in Quick Step 2 found matching issues, display them as informational below the URL (no prompt, no blocking).
+
+Clean up marker and temp files:
+```bash
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/create_issue_body_${RUN_TS}.md
+```
+
+**END** — Do not proceed to STEP 1 or any subsequent steps.
 
 ---
 
@@ -332,7 +385,10 @@ User must approve before continuing. Require confirmation that the issue has bee
 | Duplicate Check | 1-2 min | Blocking user prompt (if duplicates found) |
 | Create + Info | 15-30 sec | gh CLI + related issues |
 | **Total** | **8-12 min** | Default mode (thorough) |
-| **Total (--quick)** | **3-5 min** | Fast mode (async scan only) |
+| **Quick: Duplicate scan** | ~5 sec | gh issue list (inline, no agent) |
+| **Quick: Body generation** | ~15 sec | Inline LLM call (no agent spawn) |
+| **Quick: Issue creation** | ~5 sec | gh CLI with temp file |
+| **Total (--quick)** | **30-60 sec** | Fast mode (0 agents, inline only) |
 
 ---
 
@@ -435,7 +491,7 @@ This integration saves 2-5 minutes when issues are implemented soon after creati
 
 **Performance**:
 - Default mode: 8-12 minutes (thorough, with prompts)
-- Quick mode: 3-5 minutes (fast, no prompts)
+- Quick mode: 30-60 seconds (0 agents, inline scan + generation, no prompts)
 
 ---
 
