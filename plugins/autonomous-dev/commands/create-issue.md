@@ -55,6 +55,12 @@ Parse the ARGUMENTS to detect mode flags:
 
 Extract the feature request (everything except flags).
 
+**Create marker file immediately** (before any agents are spawned):
+```bash
+touch /tmp/autonomous_dev_gh_issue_allowed.marker
+```
+This marker allows the `issue-creator` agent to run `gh issue create` later. It MUST be created here, before STEP 1, because agents spawned in STEP 1-2 may need it. The marker is cleaned up at CHECKPOINT 3 or on early exit.
+
 ---
 
 ### STEP 1: Research + Async Issue Scan (Parallel)
@@ -83,7 +89,11 @@ Verify the researcher agent completed successfully:
 - Patterns identified
 - Security considerations noted (if relevant)
 
-If research failed, stop and report error. Do NOT proceed to STEP 2.
+If research failed, clean up the marker file and stop:
+```bash
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+```
+Do NOT proceed to STEP 2.
 
 **Note**: Issue scan runs in background - results retrieved in STEP 3.
 
@@ -164,7 +174,11 @@ Verify the issue-creator agent completed successfully:
 - No empty sections ("Breaking Changes: None" - remove these)
 - No filler (no "TBD", "N/A" unless truly not applicable)
 
-If issue creation failed, stop and report error. Do NOT proceed to STEP 3.
+If issue creation failed, clean up the marker file and stop:
+```bash
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+```
+Do NOT proceed to STEP 3.
 
 ---
 
@@ -191,6 +205,11 @@ Options:
 Reply with option number.
 ```
 
+**If user chooses option 2 (skip)**: Clean up the marker file before exiting:
+```bash
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+```
+
 **--quick mode**: No prompts. Create issue, show info after.
 
 **3B: Create GitHub issue via gh CLI**
@@ -200,7 +219,6 @@ Extract the issue title and body from the issue-creator agent output.
 Use the Bash tool to execute:
 
 ```bash
-touch /tmp/autonomous_dev_gh_issue_allowed.marker
 gh issue create --title "TITLE_HERE" --body "BODY_HERE"
 ```
 
