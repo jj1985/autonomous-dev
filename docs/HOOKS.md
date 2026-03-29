@@ -76,6 +76,15 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 - Block message directs the user to `/create-issue` or `/create-issue --quick`
 - Fails open on any detection error to avoid blocking legitimate work
 
+**Marker File Creation Guard** (Issue #627):
+- Blocks direct creation of the marker file `autonomous_dev_gh_issue_allowed.marker` outside approved contexts, closing the bypass where manually writing the marker file would short-circuit the gh issue create gate
+- Detected write operations: `touch`, redirect `>`, `cp`, `mv`, `tee`, Python `Path.touch()`, `open(..., "w")`, `.write_text()`; anchored on the filename fragment `autonomous_dev_gh_issue_allowed` to catch path variations
+- Read-only and delete operations (`cat`, `ls`, `rm`) are not blocked — only write-creating operations
+- Allow-through 1: active `/implement` pipeline (the pipeline legitimately writes the marker when authorizing issue creation)
+- Allow-through 2: agent name in `GH_ISSUE_AGENTS` (`continuous-improvement-analyst`, `issue-creator`)
+- No marker-file allow-through (circular — the guard protects the marker itself)
+- Fails open on any detection error to avoid blocking legitimate work
+
 See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
 ### PreCommit

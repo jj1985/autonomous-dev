@@ -139,6 +139,23 @@ Proceed with --[fix|light]? (reply "yes" to confirm, anything else runs the full
 
 **FORBIDDEN**: ❌ Silently switching mode without user confirmation. ❌ Prompting when a mode flag was explicitly specified. ❌ Blocking pipeline on ambiguous reply — default to FULL PIPELINE.
 
+**Issue Body Fetching** (single-issue mode only):
+
+If ARGUMENTS contains an issue reference (`#NNN` or issue number), fetch the issue body for potential research reuse:
+
+```bash
+ISSUE_NUMBER=$(echo "ARGUMENTS" | grep -oE '#?([0-9]+)' | head -1 | tr -d '#')
+if [ -n "$ISSUE_NUMBER" ]; then
+  ISSUE_DATA=$(gh issue view "$ISSUE_NUMBER" --json title,body 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    ISSUE_TITLE=$(echo "$ISSUE_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))")
+    ISSUE_BODY=$(echo "$ISSUE_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body',''))")
+  fi
+fi
+```
+
+Store `ISSUE_BODY` and `ISSUE_TITLE` as pipeline context. If `gh issue view` fails, proceed without issue body (ISSUE_BODY remains empty). Do NOT block the pipeline on fetch failure.
+
 Activate pipeline state:
 ```bash
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -244,6 +261,41 @@ if os.path.exists(state_path):
 
 **Progress**: Output step banner (STEP 3/15 — Research Cache). Output CACHE_HIT or CACHE_MISS after.
 
+**Issue Body Research Check** (before file-based cache):
+
+If `ISSUE_BODY` is set (from STEP 0) AND `--no-cache` was NOT specified, check for embedded research:
+
+```bash
+# Write issue body to temp file to avoid shell escaping issues
+echo "$ISSUE_BODY" > /tmp/implement_issue_body_$RUN_ID.txt
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from research_persistence import detect_issue_research
+with open('/tmp/implement_issue_body_$RUN_ID.txt') as f:
+    body = f.read()
+result = detect_issue_research(body)
+if result['is_research_rich']:
+    print('ISSUE_RESEARCH_HIT')
+    print(f'Sections: {result[\"section_count\"]} ({chr(44).join(result[\"matched_sections\"])})')
+else:
+    print('ISSUE_RESEARCH_MISS')
+    print(f'Research sections found: {result[\"section_count\"]} (need >= 3)')
+"
+rm -f /tmp/implement_issue_body_$RUN_ID.txt
+```
+
+ISSUE_RESEARCH_HIT → use the issue body content as research context, output:
+```
+Research: SKIPPED (issue #$ISSUE_NUMBER contains pre-researched content — N sections detected: [section names])
+```
+Skip STEP 4. Pass issue body research to STEP 5 with prefix: "Research from GitHub Issue #$ISSUE_NUMBER (created by /create-issue):" followed by the extracted research sections.
+
+ISSUE_RESEARCH_MISS → fall through to existing file-based cache check (unchanged behavior).
+
+If `--no-cache` was specified, skip this check entirely (force fresh research).
+
+**File-based cache check** (existing behavior):
+
 ```bash
 python3 -c "
 import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
@@ -292,6 +344,8 @@ Validation: If web researcher shows 0 tool uses, retry. Merge both outputs. Pers
 ### STEP 5: Planner (1 agent)
 
 **Progress**: Output step banner (STEP 5/15 — Planning, Agent: planner (Opus)). Output agent completion after.
+
+If research came from the issue body (ISSUE_RESEARCH_HIT), prefix the research context with: "Research from GitHub Issue #$ISSUE_NUMBER:" followed by the extracted research sections from `detect_issue_research()`. The planner should treat this identically to merged research from STEP 4.
 
 **Agent**(subagent_type="planner", model="opus") — Pass merged research + feature description + PROJECT.md GOALS and SCOPE sections (verbatim). Read `.claude/PROJECT.md` and extract the GOALS section and SCOPE section (both IN Scope and OUT of Scope). Include them in the planner prompt as: "PROJECT.md GOALS: [verbatim text]. PROJECT.md SCOPE (In Scope): [verbatim items]. PROJECT.md SCOPE (Out of Scope): [verbatim items]. The plan MUST align with these scope boundaries." Output: file-by-file plan, dependencies, edge cases, testing strategy.
 
