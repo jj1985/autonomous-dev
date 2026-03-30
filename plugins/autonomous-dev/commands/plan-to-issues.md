@@ -138,14 +138,13 @@ For each confirmed item, use the Bash tool:
    - Limit to 256 characters
    - Escape double quotes
 
-3. Before the first issue, create the command context file and marker file to allow gh issue create (Issue #599):
+3. Before the first issue, create the command context file to allow gh issue create (Issue #599):
    ```bash
    python3 -c "
    import json; from datetime import datetime, timezone
    with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
        json.dump({'command': 'plan-to-issues', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
    "
-   touch /tmp/autonomous_dev_gh_issue_allowed.marker
    ```
 
 4. Create the issue:
@@ -157,9 +156,9 @@ For each confirmed item, use the Bash tool:
 
 6. Collect created issue numbers and URLs
 
-7. After all issues are created, clean up the marker and context file:
+7. After all issues are created, clean up the context file:
    ```bash
-   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
+   rm -f /tmp/autonomous_dev_cmd_context.json
    ```
 
 **Error handling**: If `gh issue create` fails for one issue, log the error and continue with the remaining issues. Report failures in the summary. Ensure marker cleanup happens even on partial failure.

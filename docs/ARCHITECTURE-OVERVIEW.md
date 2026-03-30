@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 12 agents (18 archived), 17 skills, 20 active commands, 184 libraries, 25 active hooks (62 archived).
+**Component Counts**: 12 agents (18 archived), 17 skills, 20 active commands, 186 libraries, 25 active hooks (62 archived).
 
 ---
 
@@ -79,10 +79,10 @@ Reusable Python libraries for security, validation, automation, and more. See [d
 **Design Pattern**: Progressive enhancement, two-tier design (core logic + CLI), non-blocking enhancements
 
 **Key Libraries**:
-- **Security**: security_utils.py, mcp_security.py, sandbox_enforcer.py
+- **Security**: security_utils.py, mcp_security.py, sandbox_enforcer.py, agent_ordering_gate.py (pure-logic pipeline ordering decisions — no I/O)
 - **Validation**: validation.py, alignment_validator.py, project_validator.py
 - **Automation**: unified_git_automation.py (git operations), batch_processor.py, session_tracker.py
-- **State Management**: session_state_manager.py (session persistence), batch_state_manager.py, user_state_manager.py, session_resource_manager.py (resource tracking), pipeline_state.py (pipeline progression tracking)
+- **State Management**: session_state_manager.py (session persistence), batch_state_manager.py, user_state_manager.py, session_resource_manager.py (resource tracking), pipeline_state.py (pipeline progression tracking), pipeline_completion_state.py (agent ordering enforcement state — written by session tracker, read by pre-tool hook)
 - **Infrastructure**: path_utils.py, performance_timer.py, agent_tracker.py, pipeline_timing_analyzer.py
 - **See**: [docs/LIBRARIES.md](docs/LIBRARIES.md) for complete API reference
 
@@ -99,7 +99,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 **Key Features**: Dispatcher pattern (env var control), graceful degradation (non-blocking), backward compatible
 
 **Active Hooks**:
-- **PreToolUse**: unified_pre_tool.py (4-layer validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass all layers)
+- **PreToolUse**: unified_pre_tool.py (4-layer MCP validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass MCP layers but Agent/Task tool calls also pass through the Pipeline Ordering Gate before extensions — Issues #625, #629, #632)
 - **PrePromptSubmit**: unified_prompt_validator.py (workflow enforcement)
 - **PostToolUse**: auto_format.py, auto_test.py, security_scan.py, auto_fix_docs.py
 - **PreCommit**: validate_project_alignment.py, enforce_orchestrator.py, enforce_tdd.py, validate_session_quality.py

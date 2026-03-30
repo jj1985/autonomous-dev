@@ -523,6 +523,11 @@ Same as BATCH FILE MODE:
    "
    ```
 
+   Before each issue's pipeline starts, set the issue number for ordering enforcement:
+   ```bash
+   export PIPELINE_ISSUE_NUMBER=$ISSUE_NUMBER
+   ```
+
    After each issue's pipeline completes, cleanup the per-issue pipeline state between issues:
    ```bash
    python3 -c "
@@ -531,6 +536,8 @@ Same as BATCH FILE MODE:
    cleanup_pipeline('$ISSUE_RUN_ID')
    " 2>/dev/null || true
    ```
+
+   **Note**: Agent ordering is now hook-enforced by `unified_pre_tool.py` Layer 4 (Issues #625, #629, #632). The hook reads completion state written by `unified_session_tracker.py` and blocks out-of-order agent invocations per-issue.
 
    **CRITICAL**: Each issue gets a NEW `create_pipeline()` call. Do NOT reuse pipeline state across issues. Create a new pipeline, run the separate pipeline for that issue, then clear/cleanup before starting the next.
 

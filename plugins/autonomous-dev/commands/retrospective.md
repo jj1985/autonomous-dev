@@ -180,7 +180,6 @@ If `--auto-file` flag is set, file issues for IMMEDIATE findings only:
    with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
        json.dump({'command': 'retrospective', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
    "
-   touch /tmp/autonomous_dev_gh_issue_allowed.marker
    gh issue create -R akaszubski/autonomous-dev \
      --title "[RETRO] {finding title}" \
      --label "retrospective,auto-improvement" \
@@ -191,7 +190,7 @@ If `--auto-file` flag is set, file issues for IMMEDIATE findings only:
 
 3. Clean up:
    ```bash
-   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
+   rm -f /tmp/autonomous_dev_cmd_context.json
    ```
 
 4. Report filed issues with URLs.

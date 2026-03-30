@@ -738,6 +738,18 @@ def main() -> int:
             success=success,
         )
 
+        # Pipeline ordering state — record agent completion (Issues #625, #629, #632)
+        try:
+            from pipeline_completion_state import record_agent_completion
+            record_agent_completion(
+                session_id=session_id,
+                agent_type=agent_name,
+                issue_number=int(os.environ.get("PIPELINE_ISSUE_NUMBER", "0")),
+                success=success,
+            )
+        except Exception:
+            pass  # Non-blocking: ordering state is advisory
+
         # PROJECT.md progress updates (only for doc-master)
         if should_trigger_progress_update(agent_name) and check_pipeline_complete():
             update_project_progress()

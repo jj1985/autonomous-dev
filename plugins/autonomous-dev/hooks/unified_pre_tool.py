@@ -37,6 +37,7 @@ Environment Variables:
 - PRE_TOOL_AGENT_AUTH: Enable/disable agent authorization (default: true)
 - PRE_TOOL_BATCH_PERMISSION: Enable/disable batch permission (default: false)
 - MCP_AUTO_APPROVE: Enable/disable auto-approval (default: false)
+- PRE_TOOL_PIPELINE_ORDERING: Enable/disable pipeline ordering gate (default: true)
 
 Input (stdin):
 {
@@ -414,6 +415,9 @@ NATIVE_TOOLS = {
     "CronCreate", "CronDelete", "CronList",
 }
 
+# Tool names that represent subagent invocations (Agent tool; legacy: Task)
+AGENT_TOOL_NAMES = {"Agent", "Task"}
+
 # Infrastructure file segments protected from direct edits (Issue #483)
 # Maps directory path segments to allowed file extensions within that segment.
 PROTECTED_INFRA_SEGMENTS = {
@@ -423,6 +427,96 @@ PROTECTED_INFRA_SEGMENTS = {
     '/lib/': {'.py'},
     '/skills/': {'.md'},
 }
+
+
+def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
+    """
+    Layer 4: Pipeline ordering gate — enforce agent invocation order.
+
+    Checks that Agent tool calls during an active pipeline respect the
+    SEQUENTIAL_REQUIRED ordering from pipeline_intent_validator.py.
+    Fail-open: any error in the check defaults to allow.
+
+    Issues: #625, #629, #632
+
+    Args:
+        tool_name: Name of the tool being called.
+        tool_input: Tool input parameters.
+
+    Returns:
+        Tuple of (decision, reason).
+    """
+    try:
+        # Env var kill switch
+        if os.getenv("PRE_TOOL_PIPELINE_ORDERING", "true").lower() != "true":
+            return ("allow", "Pipeline ordering disabled via env var")
+
+        # Only check Agent/Task tool calls
+        if tool_name not in AGENT_TOOL_NAMES:
+            return ("allow", f"Tool '{tool_name}' is not an agent invocation")
+
+        # Only check during active pipeline
+        if not _is_pipeline_active():
+            return ("allow", "No active pipeline - ordering check skipped")
+
+        # Extract agent type from task description
+        task_desc = tool_input.get("task_description", "") or tool_input.get("prompt", "")
+        target_agent = _extract_subagent_type(task_desc)
+        if not target_agent:
+            return ("allow", "Could not determine target agent - allowing")
+
+        # Import completion state and ordering gate
+        from pipeline_completion_state import get_completed_agents, get_validation_mode
+        from agent_ordering_gate import check_ordering_prerequisites
+
+        session_id = _session_id or os.getenv("CLAUDE_SESSION_ID", "unknown")
+        issue_number = int(os.getenv("PIPELINE_ISSUE_NUMBER", "0"))
+
+        completed = get_completed_agents(session_id, issue_number=issue_number)
+        mode = get_validation_mode(session_id)
+
+        gate = check_ordering_prerequisites(target_agent, completed, validation_mode=mode)
+        if not gate.passed:
+            return ("deny", gate.reason)
+
+        return ("allow", f"Ordering OK: {target_agent} prerequisites met")
+
+    except Exception as e:
+        # Fail-open: ordering check errors must not block workflow
+        return ("allow", f"Pipeline ordering check error: {e}")
+
+
+def _extract_subagent_type(task_description: str) -> str:
+    """Extract agent type name from a task description string.
+
+    Looks for patterns like:
+    - "Run the implementer agent"
+    - "researcher-local"
+    - "You are the security-auditor"
+
+    Args:
+        task_description: The task description or prompt text.
+
+    Returns:
+        Lowercase agent type, or empty string if not found.
+    """
+    import re
+
+    text = task_description.lower()
+
+    # Known agent types to look for
+    known_agents = [
+        "researcher-local", "researcher", "planner", "test-master",
+        "implementer", "reviewer", "security-auditor", "doc-master",
+        "continuous-improvement-analyst",
+    ]
+
+    # Check for exact agent name mentions (longest first to match "researcher-local" before "researcher")
+    for agent in sorted(known_agents, key=len, reverse=True):
+        if agent in text:
+            return agent
+
+    return ""
 
 
 def validate_mcp_security(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
@@ -2302,6 +2396,15 @@ def main():
                         _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
                         output_decision("deny", block_reason, system_message=block_reason)
                         sys.exit(0)
+
+            # Layer 4: Pipeline ordering gate (Issues #625, #629, #632)
+            # Only applies to Agent/Task tool calls during active pipeline.
+            if tool_name in AGENT_TOOL_NAMES:
+                ord_decision, ord_reason = validate_pipeline_ordering(tool_name, tool_input)
+                if ord_decision == "deny":
+                    _log_pretool_activity(tool_name, tool_input, "deny", ord_reason)
+                    output_decision("deny", ord_reason, system_message=ord_reason)
+                    sys.exit(0)
 
             # Run extensions even for native tools
             ext_decision, ext_reason = _run_extensions(tool_name, tool_input)

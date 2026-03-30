@@ -104,16 +104,15 @@ If `--auto-file` flag is set:
    with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
        json.dump({'command': 'improve', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
    "
-   touch /tmp/autonomous_dev_gh_issue_allowed.marker
    gh issue create -R akaszubski/autonomous-dev \
      --title "[CI-{severity}] {title}" \
      --label "continuous-improvement,auto-improvement" \
      --body "{evidence + rule violated + suggested fix + **Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
    ```
 
-3. After all issues are filed, clean up the marker and context file:
+3. After all issues are filed, clean up the context file:
    ```bash
-   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
+   rm -f /tmp/autonomous_dev_cmd_context.json
    ```
 
 4. Report filed issues with URLs.
@@ -213,7 +212,6 @@ import json; from datetime import datetime, timezone
 with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
     json.dump({'command': 'improve', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
 "
-touch /tmp/autonomous_dev_gh_issue_allowed.marker
 gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report + **Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
+rm -f /tmp/autonomous_dev_cmd_context.json
 ```

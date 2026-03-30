@@ -55,16 +55,15 @@ Parse the ARGUMENTS to detect mode flags:
 
 Extract the feature request (everything except flags).
 
-**Create command context file and marker file immediately** (before any agents are spawned):
+**Create command context file immediately** (before any agents are spawned):
 ```bash
 python3 -c "
 import json; from datetime import datetime, timezone
 with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
     json.dump({'command': 'create-issue', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
 "
-touch /tmp/autonomous_dev_gh_issue_allowed.marker
 ```
-This marker allows the `issue-creator` agent to run `gh issue create` later. It MUST be created here, before STEP 1, because agents spawned in STEP 1-2 may need it. The marker is cleaned up at CHECKPOINT 3 or on early exit.
+This context file allows the `issue-creator` agent to run `gh issue create` later. It MUST be created here, before STEP 1, because agents spawned in STEP 1-2 may need it. The context file is cleaned up at CHECKPOINT 3 or on early exit.
 
 ---
 
@@ -72,7 +71,7 @@ This marker allows the `issue-creator` agent to run `gh issue create` later. It 
 
 **HARD GATE**: If `--quick` flag is set, execute the steps below inline. Do NOT proceed to STEP 1.
 
-**Quick Step 1: Create marker file** (already done in STEP 0 above)
+**Quick Step 1: Create context file** (already done in STEP 0 above)
 
 **Quick Step 2: Inline duplicate scan**
 
@@ -113,9 +112,9 @@ gh issue create --title "TITLE" --body-file /tmp/create_issue_body_${RUN_TS}.md
 
 Show the created issue URL. If the duplicate scan in Quick Step 2 found matching issues, display them as informational below the URL (no prompt, no blocking).
 
-Clean up marker, context, and temp files:
+Clean up context and temp files:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json /tmp/create_issue_body_${RUN_TS}.md
+rm -f /tmp/autonomous_dev_cmd_context.json /tmp/create_issue_body_${RUN_TS}.md
 ```
 
 **END** — Do not proceed to STEP 1 or any subsequent steps.
@@ -148,9 +147,9 @@ Verify the researcher agent completed successfully:
 - Patterns identified
 - Security considerations noted (if relevant)
 
-If research failed, clean up the marker file and stop:
+If research failed, clean up the context file and stop:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+rm -f /tmp/autonomous_dev_cmd_context.json
 ```
 Do NOT proceed to STEP 2.
 
@@ -233,9 +232,9 @@ Verify the issue-creator agent completed successfully:
 - No empty sections ("Breaking Changes: None" - remove these)
 - No filler (no "TBD", "N/A" unless truly not applicable)
 
-If issue creation failed, clean up the marker file and stop:
+If issue creation failed, clean up the context file and stop:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+rm -f /tmp/autonomous_dev_cmd_context.json
 ```
 Do NOT proceed to STEP 3.
 
@@ -264,9 +263,9 @@ Options:
 Reply with option number.
 ```
 
-**If user chooses option 2 (skip)**: Clean up the marker file before exiting:
+**If user chooses option 2 (skip)**: Clean up the context file before exiting:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+rm -f /tmp/autonomous_dev_cmd_context.json
 ```
 
 **--quick mode**: No prompts. Create issue, show info after.
@@ -287,9 +286,9 @@ gh issue create --title "TITLE_HERE" --body "BODY_HERE"
 
 ### CHECKPOINT 3: Validate Issue Creation
 
-Clean up the marker and context files after issue creation:
+Clean up the context file after issue creation:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
+rm -f /tmp/autonomous_dev_cmd_context.json
 ```
 
 Verify the gh CLI command succeeded:
