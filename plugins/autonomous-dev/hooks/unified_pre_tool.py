@@ -1494,7 +1494,11 @@ def _detect_gh_issue_create(command: str) -> "Optional[str]":
             "BLOCKED: Cannot create GitHub issues with 'gh issue create' directly.\n"
             "Use '/create-issue' or '/create-issue --quick' instead.\n\n"
             "/create-issue includes research, duplicate detection, and ensures "
-            "proper formatting."
+            "proper formatting.\n\n"
+            "FORBIDDEN: Do NOT suggest the user run 'gh issue create' manually, "
+            "including via '! gh issue create' or any other bypass method. "
+            "The '!' prefix runs commands outside the hook system and defeats "
+            "enforcement. The ONLY acceptable path is /create-issue."
         )
     except Exception:
         return None  # Fail-open on any error

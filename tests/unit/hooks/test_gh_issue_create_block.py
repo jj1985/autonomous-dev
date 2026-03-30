@@ -207,13 +207,15 @@ class TestGhIssueCreateEdgeCases:
         assert "autonomous_dev_gh_issue" in hook.GH_ISSUE_MARKER_PATH
 
     def test_block_message_content(self, no_pipeline, no_agent, no_marker):
-        """Block message should include actionable guidance."""
+        """Block message should include actionable guidance and anti-bypass language."""
         cmd = 'gh issue create --title "test"'
         result = hook._detect_gh_issue_create(cmd)
         assert result is not None
         assert "/create-issue" in result
         assert "/create-issue --quick" in result
         assert "duplicate detection" in result
+        assert "FORBIDDEN" in result
+        assert "! gh issue create" in result
 
 
 # ---------------------------------------------------------------------------

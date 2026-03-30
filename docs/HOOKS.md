@@ -84,7 +84,7 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 - Allow-through 2: the current agent is `continuous-improvement-analyst` or `issue-creator` (authorized for direct issue creation)
 - Allow-through 3: a fresh marker file exists at `GH_ISSUE_MARKER_PATH` (`/tmp/autonomous_dev_gh_issue_allowed.marker`, valid for 1 hour) — written only by the active `/implement` pipeline (commands no longer write this file; see Issue #627)
 - Allow-through 4 (Issue #630): a command context file exists at `GH_ISSUE_COMMAND_CONTEXT_PATH` (`/tmp/autonomous_dev_cmd_context.json`, valid for 1 hour) with a `command` field set to one of `create-issue`, `plan-to-issues`, `improve`, `refactor`, or `retrospective` — written by those commands when they invoke `/create-issue --quick`; uses file mtime for age check (harder to spoof than an embedded JSON timestamp)
-- Block message directs the user to `/create-issue` or `/create-issue --quick`
+- Block message directs the user to `/create-issue` or `/create-issue --quick`; also includes a FORBIDDEN clause explicitly prohibiting suggestions to run `! gh issue create` or any other bypass method (the `!` prefix runs commands outside the hook system)
 - Fails open on any detection error to avoid blocking legitimate work
 
 **Marker File Creation Guard** (Issue #627):
