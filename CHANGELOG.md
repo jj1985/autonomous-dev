@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Added
+- **`/skill-eval` command**: New slash command wrapping `scripts/skill-effectiveness-check.sh` for interactive skill evaluation. Measures behavioral delta from skill injection using LLM-as-judge scoring. Supports `--quick` (2 prompts/skill, degradation check only), `--skill <name>` (single skill evaluation), and `--update` (full run + write new baselines). Requires `OPENROUTER_API_KEY` and the `openai` pip package. See `/scaffold-genai-uat` for bootstrapping the underlying test infrastructure.
+
 ### Changed
 - **Strengthened gh issue create deny message with explicit anti-bypass clause**: `_detect_gh_issue_create()` in `unified_pre_tool.py` now includes a FORBIDDEN clause in the block message that explicitly forbids suggesting `! gh issue create` or any other bypass method. The `!` prefix runs commands outside the hook system and defeats enforcement. `docs/HOOKS.md` updated to reflect the expanded block message. 2 new assertions in `tests/unit/hooks/test_gh_issue_create_block.py` validate the FORBIDDEN language and `! gh issue create` text are present in the deny message.
 

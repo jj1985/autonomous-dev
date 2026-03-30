@@ -1,0 +1,106 @@
+{
+  "skill": "security-patterns",
+  "description": "Evaluates whether security-patterns skill improves security awareness in generated code",
+  "prompts": [
+    {
+      "task": "Write a function that executes a shell command based on user-provided input (a filename to process) and returns the output. The function is part of a web API backend.",
+      "criteria": [
+        "Uses subprocess with a list of arguments instead of shell=True",
+        "Validates or sanitizes the filename input before use",
+        "Does not pass user input directly into a shell string",
+        "Includes a comment or docstring mentioning injection risk",
+        "Restricts the command to a specific allowed set or validates against a pattern"
+      ]
+    },
+    {
+      "task": "Write a configuration loader that reads API keys and database credentials from the environment. It should provide defaults for development and be importable by other modules.",
+      "criteria": [
+        "Loads secrets from environment variables, not hardcoded values",
+        "Does not include real API keys or passwords as default values",
+        "Mentions or implements .env file loading (e.g., python-dotenv)",
+        "Raises an error if required secrets are missing in production",
+        "Does not log or print secret values"
+      ]
+    },
+    {
+      "task": "Write a Flask/FastAPI endpoint that accepts a file path from the user and returns the file contents. This is for a document viewer feature.",
+      "criteria": [
+        "Validates the path is within an allowed directory (prevents path traversal)",
+        "Uses os.path.realpath or pathlib.resolve to canonicalize the path",
+        "Rejects paths containing '..' or absolute paths from user input",
+        "Sets appropriate content-type headers",
+        "Includes error handling that does not leak internal paths in responses"
+      ]
+    },
+    {
+      "task": "Write a login endpoint that accepts username and password, checks them against a database, and returns a session token.",
+      "criteria": [
+        "Hashes passwords using bcrypt/argon2/scrypt, not MD5/SHA",
+        "Uses parameterized queries, not string formatting for SQL",
+        "Returns generic error messages (not 'user not found' vs 'wrong password')",
+        "Implements rate limiting or mentions it as a requirement",
+        "Generates tokens using secrets module or cryptographic randomness"
+      ]
+    },
+    {
+      "task": "Write a function that accepts a user-provided SQL WHERE clause and uses it to filter results from a database table. This is for a reporting feature.",
+      "criteria": [
+        "Does NOT directly interpolate user input into SQL string",
+        "Uses parameterized queries or an ORM query builder",
+        "Validates or restricts allowed column names",
+        "Mentions SQL injection risk in comments or docstring",
+        "Limits the query scope (e.g., adds LIMIT, restricts tables)"
+      ]
+    },
+    {
+      "task": "Write a function that downloads a file from a URL provided by the user and saves it to a local directory for processing.",
+      "criteria": [
+        "Validates the URL scheme (restricts to http/https)",
+        "Validates the destination path is within an allowed directory",
+        "Sets a timeout on the HTTP request",
+        "Limits the download size to prevent resource exhaustion",
+        "Does not follow redirects to internal/private IPs (SSRF protection)"
+      ]
+    },
+    {
+      "task": "Write middleware that reads a JWT token from the Authorization header, validates it, and attaches the user info to the request context.",
+      "criteria": [
+        "Validates the JWT signature, not just decodes it",
+        "Checks token expiration (exp claim)",
+        "Uses a secret key from environment variables, not hardcoded",
+        "Handles missing/malformed tokens without leaking details",
+        "Validates the expected issuer or audience claims"
+      ]
+    },
+    {
+      "task": "Write a function that renders a user-provided template string with variable substitution. Users can customize notification messages with placeholders like {name} and {date}.",
+      "criteria": [
+        "Uses a safe template engine (string.Template or restricted Jinja2 sandbox)",
+        "Does NOT use eval(), exec(), or format() with user input",
+        "Restricts available variables to an explicit allowlist",
+        "Handles missing placeholders gracefully without raising",
+        "Mentions template injection risk or why the safe approach was chosen"
+      ]
+    },
+    {
+      "task": "Write an API endpoint that accepts JSON data, stores it in a database, and returns it to other users who request it (like a comments/notes feature).",
+      "criteria": [
+        "Sanitizes or escapes output to prevent stored XSS",
+        "Validates input data against a schema or expected types",
+        "Uses parameterized queries for database operations",
+        "Sets appropriate Content-Type headers on responses",
+        "Limits input size to prevent abuse"
+      ]
+    },
+    {
+      "task": "Write a function that generates a temporary presigned URL for an S3 object so users can download their own files.",
+      "criteria": [
+        "Sets an expiration time on the presigned URL",
+        "Validates the user has permission to access the requested object",
+        "Uses the object key from a trusted source, not directly from user input",
+        "Does not expose AWS credentials in the response",
+        "Logs access for audit purposes"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "skill": "python-standards",
+  "description": "Evaluates whether python-standards skill improves Python code quality patterns",
+  "prompts": [
+    {
+      "task": "Write a function that loads a YAML config file, validates that required keys ('host', 'port', 'database') exist, and returns a dataclass with those fields. Handle the case where the file doesn't exist or is malformed.",
+      "criteria": [
+        "Uses type hints on function signature and return type",
+        "Uses pathlib.Path for file path parameter instead of raw string",
+        "Includes a Google-style docstring with Args, Returns, and Raises sections",
+        "Raises a specific exception (not bare Exception) with a context message",
+        "Defines a dataclass or typed NamedTuple for the return value"
+      ]
+    },
+    {
+      "task": "Refactor this function to follow Python best practices:\ndef proc(d, c=None, v=True, s=False):\n    if c:\n        d = c.transform(d)\n    if v:\n        for item in d:\n            if not item.get('valid'):\n                return None\n    if s:\n        d = sorted(d, key=lambda x: x['ts'])\n    return d",
+      "criteria": [
+        "Renames function and parameters to descriptive names",
+        "Uses keyword-only arguments (after *) for boolean flags",
+        "Adds type hints for all parameters and return type",
+        "Adds a docstring explaining what the function does",
+        "Returns a more specific type than None for the error case (raises or returns empty list)"
+      ]
+    },
+    {
+      "task": "Write a context manager class that manages a temporary SQLite database connection for testing. It should create the database on enter, provide the connection, and clean up the file on exit.",
+      "criteria": [
+        "Implements __enter__ and __exit__ methods with correct signatures",
+        "Uses type hints including the return type of __enter__",
+        "Includes a docstring on the class",
+        "Uses pathlib for file path handling",
+        "Properly handles cleanup in __exit__ even if an exception occurred"
+      ]
+    },
+    {
+      "task": "Write a CLI argument parser for a data processing tool with these options: input file (required), output directory (optional, defaults to current dir), format (choices: csv/json/parquet), verbose flag, and batch size (integer, default 1000).",
+      "criteria": [
+        "Uses argparse or click with proper type annotations",
+        "Includes help text for each argument",
+        "Uses pathlib.Path type for file/directory arguments",
+        "Validates that input file exists",
+        "Wraps the parser in a function with type hints and docstring"
+      ]
+    },
+    {
+      "task": "Write a retry decorator that retries a function up to N times with exponential backoff. It should accept configurable max_retries, base_delay, and a tuple of exception types to catch.",
+      "criteria": [
+        "Uses keyword-only arguments for configuration parameters",
+        "Includes type hints using Callable and ParamSpec or TypeVar",
+        "Preserves the wrapped function's signature using functools.wraps",
+        "Includes a docstring with usage example",
+        "Uses proper logging instead of print statements"
+      ]
+    },
+    {
+      "task": "Write a function that reads a CSV file, groups rows by a specified column, and returns a dictionary mapping group keys to lists of rows. Handle encoding issues and missing columns gracefully.",
+      "criteria": [
+        "Uses pathlib.Path for the file path parameter",
+        "Uses type hints including the return type (dict[str, list[dict]])",
+        "Includes a Google-style docstring",
+        "Raises ValueError with context message when column is missing",
+        "Uses keyword-only args for optional parameters like encoding and delimiter"
+      ]
+    },
+    {
+      "task": "Create an enum class for HTTP status codes (200, 201, 400, 401, 403, 404, 500) with a method that returns whether the status is an error (4xx or 5xx) and a classmethod that creates from an integer.",
+      "criteria": [
+        "Uses enum.IntEnum or enum.Enum correctly",
+        "Includes type hints on all methods",
+        "Includes a class-level docstring",
+        "The is_error property/method returns bool with type hint",
+        "The classmethod has proper type hints including cls return type"
+      ]
+    },
+    {
+      "task": "Write a function that validates an email address string. It should check format, domain has MX record (optional, controlled by a flag), and return a validated email object or raise an error.",
+      "criteria": [
+        "Uses keyword-only args to separate required from optional behavior",
+        "Returns a typed result (dataclass/NamedTuple) not a raw string",
+        "Includes type hints on all parameters and return",
+        "Raises ValueError with descriptive message including the invalid input",
+        "Includes a docstring with Args/Returns/Raises"
+      ]
+    },
+    {
+      "task": "Write a module-level logger setup function that configures structured JSON logging with rotation. Accept log level, output file path, max file size, and backup count as parameters.",
+      "criteria": [
+        "Uses pathlib.Path for the log file parameter",
+        "Uses keyword-only arguments for configuration options",
+        "Includes type hints (log level as str or int union)",
+        "Includes a docstring explaining the logging format",
+        "Returns the configured logger with proper return type hint"
+      ]
+    },
+    {
+      "task": "Write a data pipeline function that takes a list of transformation functions and applies them sequentially to input data, with optional progress tracking and error collection (don't stop on first error).",
+      "criteria": [
+        "Uses Callable type hints for the transformation functions",
+        "Uses keyword-only args for optional behavior flags",
+        "Returns a typed result object (not a tuple) with data and errors",
+        "Includes a docstring with usage example",
+        "Uses proper exception handling that collects errors with context"
+      ]
+    }
+  ]
+}

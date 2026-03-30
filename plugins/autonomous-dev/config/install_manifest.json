@@ -53,6 +53,7 @@
         "plugins/autonomous-dev/commands/retrospective.md",
         "plugins/autonomous-dev/commands/scaffold-genai-uat.md",
         "plugins/autonomous-dev/commands/setup.md",
+        "plugins/autonomous-dev/commands/skill-eval.md",
         "plugins/autonomous-dev/commands/status.md",
         "plugins/autonomous-dev/commands/sweep.md",
         "plugins/autonomous-dev/commands/sync.md",

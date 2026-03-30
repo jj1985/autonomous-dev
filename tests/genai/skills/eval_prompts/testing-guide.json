@@ -1,0 +1,106 @@
+{
+  "skill": "testing-guide",
+  "description": "Evaluates whether testing-guide skill improves test quality and methodology",
+  "prompts": [
+    {
+      "task": "Write tests for a function `calculate_shipping_cost(weight_kg: float, destination: str, express: bool = False) -> float` that computes shipping costs based on weight tiers and destination zones.",
+      "criteria": [
+        "Tests normal cases for each weight tier boundary",
+        "Tests edge cases (zero weight, negative weight, very large weight)",
+        "Uses pytest.mark.parametrize for multiple input combinations",
+        "Tests the express flag affects the result",
+        "Includes a test for invalid destination input"
+      ]
+    },
+    {
+      "task": "Write tests for a UserService class that has methods: create_user(email, name), get_user(id), and delete_user(id). It depends on a DatabaseRepository.",
+      "criteria": [
+        "Uses fixtures for test setup (UserService instance, mock repo)",
+        "Mocks the DatabaseRepository dependency",
+        "Tests the happy path for each method",
+        "Tests error cases (user not found, duplicate email)",
+        "Uses Arrange-Act-Assert pattern with clear separation"
+      ]
+    },
+    {
+      "task": "Write tests for an async function `fetch_and_parse(url: str) -> dict` that fetches JSON from a URL and parses it, raising custom errors for network failures and invalid JSON.",
+      "criteria": [
+        "Uses pytest-asyncio or equivalent async test support",
+        "Mocks the HTTP client (not making real network calls)",
+        "Tests successful fetch and parse",
+        "Tests network error handling (timeout, connection refused)",
+        "Tests invalid JSON response handling"
+      ]
+    },
+    {
+      "task": "Write tests for a caching decorator that caches function results with a configurable TTL. After TTL expires, the next call should recompute.",
+      "criteria": [
+        "Tests that repeated calls return cached result",
+        "Tests TTL expiration triggers recomputation",
+        "Uses time mocking (freezegun or monkeypatch) instead of real sleep",
+        "Tests cache key varies with different arguments",
+        "Tests that the original function's return value is preserved"
+      ]
+    },
+    {
+      "task": "Write tests for a CSV file parser that reads a CSV, validates headers match expected schema, and returns typed rows. It should handle encoding issues and missing columns.",
+      "criteria": [
+        "Uses tmp_path fixture for test file creation",
+        "Tests with valid CSV producing expected output",
+        "Tests missing required columns raises appropriate error",
+        "Tests encoding edge case (UTF-8 BOM, latin-1)",
+        "Tests empty file handling"
+      ]
+    },
+    {
+      "task": "Write tests for a rate limiter class that allows N requests per time window. It should track per-key limits and reset after the window expires.",
+      "criteria": [
+        "Tests requests within limit succeed",
+        "Tests requests exceeding limit are rejected",
+        "Tests different keys have independent limits",
+        "Tests window reset allows new requests",
+        "Uses time mocking instead of real sleep for window tests"
+      ]
+    },
+    {
+      "task": "Write tests for a data migration function that reads records from an old schema, transforms them, and writes to a new schema. Both schemas are in SQLite.",
+      "criteria": [
+        "Uses a real test database (SQLite in-memory or tmp_path)",
+        "Tests full migration path: seed old data, run migration, verify new data",
+        "Tests migration is idempotent (running twice doesn't duplicate)",
+        "Tests handling of malformed records in old schema",
+        "Includes a rollback or error recovery test"
+      ]
+    },
+    {
+      "task": "Write tests for a plugin loader that discovers Python modules in a directory, validates they implement a required interface, and registers them.",
+      "criteria": [
+        "Uses tmp_path to create test plugin files",
+        "Tests discovery finds valid plugins",
+        "Tests invalid plugins (missing required method) are rejected with clear error",
+        "Tests empty directory returns empty list",
+        "Tests duplicate plugin names are handled"
+      ]
+    },
+    {
+      "task": "Write regression tests for a bug where a date parser returned wrong results for dates in December (month 12 was being parsed as month 1 of next year).",
+      "criteria": [
+        "Includes the specific failing case from the bug (December date)",
+        "Tests boundary months (November, December, January)",
+        "Includes a comment referencing the bug or explaining the regression",
+        "Tests multiple date formats if the parser supports them",
+        "Uses parametrize to cover the range of affected inputs"
+      ]
+    },
+    {
+      "task": "Write tests for a REST API endpoint POST /api/orders that creates an order, validates input, and returns the created order with an ID.",
+      "criteria": [
+        "Uses a test client (e.g., TestClient for FastAPI, test_client for Flask)",
+        "Tests successful creation returns 201 with order data",
+        "Tests validation error returns 400/422 with error details",
+        "Tests missing required fields are caught",
+        "Tests the response includes a generated order ID"
+      ]
+    }
+  ]
+}

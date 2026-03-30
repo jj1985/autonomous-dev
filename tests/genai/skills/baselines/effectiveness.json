@@ -1,0 +1,12 @@
+{
+  "_comment": "Baseline effectiveness scores per skill. Updated automatically by test_skill_effectiveness.py --update-baselines. Do not edit manually.",
+  "_format": {
+    "skill_name": {
+      "pass_rate_with": "float 0-1: criteria pass rate with skill injected",
+      "pass_rate_without": "float 0-1: criteria pass rate without skill",
+      "delta": "float: improvement from skill injection",
+      "prompts_tested": "int: number of prompts evaluated",
+      "recorded": "ISO date when baseline was recorded"
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "skill": "error-handling",
+  "description": "Evaluates whether error-handling skill improves error handling quality in generated code",
+  "prompts": [
+    {
+      "task": "Write a function that fetches user data from an external REST API, retrying on transient failures (5xx, timeout) but failing immediately on client errors (4xx).",
+      "criteria": [
+        "Distinguishes between retryable and non-retryable errors",
+        "Implements retry with backoff (not immediate retry)",
+        "Raises a custom or specific exception, not bare Exception",
+        "Includes context in error messages (URL, status code, attempt count)",
+        "Sets a maximum retry limit to prevent infinite loops"
+      ]
+    },
+    {
+      "task": "Write a file processing function that reads a JSON file, validates its structure against expected fields, transforms the data, and writes the output. Handle all failure modes.",
+      "criteria": [
+        "Handles FileNotFoundError separately from JSON parse errors",
+        "Provides specific error messages for each failure mode",
+        "Uses context managers for file operations",
+        "Includes the file path in error messages for debugging",
+        "Does not catch bare Exception at the top level"
+      ]
+    },
+    {
+      "task": "Write a database transaction wrapper that executes a sequence of operations atomically. If any operation fails, all should be rolled back. Support both sync and the concept of partial failure reporting.",
+      "criteria": [
+        "Implements rollback on any operation failure",
+        "Preserves the original exception with its traceback",
+        "Reports which specific operation failed in a multi-step sequence",
+        "Uses context manager pattern for transaction lifecycle",
+        "Handles the case where rollback itself fails"
+      ]
+    },
+    {
+      "task": "Write a configuration validation function that checks a nested dictionary against a schema. It should collect ALL validation errors (not stop at the first one) and report them clearly.",
+      "criteria": [
+        "Collects all errors instead of raising on first failure",
+        "Reports the path to each invalid field (e.g., 'database.host')",
+        "Distinguishes between missing fields and wrong-type fields",
+        "Returns or raises with all errors in a structured format",
+        "Provides expected vs. actual values in error messages"
+      ]
+    },
+    {
+      "task": "Write an API endpoint that creates a resource, calling three external services (payment, inventory, notification). If payment succeeds but inventory fails, payment should be reversed.",
+      "criteria": [
+        "Implements compensating transactions (undo payment if inventory fails)",
+        "Handles the case where the compensation itself fails",
+        "Returns appropriate HTTP status codes for different failure types",
+        "Logs each step for debugging failed transactions",
+        "Does not leak internal error details to the API response"
+      ]
+    },
+    {
+      "task": "Write a batch data importer that processes a CSV with 10,000+ rows. Some rows may have errors. The importer should continue processing valid rows and report all errors at the end.",
+      "criteria": [
+        "Continues processing after individual row errors",
+        "Collects errors with row numbers and error details",
+        "Reports a summary (total, succeeded, failed) at the end",
+        "Sets a maximum error threshold (stop if >N% fail)",
+        "Handles the case where the file itself is unreadable"
+      ]
+    },
+    {
+      "task": "Write a health check endpoint that checks database connectivity, cache availability, and external API reachability. Each check should be independent and the endpoint should report partial health.",
+      "criteria": [
+        "Checks are independent (one failure doesn't skip others)",
+        "Sets timeouts on each health check to prevent hanging",
+        "Returns structured status per dependency, not just pass/fail",
+        "Uses appropriate HTTP status (200 for healthy, 503 for degraded)",
+        "Catches specific exceptions per dependency type"
+      ]
+    },
+    {
+      "task": "Write error handling for a WebSocket connection manager. Handle connection drops, message parse failures, authentication expiry, and rate limiting.",
+      "criteria": [
+        "Handles each error type differently (reconnect vs. reject vs. throttle)",
+        "Implements reconnection with backoff for dropped connections",
+        "Sends structured error messages to the client for client-side errors",
+        "Logs server-side errors without exposing details to the client",
+        "Handles graceful shutdown (close all connections cleanly)"
+      ]
+    },
+    {
+      "task": "Write a plugin loader that discovers and loads Python plugins from a directory. Plugins may have import errors, missing required functions, or raise exceptions during initialization.",
+      "criteria": [
+        "Handles ImportError for individual plugins without crashing the loader",
+        "Validates plugin interface before attempting to use it",
+        "Collects all plugin load errors and reports them together",
+        "Provides actionable error messages (which file, what's missing, what's expected)",
+        "Isolates plugin initialization failures from the loading process"
+      ]
+    },
+    {
+      "task": "Write a data pipeline that chains three transformations: parse, validate, enrich. Each step can fail. The pipeline should support both fail-fast and collect-errors modes.",
+      "criteria": [
+        "Supports both fail-fast and collect-errors modes as a configuration",
+        "Preserves error context through the pipeline (which step, which input)",
+        "Uses custom exception hierarchy (PipelineError base, ParseError, ValidationError, EnrichError)",
+        "Chains exceptions using 'from' to preserve original tracebacks",
+        "Returns a result object with both successful outputs and collected errors"
+      ]
+    }
+  ]
+}

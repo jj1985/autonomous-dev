@@ -240,6 +240,7 @@ For existing projects, use:
 /refactor                # Code, docs, and test optimization (--tests, --docs, --code, --fix)
 /sweep                   # Quick codebase hygiene (alias for /refactor --quick)
 /audit                   # Quality audit (--quick, --security, --docs, --code, --tests)
+/skill-eval              # Measure skill effectiveness via behavioral delta scoring (--quick, --skill, --update)
 /advise                  # Critical thinking analysis
 /improve                 # Automation health analysis
 /retrospective           # Session drift detection and alignment updates
@@ -330,7 +331,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 - [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) - Pipeline enforcement
 
 ### Reference
-- [Commands](plugins/autonomous-dev/commands/) - All 20 commands
+- [Commands](plugins/autonomous-dev/commands/) - All 21 commands
 - [Hooks](docs/HOOKS.md) - 25 active hooks
 - [Libraries](docs/LIBRARIES.md) - 184 Python utilities
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model

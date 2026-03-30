@@ -1,0 +1,106 @@
+{
+  "skill": "architecture-patterns",
+  "description": "Evaluates whether architecture-patterns skill improves implementation planning quality",
+  "prompts": [
+    {
+      "task": "Create an implementation plan for adding a caching layer to an existing REST API. The API currently hits the database on every request. We need Redis-backed caching with configurable TTL per endpoint.",
+      "criteria": [
+        "Breaks the work into ordered files/components with dependencies noted",
+        "Identifies the cache abstraction layer as separate from the Redis implementation",
+        "Considers cache invalidation strategy",
+        "Mentions testability (how to test with and without cache)",
+        "Identifies configuration as a separate concern from implementation"
+      ]
+    },
+    {
+      "task": "Design the file structure and component breakdown for a webhook delivery system that accepts webhook registrations, queues events, delivers with retry logic, and provides delivery status.",
+      "criteria": [
+        "Separates the system into distinct components (registration, queue, delivery, status)",
+        "Defines interfaces/contracts between components",
+        "Orders implementation by dependency (what must exist before what)",
+        "Considers failure modes (delivery failure, queue overflow)",
+        "Includes a data model or schema design"
+      ]
+    },
+    {
+      "task": "Plan the implementation of a plugin system for a CLI tool. Plugins should be discovered from a directory, loaded dynamically, and given access to a defined API. Third-party developers will write plugins.",
+      "criteria": [
+        "Defines a clear plugin interface/protocol that plugins must implement",
+        "Separates discovery, loading, and execution concerns",
+        "Considers plugin isolation (what happens if a plugin fails)",
+        "Addresses the third-party developer experience (how they develop/test plugins)",
+        "Plans for versioning the plugin API"
+      ]
+    },
+    {
+      "task": "Design the architecture for a background job processing system that handles email sending, report generation, and data imports. Jobs should be retryable, have priority levels, and support progress tracking.",
+      "criteria": [
+        "Defines a job abstraction that different job types implement",
+        "Separates the scheduler/queue from job execution",
+        "Addresses retry logic with backoff strategy",
+        "Includes a progress/status tracking mechanism",
+        "Considers observability (logging, monitoring, dead letter queue)"
+      ]
+    },
+    {
+      "task": "Plan the migration from a monolithic Django app to a service-oriented architecture. The app has user management, billing, notifications, and content management tightly coupled.",
+      "criteria": [
+        "Identifies service boundaries based on domain concepts",
+        "Plans a migration order (which service to extract first and why)",
+        "Addresses shared data (how services share user/billing data)",
+        "Considers backward compatibility during migration",
+        "Identifies the communication mechanism between services"
+      ]
+    },
+    {
+      "task": "Design a file processing pipeline that ingests uploads (CSV, JSON, XML), validates them, transforms to a common format, enriches with external data, and stores results. Files range from KB to multi-GB.",
+      "criteria": [
+        "Addresses the size variance (streaming vs. in-memory for large files)",
+        "Defines pipeline stages as composable/independent units",
+        "Separates format-specific parsing from common transformation logic",
+        "Considers error handling per-record vs. per-file",
+        "Plans for observability (progress, error counts, throughput metrics)"
+      ]
+    },
+    {
+      "task": "Create an implementation plan for adding role-based access control (RBAC) to an existing API that currently has no authorization. The API has 30+ endpoints across 5 resource types.",
+      "criteria": [
+        "Defines the permission model (roles, permissions, resource-level access)",
+        "Plans middleware/decorator approach rather than per-endpoint if-checks",
+        "Considers the migration path (how existing users get roles)",
+        "Addresses testability (how to test authorization in isolation)",
+        "Orders implementation: model first, then enforcement, then migration"
+      ]
+    },
+    {
+      "task": "Design a real-time notification system that supports email, SMS, push notifications, and in-app notifications. Users configure their preferred channels per notification type.",
+      "criteria": [
+        "Uses a channel abstraction so new channels can be added without modifying core logic",
+        "Separates notification creation from delivery",
+        "Includes user preference/routing logic as a distinct component",
+        "Considers delivery guarantees (at-least-once, idempotency)",
+        "Plans for template management per channel"
+      ]
+    },
+    {
+      "task": "Plan an implementation for adding full-text search to a content management system. The system has articles, comments, and user profiles that should all be searchable.",
+      "criteria": [
+        "Separates the search index from the primary data store",
+        "Plans an indexing strategy (when/how documents get indexed)",
+        "Addresses the initial backfill of existing data",
+        "Considers search query parsing and relevance ranking",
+        "Defines the search abstraction so the engine can be swapped (Elasticsearch vs. Meilisearch)"
+      ]
+    },
+    {
+      "task": "Design the architecture for a multi-tenant SaaS application where each tenant has isolated data but shares the same application code. Support for custom domains and tenant-specific configuration.",
+      "criteria": [
+        "Defines the tenant isolation strategy (schema-per-tenant, row-level, database-per-tenant)",
+        "Addresses tenant resolution (how requests map to tenants)",
+        "Plans for tenant-specific configuration without code changes",
+        "Considers data migration when adding new tenants",
+        "Addresses cross-tenant operations (admin views, global reports)"
+      ]
+    }
+  ]
+}
