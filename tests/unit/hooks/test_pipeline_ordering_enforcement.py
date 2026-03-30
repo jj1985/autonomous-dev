@@ -4,7 +4,7 @@ Integration-style tests for pipeline ordering enforcement (Layer 4) in unified_p
 Tests mock the hook flow to verify that Agent tool calls during active pipeline
 sessions are subject to ordering checks.
 
-Issues: #625, #629, #632
+Issues: #625, #629, #632, #636
 """
 
 import json
@@ -176,3 +176,115 @@ class TestPipelineOrderingGate:
                 "Agent", {"task_description": "Run the doc-master agent"}
             )
             assert decision == "allow"
+
+
+class TestSubagentTypePriority:
+    """Regression tests for subagent_type field taking priority over prompt text extraction.
+
+    Issue #636: When a planner's prompt contained "implementer" in research context,
+    _extract_subagent_type matched the wrong agent, causing false ORDERING VIOLATION.
+    Fix: check tool_input["subagent_type"] before falling back to text extraction.
+    """
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_subagent_type_overrides_prompt_text(
+        self, mock_mode, mock_completed
+    ):
+        """subagent_type='planner' should be used even when prompt mentions 'implementer'."""
+        mock_completed.return_value = {"researcher", "researcher-local"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {
+                    "subagent_type": "planner",
+                    "prompt": "Plan the implementation. The implementer agent will handle code changes.",
+                }
+            )
+            assert decision == "allow"
+            assert "planner" in reason.lower()
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_subagent_type_prevents_false_ordering_violation(
+        self, mock_mode, mock_completed
+    ):
+        """Without subagent_type fix, this would match 'implementer' and deny."""
+        mock_completed.return_value = set()  # No agents completed yet
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            # planner has no prerequisites — should allow
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {
+                    "subagent_type": "planner",
+                    "prompt": "Research found that implementer needs test-master first.",
+                }
+            )
+            assert decision == "allow"
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_falls_back_to_text_extraction_without_subagent_type(
+        self, mock_mode, mock_completed
+    ):
+        """When subagent_type is missing, text extraction should still work."""
+        mock_completed.return_value = {"planner", "test-master"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {
+                    "prompt": "Run the implementer agent to write code",
+                }
+            )
+            assert decision == "allow"
+            assert "implementer" in reason.lower()
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_empty_subagent_type_falls_back_to_text(
+        self, mock_mode, mock_completed
+    ):
+        """Empty string subagent_type should fall back to text extraction."""
+        mock_completed.return_value = {"planner", "test-master"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {
+                    "subagent_type": "",
+                    "prompt": "Run the implementer agent",
+                }
+            )
+            assert decision == "allow"
+            assert "implementer" in reason.lower()
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_subagent_type_with_multiple_agents_in_prompt(
+        self, mock_mode, mock_completed
+    ):
+        """subagent_type should resolve correctly even with many agent names in prompt."""
+        mock_completed.return_value = {"researcher"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {
+                    "subagent_type": "planner",
+                    "prompt": (
+                        "Plan implementation. researcher-local found patterns. "
+                        "implementer will write code. test-master handles tests. "
+                        "reviewer validates. doc-master updates docs."
+                    ),
+                }
+            )
+            assert decision == "allow"
+            assert "planner" in reason.lower()
