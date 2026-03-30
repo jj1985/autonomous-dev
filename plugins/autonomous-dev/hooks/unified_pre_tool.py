@@ -459,9 +459,12 @@ def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, s
         if not _is_pipeline_active():
             return ("allow", "No active pipeline - ordering check skipped")
 
-        # Extract agent type from task description
-        task_desc = tool_input.get("task_description", "") or tool_input.get("prompt", "")
-        target_agent = _extract_subagent_type(task_desc)
+        # Extract agent type — prefer explicit subagent_type over text extraction
+        # (text extraction can match wrong agent when prompt contains other agent names)
+        target_agent = tool_input.get("subagent_type", "").strip().lower()
+        if not target_agent:
+            task_desc = tool_input.get("task_description", "") or tool_input.get("prompt", "")
+            target_agent = _extract_subagent_type(task_desc)
         if not target_agent:
             return ("allow", "Could not determine target agent - allowing")
 
