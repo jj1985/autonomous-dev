@@ -80,6 +80,27 @@ autonomous-dev enforces process through three layers, each addressing a differen
 
 **The result**: Every feature goes through every step. Not because Claude remembers to, but because the harness won't let it skip.
 
+### The 12 Elements of Harness Engineering
+
+The core insight of harness engineering: reliability in multi-step AI workflows is difficult because failures compound. A 10-step process with 90% accuracy per step fails over 60% of the time. "Agent skills" that are just prompts or markdown files — where you *hope* the AI follows instructions — lack the dependability required for production work.
+
+The solution is **deterministic rails**: a software layer that gates and validates every stage. autonomous-dev implements all 12 elements of this framework:
+
+| # | Element | How autonomous-dev implements it |
+|---|---------|----------------------------------|
+| 1 | **State Machine** | `pipeline_state.py` — 13-phase state machine with `Step` enum, `advance()`/`complete_step()` API, JSON-persisted state |
+| 2 | **Validation Loops** | STEP 8 HARD GATE — runs pytest, loops until 0 failures/0 errors. Anti-stubbing gate blocks `raise NotImplementedError()` shortcuts |
+| 3 | **Isolated Sub-Agents** | 12 specialist agents, each spawned with fresh context and constrained tools. Model selection per agent (Haiku/Sonnet/Opus) |
+| 4 | **Virtual File System** | Git worktree isolation for batch mode. `checkpoint.py` + `artifacts.py` persist outputs to `.claude/artifacts/` per phase |
+| 5 | **Human-in-the-Loop** | Plan mode (STEP 5) requires user approval before implementation. `pause_controller.py` for explicit gates |
+| 6 | **Hook Enforcement** | 25 hooks with JSON `{"decision": "block"}` hard gates — not prompt-level nudges. Research-confirmed: nudges produce unreliable compliance |
+| 7 | **State Persistence** | `CheckpointManager` for resume after failure. `batch_state_manager.py` for multi-feature recovery. `/implement --resume` |
+| 8 | **Context Management** | Progressive skill injection loads domain knowledge per-step. `/clear` between features. Agent isolation prevents context rot |
+| 9 | **Deterministic Ordering** | `agent_ordering_gate.py` enforces pipeline sequence. "You MUST NOT run STEP 10 before STEP 8 test gate passes" |
+| 10 | **Output Validation** | Parallel reviewer + security-auditor in STEP 10. `genai_validate.py` for LLM-as-judge tests. `completion_verifier.py` |
+| 11 | **Observability** | `session_activity_logger.py`, `pipeline_timing_analyzer.py`, `token_tracker.py`. Structured JSONL to `.claude/logs/activity/` |
+| 12 | **Error Recovery** | `failure_analyzer.py`, `batch_retry_manager.py`, `stuck_detector.py`, `qa_self_healer.py`. Automatic retry with consent |
+
 ---
 
 ## What's PROJECT.md?
@@ -289,11 +310,11 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| Commands | 19 | Slash commands for workflows |
-| Agents | 11 | Specialized AI for each SDLC stage |
+| Commands | 20 | Slash commands for workflows |
+| Agents | 12 | Specialized AI for each SDLC stage |
 | Skills | 17 | Domain knowledge (progressive disclosure) |
 | Hooks | 25 | Automatic validation and enforcement |
-| Libraries | 173 | Python utilities |
+| Libraries | 184 | Python utilities |
 
 ---
 
@@ -309,9 +330,9 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 - [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) - Pipeline enforcement
 
 ### Reference
-- [Commands](plugins/autonomous-dev/commands/) - All 19 commands
+- [Commands](plugins/autonomous-dev/commands/) - All 20 commands
 - [Hooks](docs/HOOKS.md) - 25 active hooks
-- [Libraries](docs/LIBRARIES.md) - 173 Python utilities
+- [Libraries](docs/LIBRARIES.md) - 184 Python utilities
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model
 
 ### Troubleshooting

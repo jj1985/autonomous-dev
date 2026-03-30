@@ -1,79 +1,58 @@
 # autonomous-dev
 
-Plugin for autonomous development in Claude Code. AI agents, skills, automation hooks, slash commands.
-
-## Project Overview
-
-Autonomous development plugin that provides:
-- **8-step SDLC pipeline**: alignment → research → plan → test → implement → validate → verify → git
-- **Batch processing**: Process multiple features/issues with worktree isolation
-- **Git automation**: AUTO_GIT_ENABLED for commit/push workflows
-
-## Installation
-
-```bash
-bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/master/install.sh)
-```
-
-Then restart Claude Code (Cmd+Q / Ctrl+Q). For subsequent updates, run `/sync` then `/reload-plugins`.
+Development harness for Claude Code. Deterministic enforcement, specialist agents, alignment gates — 12 elements of harness engineering.
 
 ## Critical Rules
 
+- **NEVER direct-edit without `/implement`**: `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` — these are functional infrastructure. Hook-enforced: `unified_pre_tool.py` blocks Write/Edit to these paths outside the pipeline.
 - **Direct editing is only for**: user-facing docs (README.md, CHANGELOG.md, docs/*.md), config (.json/.yaml), typos (1-2 lines).
-- **NEVER direct-edit without `/implement`**: `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` — these are functional infrastructure, not documentation. This rule is **hook-enforced**: `unified_pre_tool.py` blocks Write/Edit to these paths when the `/implement` pipeline is not active (Issue #483).
 - **After plan mode approval → use `/implement`**: The plan IS the input to `/implement`, not a license to bypass it.
-- **Run `/improve` after `/implement` sessions.** Use `--auto-file` to create GitHub issues for findings.
+- **Run `/improve` after `/implement` sessions.** Use `--auto-file` to create GitHub issues.
 - **Use `/clear` after each feature.** Prevents context bloat.
+- **Deploy with `bash scripts/deploy-all.sh`** — never manual `cp -rf`. Script handles local, remote (Mac Studio), validation, and integrity checks.
+- **Don't simplify, redesign, or consolidate agents.** The pipeline, hooks, and enforcement are validated over months of real use. The cost is tokens, not complexity. Complexity is the mechanism.
 
-## Commands
+## Build & Test
 
-| Command | Purpose |
-|---------|---------|
-| `/implement` | Code changes (full pipeline, --light, --batch, --issues, --resume, --fix) |
-| `/create-issue` | GitHub issue with automated research (--quick) |
-| `/plan-to-issues` | Batch-convert plan into GitHub issues (--quick) |
-| `/align` | Alignment check (--project, --docs, --retrofit) |
-| `/audit` | Quality audit (--quick, --security, --docs, --code, --claude, --tests) |
-| `/setup` | Interactive setup wizard |
-| `/sync` | Update plugin (--github, --env, --marketplace, --all, --uninstall) |
-| `/health-check` | Validate plugin integrity |
-| `/advise` | Critical thinking analysis |
-| `/worktree` | Git worktrees (--list, --status, --merge, --discard) |
-| `/scaffold-genai-uat` | Scaffold LLM-as-judge tests into any repo |
-| `/status` | View PROJECT.md goal progress |
-| `/refactor` | Unified code, docs, test optimization (--tests, --docs, --code, --fix, --quick) |
-| `/sweep` | Alias for /refactor --quick |
-| `/improve` | Automation health analysis — pipeline enforcement, bypasses |
-| `/retrospective` | Session drift detection — intent evolution, repeated corrections, memory rot |
-| `/mem-search` | Search claude-mem persistent memory (optional) |
+```bash
+# Run full test suite (from repo root)
+pytest --tb=short -q
+
+# Run specific test file
+pytest tests/unit/hooks/test_native_tool_auto_approval.py -v
+
+# Run with coverage
+pytest --cov=plugins/autonomous-dev/hooks --cov=plugins/autonomous-dev/lib --cov-report=term-missing
+
+# GenAI tests (LLM-as-judge, not included in default runs)
+pytest tests/genai/ --genai
+```
+
+## Architecture
+
+- **Pipeline**: 15-step state machine — alignment → research → plan → acceptance tests → implement → validate → verify → git
+- **Enforcement**: 25 hooks with JSON `{"decision": "block"}` hard gates (not prompt-level nudges)
+- **Agents**: 12 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
+- **Skills**: 17 domain packages, progressively injected per-step to prevent context bloat
+
+Component counts: 12 agents, 17 skills, 20 commands, 25 hooks, 184 libraries.
+
+## Key Paths
+
+| What | Where |
+|------|-------|
+| Alignment source of truth | [.claude/PROJECT.md](.claude/PROJECT.md) |
+| Pipeline command | `plugins/autonomous-dev/commands/implement.md` |
+| State machine | `plugins/autonomous-dev/lib/pipeline_state.py` |
+| Hook enforcement | `plugins/autonomous-dev/hooks/unified_pre_tool.py` |
+| Agent definitions | `plugins/autonomous-dev/agents/` |
+| Test suite | `tests/` (unit, integration, regression, security, hooks, genai) |
+| Activity logs | `.claude/logs/activity/` |
+| Architecture details | [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) |
+| Troubleshooting | [plugins/autonomous-dev/docs/TROUBLESHOOTING.md](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) |
 
 ## Session Continuity
 
-The `SessionStart-batch-recovery.sh` hook automatically restores batch state after `/clear` or auto-compact. Session activity is logged to `.claude/logs/activity/` by the `session_activity_logger.py` hook.
+`SessionStart-batch-recovery.sh` auto-restores batch state after `/clear` or auto-compact. Activity logged to `.claude/logs/activity/` by `session_activity_logger.py`.
 
-## Project Alignment
-
-- **Goals/Scope**: See [.claude/PROJECT.md](.claude/PROJECT.md)
-- **Operations**: See [.claude/local/OPERATIONS.md](.claude/local/OPERATIONS.md) (repo-specific procedures)
-
-## Component Counts
-
-12 agents, 17 skills, 20 active commands, 184 libraries, 25 active hooks. See [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) for details.
-
-## Detailed Guides
-
-| Topic | Location |
-|-------|----------|
-| Workflow discipline | [docs/WORKFLOW-DISCIPLINE.md](docs/WORKFLOW-DISCIPLINE.md) |
-| Context management | [docs/CONTEXT-MANAGEMENT.md](docs/CONTEXT-MANAGEMENT.md) |
-| Architecture | [docs/ARCHITECTURE-OVERVIEW.md](docs/ARCHITECTURE-OVERVIEW.md) |
-| Batch processing | [docs/BATCH-PROCESSING.md](docs/BATCH-PROCESSING.md) |
-| Git automation | [docs/GIT-AUTOMATION.md](docs/GIT-AUTOMATION.md) |
-| Sandboxing | [docs/SANDBOXING.md](docs/SANDBOXING.md) |
-| Libraries | [docs/LIBRARIES.md](docs/LIBRARIES.md) |
-| Performance | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) |
-| Testing strategy | [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md) |
-| claude-mem integration | [docs/CLAUDE-MEM-INTEGRATION.md](docs/CLAUDE-MEM-INTEGRATION.md) |
-| Troubleshooting | [plugins/autonomous-dev/docs/TROUBLESHOOTING.md](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) |
-
-**Last Updated**: 2026-03-19
+**Last Updated**: 2026-03-30

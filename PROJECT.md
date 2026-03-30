@@ -149,6 +149,24 @@ Advisory text ("please ensure...") gets ignored under context pressure. What wor
 
 ## ARCHITECTURE
 
+### Harness Engineering
+
+autonomous-dev is a **harness** — the software layer that wraps an AI model to keep it on deterministic rails. The core insight: reliability in multi-step AI workflows compounds multiplicatively. A 10-step process with 90% accuracy per step fails over 60% of the time. Prompt-level instructions ("please run tests") produce unreliable compliance (confirmed by research: "LLM Agents Are Hypersensitive to Nudges", 2025).
+
+The harness implements all 12 elements of the harness engineering framework:
+1. **State machine** — `pipeline_state.py` tracks 13 phases with advance/complete API
+2. **Validation loops** — STEP 8 HARD GATE loops until 0 test failures
+3. **Isolated sub-agents** — 12 specialists with fresh context, constrained tools
+4. **Virtual file system** — Worktree isolation, `.claude/artifacts/` persistence
+5. **Human-in-the-loop** — Plan approval gate before implementation
+6. **Hook enforcement** — 25 hooks with JSON `{"decision": "block"}` hard gates
+7. **State persistence** — Checkpoint/resume across failures and context resets
+8. **Context management** — Progressive skill injection, `/clear` between features
+9. **Deterministic ordering** — `agent_ordering_gate.py` enforces step sequence
+10. **Output validation** — Parallel reviewer + security-auditor + LLM-as-judge
+11. **Observability** — Structured JSONL logging, timing analysis, token tracking
+12. **Error recovery** — Failure analysis, automatic retry with consent, stuck detection
+
 ### Three-Layer System
 
 **Layer 1: Hook-Based Enforcement** (Automatic, 100% Reliable)
