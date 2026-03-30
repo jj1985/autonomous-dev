@@ -70,13 +70,19 @@ STEP_ORDER = {
 
 # Agent pairs that MUST be sequential (first must complete before second starts)
 SEQUENTIAL_REQUIRED = [
-    ("planner", "test-master"),
     ("planner", "implementer"),
-    ("test-master", "implementer"),
     ("implementer", "reviewer"),
     ("implementer", "security-auditor"),
     ("implementer", "doc-master"),
     ("reviewer", "security-auditor"),
+]
+
+# TDD-first mode pairs: only enforced when test-master is in the pipeline.
+# In acceptance-first mode (default), test-master is skipped entirely.
+# Issue #636: unconditional enforcement blocked implementer in default mode.
+TDD_FIRST_PAIRS = [
+    ("planner", "test-master"),
+    ("test-master", "implementer"),
 ]
 
 # Agent pairs that SHOULD be parallel (efficiency check)
@@ -402,7 +408,12 @@ def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
     # Set of STEP 6 pairs where ordering should not be flagged in parallel mode
     STEP6_PAIRS = frozenset({("reviewer", "security-auditor"), ("security-auditor", "reviewer")})
 
-    for first_type, second_type in SEQUENTIAL_REQUIRED:
+    # Include TDD-first pairs if test-master was used in this session
+    all_pairs = list(SEQUENTIAL_REQUIRED)
+    if any(e.subagent_type == "test-master" for e in agent_events):
+        all_pairs.extend(TDD_FIRST_PAIRS)
+
+    for first_type, second_type in all_pairs:
         # Skip STEP 6 inter-ordering when parallel launch detected (#615)
         if step6_are_parallel and (first_type, second_type) in STEP6_PAIRS:
             continue
@@ -605,7 +616,11 @@ def detect_parallelization_violations(events: List[PipelineEvent]) -> List[Findi
             agent_timestamps[e.subagent_type] = e.timestamp
 
     # Check sequential pairs that were incorrectly parallelized
-    for first_type, second_type in SEQUENTIAL_REQUIRED:
+    # Include TDD-first pairs if test-master was used
+    all_pairs_parallel = list(SEQUENTIAL_REQUIRED)
+    if any(e.subagent_type == "test-master" for e in agent_events):
+        all_pairs_parallel.extend(TDD_FIRST_PAIRS)
+    for first_type, second_type in all_pairs_parallel:
         if first_type not in agent_timestamps or second_type not in agent_timestamps:
             continue
 

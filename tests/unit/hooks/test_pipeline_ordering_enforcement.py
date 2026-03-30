@@ -288,3 +288,61 @@ class TestSubagentTypePriority:
             )
             assert decision == "allow"
             assert "planner" in reason.lower()
+
+
+class TestTddFirstModeDependentPairs:
+    """Regression tests for test-master prerequisites being mode-dependent.
+
+    Issue #636: test-master -> implementer was unconditionally enforced as a core
+    prerequisite, but test-master only runs in --tdd-first mode. In acceptance-first
+    mode (the default), this blocked implementer from ever running.
+
+    Fix: test-master pairs are only enforced when test-master has completed
+    (indicating TDD-first mode is active).
+    """
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_implementer_allowed_without_test_master_acceptance_first(
+        self, mock_mode, mock_completed
+    ):
+        """In acceptance-first mode, implementer should not require test-master."""
+        mock_completed.return_value = {"researcher", "planner"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True),              patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "implementer", "prompt": "Implement changes"}
+            )
+            assert decision == "allow"
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_implementer_allowed_in_tdd_first_when_test_master_done(
+        self, mock_mode, mock_completed
+    ):
+        """In TDD-first mode, implementer should pass when test-master completed."""
+        mock_completed.return_value = {"researcher", "planner", "test-master"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True),              patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "implementer", "prompt": "Implement changes"}
+            )
+            assert decision == "allow"
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_implementer_still_requires_planner(
+        self, mock_mode, mock_completed
+    ):
+        """Planner is still a core prerequisite for implementer in all modes."""
+        mock_completed.return_value = {"researcher"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True),              patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "implementer", "prompt": "Implement changes"}
+            )
+            assert decision == "deny"
+            assert "planner" in reason.lower()

@@ -5,7 +5,7 @@ Agent Ordering Gate - Pure logic for pipeline agent ordering decisions.
 No I/O, no side effects. Receives state as input, returns gate decisions.
 Used by unified_pre_tool.py Layer 4 to enforce agent ordering at hook level.
 
-Issues: #625, #629, #632
+Issues: #625, #629, #632, #636
 """
 
 from dataclasses import dataclass, field
@@ -14,7 +14,7 @@ from typing import Optional
 # Import canonical ordering from pipeline_intent_validator if available.
 # Fall back to inline constants if import fails (e.g., running outside plugin).
 try:
-    from pipeline_intent_validator import SEQUENTIAL_REQUIRED, STEP_ORDER
+    from pipeline_intent_validator import SEQUENTIAL_REQUIRED, STEP_ORDER, TDD_FIRST_PAIRS
 except ImportError:
     STEP_ORDER = {
         "researcher-local": 2,
@@ -27,13 +27,19 @@ except ImportError:
         "doc-master": 6.0,
     }
     SEQUENTIAL_REQUIRED = [
-        ("planner", "test-master"),
         ("planner", "implementer"),
-        ("test-master", "implementer"),
         ("implementer", "reviewer"),
         ("implementer", "security-auditor"),
         ("implementer", "doc-master"),
         ("reviewer", "security-auditor"),
+    ]
+
+    # TDD-first mode pairs: only enforced when test-master is in the pipeline.
+    # In acceptance-first mode (default), test-master is skipped entirely.
+    # Issue #636: unconditional enforcement blocked implementer in default mode.
+    TDD_FIRST_PAIRS = [
+        ("planner", "test-master"),
+        ("test-master", "implementer"),
     ]
 
 # Full set of agents for a complete pipeline run
@@ -72,6 +78,12 @@ for _prereq, _target in SEQUENTIAL_REQUIRED:
 SEQUENTIAL_ONLY_PREREQUISITES: dict[str, set[str]] = {}
 for _prereq, _target in MODE_DEPENDENT_PAIRS:
     SEQUENTIAL_ONLY_PREREQUISITES.setdefault(_target, set()).add(_prereq)
+
+# TDD-first prerequisites (only enforced when test-master has completed,
+# indicating TDD-first mode is active). Issue #636.
+TDD_FIRST_PREREQUISITES: dict[str, set[str]] = {}
+for _prereq, _target in TDD_FIRST_PAIRS:
+    TDD_FIRST_PREREQUISITES.setdefault(_target, set()).add(_prereq)
 
 
 @dataclass
@@ -126,6 +138,14 @@ def check_ordering_prerequisites(
     if validation_mode == "sequential":
         seq_prereqs = SEQUENTIAL_ONLY_PREREQUISITES.get(target, set())
         for prereq in seq_prereqs:
+            if prereq not in completed_agents:
+                missing.append(prereq)
+
+    # Check TDD-first prerequisites (only when test-master has completed,
+    # meaning TDD-first mode is active). Issue #636.
+    if "test-master" in completed_agents:
+        tdd_prereqs = TDD_FIRST_PREREQUISITES.get(target, set())
+        for prereq in tdd_prereqs:
             if prereq not in completed_agents:
                 missing.append(prereq)
 
