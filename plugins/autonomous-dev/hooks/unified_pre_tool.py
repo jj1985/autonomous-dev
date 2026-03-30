@@ -750,8 +750,8 @@ def _is_pipeline_active() -> bool:
     """Check if the /implement pipeline is currently active.
 
     Checks two sources:
-    1. CLAUDE_AGENT_NAME env var against known pipeline agents
-    2. Pipeline state file (valid if < 2 hours old)
+    1. CLAUDE_AGENT_NAME env var against known pipeline agents (touches state file mtime)
+    2. Pipeline state file (valid if mtime < 30 min old; Issue #636)
 
     Returns:
         True if pipeline is active
@@ -759,6 +759,12 @@ def _is_pipeline_active() -> bool:
     # Check agent name (Issue #591: prefer stdin agent_type over env var)
     agent_name = _get_active_agent_name()
     if agent_name in PIPELINE_AGENTS:
+        # Touch state file to keep mtime current during active pipeline (Issue #636)
+        pipeline_state_file = os.getenv("PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json")
+        try:
+            Path(pipeline_state_file).touch()
+        except OSError:
+            pass
         return True
 
     # Check pipeline state file
@@ -786,12 +792,16 @@ def _is_pipeline_active() -> bool:
                 except ImportError:
                     return False  # Fail closed: HMAC present but verify library unavailable
 
-            session_start = state.get("session_start", "")
-            if session_start:
-                start_time = _datetime.fromisoformat(session_start)
-                elapsed = (_datetime.now() - start_time).total_seconds()
-                if elapsed < 7200:  # 2 hours
-                    return True
+            # Use file mtime for staleness (Issue #636).
+            # Pipeline agents touch this file on each hook call (see above),
+            # keeping mtime fresh during legitimate runs. A failed/abandoned
+            # pipeline stops invoking agents, so mtime stalls and expires.
+            # 30 min TTL covers long implementer runs with margin.
+            import time as _time
+            mtime = state_path.stat().st_mtime
+            age_seconds = _time.time() - mtime
+            if age_seconds < 1800:  # 30 minutes since last agent activity
+                return True
     except Exception:
         pass
 
