@@ -30,12 +30,16 @@ pytest tests/genai/ --genai
 
 ## Architecture
 
-- **Pipeline**: 15-step state machine — alignment → research → plan → acceptance tests → implement → validate → verify → git
+- **Pipeline**: 8-step SDLC (15 internal steps) — alignment → research → plan → acceptance tests → implement → validate → verify → git
 - **Enforcement**: 25 hooks with JSON `{"decision": "block"}` hard gates (not prompt-level nudges)
 - **Agents**: 12 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
 - **Skills**: 17 domain packages, progressively injected per-step to prevent context bloat
 
 Component counts: 12 agents, 17 skills, 20 commands, 25 hooks, 184 libraries.
+
+## Commands
+
+`/implement` (full, --light, --batch, --issues, --resume, --fix) | `/create-issue` (--quick) | `/plan-to-issues` (--quick) | `/align` (--project, --docs, --retrofit) | `/audit` (--quick, --security, --docs, --code, --tests) | `/setup` | `/sync` (--github, --env, --all, --uninstall) | `/health-check` | `/advise` | `/worktree` (--list, --status, --merge, --discard) | `/scaffold-genai-uat` | `/status` | `/refactor` (--tests, --docs, --code, --fix, --quick) | `/sweep` | `/improve` (--auto-file) | `/retrospective` | `/mem-search`
 
 ## Key Paths
 
