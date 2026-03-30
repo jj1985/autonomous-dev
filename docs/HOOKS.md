@@ -73,6 +73,7 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 - Allow-through 1: an active `/implement` pipeline is present (`/tmp/implement_pipeline_state.json`)
 - Allow-through 2: the current agent is `continuous-improvement-analyst` or `issue-creator` (authorized for direct issue creation)
 - Allow-through 3: a fresh marker file exists at `GH_ISSUE_MARKER_PATH` (`/tmp/autonomous_dev_gh_issue_allowed.marker`, valid for 1 hour) — written by `/create-issue`, `/improve`, `/refactor`, and `/plan-to-issues` commands
+- Allow-through 4 (Issue #630): a command context file exists at `GH_ISSUE_COMMAND_CONTEXT_PATH` (`/tmp/autonomous_dev_cmd_context.json`, valid for 1 hour) with a `command` field set to one of `create-issue`, `plan-to-issues`, `improve`, `refactor`, or `retrospective` — written by those commands when they invoke `/create-issue --quick`; uses file mtime for age check (harder to spoof than an embedded JSON timestamp)
 - Block message directs the user to `/create-issue` or `/create-issue --quick`
 - Fails open on any detection error to avoid blocking legitimate work
 
@@ -105,7 +106,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_session_tracker.py** | Session logging, pipeline tracking, progress updates. Reads stdin JSON from Claude Code, computes duration_ms, validates agent_transcript_path, writes JSONL for pipeline_intent_validator ghost detection. Status determination uses `CLAUDE_AGENT_STATUS` env var as authoritative signal when present; falls back to `_determine_success()` text scan only when the env var is absent (Issue #541). Session isolation: when `CLAUDE_SESSION_ID` is set, both `SessionTracker` file selection and `check_pipeline_complete()` filter to the matching session, preventing cross-session contamination when multiple batches run on the same day (Issue #594). | TRACK_SESSIONS, TRACK_PIPELINE, CLAUDE_AGENT_STATUS, CLAUDE_SESSION_ID |
+| **unified_session_tracker.py** | Session logging, pipeline tracking, progress updates. Reads stdin JSON from Claude Code, computes duration_ms, validates agent_transcript_path, writes JSONL for pipeline_intent_validator ghost detection. Status determination uses `CLAUDE_AGENT_STATUS` env var as authoritative signal when present; falls back to `_determine_success()` text scan only when the env var is absent (Issue #541). Session isolation: when `CLAUDE_SESSION_ID` is set, both `SessionTracker` file selection and `check_pipeline_complete()` filter to the matching session, preventing cross-session contamination when multiple batches run on the same day (Issue #594). Each JSONL entry now includes a `plugin_version` field (e.g. `"3.50.0 (abc1234)"`) populated via `version_reader.get_plugin_version()` for diagnostics and issue triage (Issue #630). | TRACK_SESSIONS, TRACK_PIPELINE, CLAUDE_AGENT_STATUS, CLAUDE_SESSION_ID |
 
 ### PostToolUse
 

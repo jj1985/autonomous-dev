@@ -55,8 +55,13 @@ Parse the ARGUMENTS to detect mode flags:
 
 Extract the feature request (everything except flags).
 
-**Create marker file immediately** (before any agents are spawned):
+**Create command context file and marker file immediately** (before any agents are spawned):
 ```bash
+python3 -c "
+import json; from datetime import datetime, timezone
+with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
+    json.dump({'command': 'create-issue', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
+"
 touch /tmp/autonomous_dev_gh_issue_allowed.marker
 ```
 This marker allows the `issue-creator` agent to run `gh issue create` later. It MUST be created here, before STEP 1, because agents spawned in STEP 1-2 may need it. The marker is cleaned up at CHECKPOINT 3 or on early exit.
@@ -85,6 +90,7 @@ Generate a markdown body with EXACTLY these 4 sections (no more, no less):
 2. **Implementation Approach**: Brief technical plan
 3. **Test Scenarios**: 3-5 test cases (happy path, error cases, edge cases)
 4. **Acceptance Criteria**: Checkboxes for verifiable conditions
+5. **Plugin Version**: Include the plugin version stamp: `$(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)`
 
 Capture the current Unix timestamp:
 ```bash
@@ -107,9 +113,9 @@ gh issue create --title "TITLE" --body-file /tmp/create_issue_body_${RUN_TS}.md
 
 Show the created issue URL. If the duplicate scan in Quick Step 2 found matching issues, display them as informational below the URL (no prompt, no blocking).
 
-Clean up marker and temp files:
+Clean up marker, context, and temp files:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/create_issue_body_${RUN_TS}.md
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json /tmp/create_issue_body_${RUN_TS}.md
 ```
 
 **END** — Do not proceed to STEP 1 or any subsequent steps.
@@ -161,7 +167,7 @@ Use the Task tool to invoke the **issue-creator** agent (subagent_type="issue-cr
 
 **Deep Thinking Template** (issue-creator should follow - GitHub Issue #118):
 
-**ALWAYS include**:
+**ALWAYS include** (also include `**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` at the end of the body):
 
 1. **Summary**: 1-2 sentences describing the feature/fix
 
@@ -281,9 +287,9 @@ gh issue create --title "TITLE_HERE" --body "BODY_HERE"
 
 ### CHECKPOINT 3: Validate Issue Creation
 
-Clean up the marker file after issue creation:
+Clean up the marker and context files after issue creation:
 ```bash
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
 ```
 
 Verify the gh CLI command succeeded:

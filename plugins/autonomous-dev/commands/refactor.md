@@ -129,19 +129,28 @@ If `--issues` was passed, pipe findings into GitHub issues:
 **LOW/MEDIUM findings**: Aggregate into a single "Refactor sweep findings" issue.
 
 ```bash
-# Create marker to allow gh issue create through the hook (Issue #599)
+# Create command context file and marker to allow gh issue create through the hook (Issue #599)
+python3 -c "
+import json; from datetime import datetime, timezone
+with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
+    json.dump({'command': 'refactor', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
+"
 touch /tmp/autonomous_dev_gh_issue_allowed.marker
 
-# Example for individual HIGH finding:
+# Example for individual HIGH finding (include plugin version in body):
 gh issue create --title "Refactor: [genai] Doc-code drift in docs/SECURITY.md" \
-  --body "Found by /refactor --deep analysis..." --label "refactor"
+  --body "Found by /refactor --deep analysis...
+
+**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)" --label "refactor"
 
 # Example for aggregated LOW/MEDIUM:
 gh issue create --title "Refactor sweep: N optimization opportunities" \
-  --body "Aggregated findings from /refactor analysis..." --label "refactor"
+  --body "Aggregated findings from /refactor analysis...
 
-# Clean up marker after issue creation
-rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)" --label "refactor"
+
+# Clean up marker and context file after issue creation
+rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
 ```
 
 If `--issues` was NOT passed, skip this step.

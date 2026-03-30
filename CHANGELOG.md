@@ -1,6 +1,10 @@
 ## [Unreleased]
 
 ### Added
+- **Plugin version stamping in session logs and auto-filed issues** (#630): New `version_reader.py` library provides `get_plugin_version()` returning `"X.Y.Z (abc1234)"` (with git SHA when available) or `"unknown"` on failure; result is module-level cached. `unified_session_tracker.py` now includes a `plugin_version` field in every JSONL session log entry. `continuous-improvement-analyst` TIMING issue bodies include the plugin version via inline `python3 -c` invocation. `/create-issue` and related commands (`/plan-to-issues`, `/improve`, `/refactor`, `/retrospective`) include the version stamp in auto-filed issue bodies. `tests/unit/lib/test_version_reader.py` added with comprehensive coverage.
+- **Command context file mechanism for `/create-issue --quick` hook bypass** (#630): `unified_pre_tool.py` adds Allow-through 4 to the gh issue create gate — an active command context file at `/tmp/autonomous_dev_cmd_context.json` (valid for 1 hour, age checked via file mtime) with `command` set to one of `create-issue`, `plan-to-issues`, `improve`, `refactor`, or `retrospective` authorizes `gh issue create`. This complements the existing marker file (Allow-through 3) and enables `/create-issue --quick` from commands that cannot write the marker file. `tests/unit/hooks/test_gh_issue_command_context.py` added with full coverage.
+
+### Added
 - **`/implement` reuses research from `/create-issue` issue body** (#628): When given an issue reference (`#NNN`), `/implement` fetches the issue body at STEP 0 and calls `detect_issue_research()` at STEP 3 to check for embedded research sections. When three or more research-indicating H2 sections are detected (`is_research_rich=True`), STEP 4 research is skipped and the issue body content is passed directly to the planner at STEP 5. This eliminates redundant research for issues authored by `/create-issue`. `research_persistence.py` gains the new `detect_issue_research(issue_body)` public function with 12 unit tests in `tests/unit/lib/test_detect_issue_research.py`. The `--no-cache` flag overrides detection and forces fresh research.
 
 ### Changed

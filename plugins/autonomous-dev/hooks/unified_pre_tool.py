@@ -177,10 +177,16 @@ GH_ISSUE_AGENTS = {'continuous-improvement-analyst', 'issue-creator'}
 # Marker file path for allowing gh issue create from commands (Issue #599)
 GH_ISSUE_MARKER_PATH = "/tmp/autonomous_dev_gh_issue_allowed.marker"
 
+# Command context file for issue-creating commands (Issue #630)
+GH_ISSUE_COMMAND_CONTEXT_PATH = "/tmp/autonomous_dev_cmd_context.json"
+
+# Commands that are authorized to create GitHub issues (Issue #630)
+GH_ISSUE_COMMANDS = {'create-issue', 'plan-to-issues', 'improve', 'refactor', 'retrospective'}
+
 # Environment variables protected from inline spoofing in Bash commands (Issue #557)
 # Non-prefix vars that don't start with CLAUDE_ are listed individually
 PROTECTED_ENV_VARS = {
-    'PIPELINE_STATE_FILE', 'ENFORCEMENT_LEVEL',
+    'PIPELINE_STATE_FILE', 'ENFORCEMENT_LEVEL', 'AUTONOMOUS_DEV_COMMAND',
 }
 
 # Prefix-based protection: any env var starting with these prefixes is protected (Issue #606)
@@ -604,6 +610,43 @@ def _is_stale_session(state: dict, state_path: "Path") -> bool:
         return True
 
     return False
+
+
+def _is_issue_command_active() -> bool:
+    """Check if an issue-creating command is currently active (Issue #630).
+
+    Reads the command context JSON file written by /create-issue, /plan-to-issues,
+    /improve, /refactor, and /retrospective before they create issues.
+
+    Fail-closed: returns False on any error (missing file, bad JSON, stale timestamp,
+    unknown command).
+
+    Returns:
+        True if a recognized issue command wrote the context file within the last hour.
+    """
+    try:
+        import json as _json
+        import time as _time
+
+        context_path = Path(GH_ISSUE_COMMAND_CONTEXT_PATH)
+        if not context_path.exists():
+            return False
+
+        with open(context_path) as f:
+            data = _json.load(f)
+
+        command = data.get("command")
+        if command not in GH_ISSUE_COMMANDS:
+            return False
+
+        # Use file modification time for age check (harder to spoof than JSON timestamp)
+        age = _time.time() - context_path.stat().st_mtime
+        if age > 3600:
+            return False
+
+        return True
+    except Exception:
+        return False  # Fail-closed on any error
 
 
 def _is_pipeline_active() -> bool:
@@ -1267,6 +1310,10 @@ def _detect_gh_issue_marker_creation(command: str) -> "Optional[str]":
         if agent_name in GH_ISSUE_AGENTS:
             return None
 
+        # Allow-through 3: Issue-creating command is active (Issue #630)
+        if _is_issue_command_active():
+            return None
+
         return (
             "BLOCKED: Cannot create gh issue marker file directly.\n"
             "Use '/create-issue' or '/create-issue --quick' instead."
@@ -1331,6 +1378,10 @@ def _detect_gh_issue_create(command: str) -> "Optional[str]":
                     return None
         except OSError:
             pass  # Marker check failed, continue to block
+
+        # Allow-through 4: Issue-creating command is active (Issue #630)
+        if _is_issue_command_active():
+            return None
 
         return (
             "BLOCKED: Cannot create GitHub issues with 'gh issue create' directly.\n"

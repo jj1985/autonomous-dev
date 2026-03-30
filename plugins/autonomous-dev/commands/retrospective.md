@@ -175,16 +175,23 @@ If `--auto-file` flag is set, file issues for IMMEDIATE findings only:
 
 2. For each IMMEDIATE finding:
    ```bash
+   python3 -c "
+   import json; from datetime import datetime, timezone
+   with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
+       json.dump({'command': 'retrospective', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
+   "
    touch /tmp/autonomous_dev_gh_issue_allowed.marker
    gh issue create -R akaszubski/autonomous-dev \
      --title "[RETRO] {finding title}" \
      --label "retrospective,auto-improvement" \
-     --body "{evidence + proposed edit}"
+     --body "{evidence + proposed edit}
+
+**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)"
    ```
 
 3. Clean up:
    ```bash
-   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker
+   rm -f /tmp/autonomous_dev_gh_issue_allowed.marker /tmp/autonomous_dev_cmd_context.json
    ```
 
 4. Report filed issues with URLs.

@@ -71,7 +71,7 @@ Models predictably game evaluations. Detect these patterns:
     - For each finding, use find-or-create+comment dedup:
       - Search: `gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state open --search "[TIMING] {agent_type}"`
       - If found: `gh issue comment {number} --body "..."`
-      - If not found: `gh issue create --title "[TIMING] {agent}: {finding_type}" --label "auto-improvement" --body-file <temp>`
+      - If not found: `gh issue create --title "[TIMING] {agent}: {finding_type}" --label "auto-improvement" --body-file <temp>` (include `**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` in the body)
     - Circuit breaker: max 3 timing issues per run
     - 3-consecutive-violation minimum before filing (use `check_consecutive_violations()`)
     - Print timing summary table to CLI output via `format_timing_report()`
@@ -211,6 +211,8 @@ gh issue create -R akaszubski/autonomous-dev \
 
 ## Suggested Fix
 {actionable recommendation}
+
+**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)
 
 ---
 *Filed automatically by continuous-improvement-analyst*"

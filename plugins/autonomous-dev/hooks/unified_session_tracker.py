@@ -92,6 +92,12 @@ try:
 except ImportError:
     HAS_PROJECT_UPDATER = False
 
+try:
+    from version_reader import get_plugin_version
+    HAS_VERSION_READER = True
+except ImportError:
+    HAS_VERSION_READER = False
+
 
 # ============================================================================
 # Configuration
@@ -644,6 +650,9 @@ def _write_jsonl_entry(
         feature_ref = os.environ.get("PIPELINE_FEATURE_REF", "")
         if feature_ref:
             entry["feature_ref"] = feature_ref
+
+        # Include plugin version for diagnostics (Issue #630)
+        entry["plugin_version"] = get_plugin_version() if HAS_VERSION_READER else "unknown"
 
         with open(log_file, "a") as f:
             f.write(json.dumps(entry, separators=(",", ":")) + "\n")
