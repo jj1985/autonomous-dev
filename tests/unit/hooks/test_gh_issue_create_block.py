@@ -694,3 +694,162 @@ class TestGhIssueMarkerCreationBlocking:
         result = hook._detect_gh_issue_marker_creation(cmd)
         assert result is not None
         assert "/create-issue" in result
+
+    # ------------------------------------------------------------------
+    # Deny-by-default bypass regression tests (Issue #627 fix)
+    # ------------------------------------------------------------------
+
+    def test_python_json_dump_blocked(self, no_pipeline, no_agent):
+        """python3 -c json.dump to marker file should be blocked."""
+        cmd = (
+            'python3 -c "import json; '
+            "json.dump({}, open('/tmp/autonomous_dev_gh_issue_allowed.marker', 'w'))\""
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "json.dump bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_python_open_wb_blocked(self, no_pipeline, no_agent):
+        """python3 -c open('wb') + write to marker file should be blocked."""
+        cmd = (
+            'python3 -c "f = open(\'/tmp/autonomous_dev_gh_issue_allowed.marker\', \'wb\'); '
+            "f.write(b'x')\""
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "open('wb') bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_python_pickle_dump_blocked(self, no_pipeline, no_agent):
+        """python3 -c pickle.dump to marker file should be blocked."""
+        cmd = (
+            'python3 -c "import pickle; '
+            "pickle.dump('x', open('/tmp/autonomous_dev_gh_issue_allowed.marker', 'wb'))\""
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "pickle.dump bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_python_yaml_dump_blocked(self, no_pipeline, no_agent):
+        """python3 -c yaml.dump to marker file should be blocked."""
+        cmd = (
+            'python3 -c "import yaml; '
+            "yaml.dump({'a':1}, open('/tmp/autonomous_dev_gh_issue_allowed.marker', 'w'))\""
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "yaml.dump bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_python_write_bytes_blocked(self, no_pipeline, no_agent):
+        """python3 -c Path.write_bytes to marker file should be blocked."""
+        cmd = (
+            'python3 -c "Path(\'/tmp/autonomous_dev_gh_issue_allowed.marker\').write_bytes(b\'x\')"'
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "write_bytes bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_python_shutil_copy_blocked(self, no_pipeline, no_agent):
+        """python3 -c shutil.copy to marker file should be blocked."""
+        cmd = (
+            'python3 -c "import shutil; '
+            "shutil.copy('/tmp/src', '/tmp/autonomous_dev_gh_issue_allowed.marker')\""
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "shutil.copy bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_dd_to_marker_blocked(self, no_pipeline, no_agent):
+        """dd of=<marker> should be blocked."""
+        cmd = "dd of=/tmp/autonomous_dev_gh_issue_allowed.marker < /dev/zero bs=1 count=1"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "dd bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_install_to_marker_blocked(self, no_pipeline, no_agent):
+        """install /dev/null <marker> should be blocked."""
+        cmd = "install /dev/null /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "install bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_python_os_open_blocked(self, no_pipeline, no_agent):
+        """python3 -c os.open + os.write to marker file should be blocked."""
+        cmd = (
+            'python3 -c "import os; '
+            "fd=os.open('/tmp/autonomous_dev_gh_issue_allowed.marker', os.O_CREAT|os.O_WRONLY); "
+            "os.write(fd, b'x')\""
+        )
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "os.open bypass must be blocked"
+        assert "BLOCKED" in result
+
+    def test_echo_with_redirect_to_marker_blocked(self, no_pipeline, no_agent):
+        """echo x > <marker> (echo WITH redirect) should be blocked."""
+        cmd = "echo x > /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is not None, "echo with redirect to marker must be blocked"
+        assert "BLOCKED" in result
+
+    # ------------------------------------------------------------------
+    # False positive avoidance (deny-by-default must NOT block these)
+    # ------------------------------------------------------------------
+
+    def test_grep_marker_not_blocked(self, no_pipeline, no_agent):
+        """grep referencing marker name should NOT be blocked."""
+        cmd = "grep autonomous_dev_gh_issue_allowed /var/log/something"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "grep referencing marker must not be blocked"
+
+    def test_echo_mention_no_redirect_not_blocked(self, no_pipeline, no_agent):
+        """echo mentioning marker without redirect to marker should NOT be blocked."""
+        cmd = 'echo "checking for autonomous_dev_gh_issue_allowed.marker"'
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "echo without redirect to marker must not be blocked"
+
+    def test_test_f_marker_not_blocked(self, no_pipeline, no_agent):
+        """test -f <marker> should NOT be blocked."""
+        cmd = "test -f /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "test -f must not be blocked"
+
+    def test_bracket_f_marker_not_blocked(self, no_pipeline, no_agent):
+        """[ -f <marker> ] should NOT be blocked."""
+        cmd = "[ -f /tmp/autonomous_dev_gh_issue_allowed.marker ]"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "[ -f ] must not be blocked"
+
+    def test_stat_marker_not_blocked(self, no_pipeline, no_agent):
+        """stat <marker> should NOT be blocked."""
+        cmd = "stat /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "stat must not be blocked"
+
+    def test_head_marker_not_blocked(self, no_pipeline, no_agent):
+        """head -1 <marker> should NOT be blocked."""
+        cmd = "head -1 /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "head must not be blocked"
+
+    def test_cat_marker_not_blocked(self, no_pipeline, no_agent):
+        """cat <marker> should NOT be blocked (duplicate of existing for completeness)."""
+        cmd = "cat /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "cat must not be blocked"
+
+    def test_rm_marker_not_blocked(self, no_pipeline, no_agent):
+        """rm <marker> should NOT be blocked (duplicate of existing for completeness)."""
+        cmd = "rm /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "rm must not be blocked"
+
+    def test_ls_marker_not_blocked(self, no_pipeline, no_agent):
+        """ls -la <marker> should NOT be blocked (duplicate of existing for completeness)."""
+        cmd = "ls -la /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "ls must not be blocked"
+
+    def test_wc_marker_not_blocked(self, no_pipeline, no_agent):
+        """wc -l <marker> should NOT be blocked."""
+        cmd = "wc -l /tmp/autonomous_dev_gh_issue_allowed.marker"
+        result = hook._detect_gh_issue_marker_creation(cmd)
+        assert result is None, "wc must not be blocked"

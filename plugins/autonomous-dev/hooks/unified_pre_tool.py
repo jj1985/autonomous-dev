@@ -1356,17 +1356,20 @@ def _detect_gh_issue_marker_creation(command: str) -> "Optional[str]":
     authorized.  Allowing arbitrary code to create the file directly would
     short-circuit the entire bypass-prevention mechanism.
 
-    Detection anchors on the marker filename fragment
-    ``autonomous_dev_gh_issue_allowed`` to catch path variations, then filters to
-    write-creating operations (``touch``, redirect ``>``, ``cp``, ``mv``, ``tee``,
-    Python ``Path.touch`` / ``open`` / ``write_text``).
+    Uses deny-by-default logic: if the marker name appears in the command and
+    the operation is NOT provably read-only/delete, it is blocked.  This
+    prevents bypass via novel write methods (e.g. ``python3 -c "json.dump(...)"``,
+    ``dd``, ``install``, ``os.open``).
 
-    Read-only and delete operations (``cat``, ``ls``, ``rm``) are intentionally
-    NOT blocked.
+    Read-only and delete operations (``cat``, ``ls``, ``rm``, ``stat``, ``test``,
+    ``head``, ``tail``, ``wc``, ``file``, ``readlink``, ``[``) are intentionally
+    NOT blocked, nor are commands that merely *mention* the marker name in
+    output text (``grep``, ``echo``/``printf`` without redirect to the marker).
 
     Allow-through conditions (same guards as ``_detect_gh_issue_create``):
     1. ``_is_pipeline_active()`` — the pipeline itself writes the marker legitimately.
     2. Agent name in ``GH_ISSUE_AGENTS`` — authorised agents may also write it.
+    3. ``_is_issue_command_active()`` — issue-creating command is active.
     Note: there is deliberately NO marker-file allow-through here (circular).
 
     Args:
@@ -1376,37 +1379,65 @@ def _detect_gh_issue_marker_creation(command: str) -> "Optional[str]":
         Block reason string if marker creation detected and not allowed,
         None if the command is clean or allowed.
     """
-    import re
-
     try:
-        marker_anchor = r"autonomous_dev_gh_issue_allowed"
+        marker_anchor = "autonomous_dev_gh_issue_allowed"
 
-        write_patterns = [
-            # touch <path containing marker name>
-            rf"touch\s+.*{marker_anchor}",
-            # redirect writes: > <path>, >> <path>
-            rf">+\s*\S*{marker_anchor}",
-            # cp <src> <dst containing marker name>
-            rf"cp\s+.*{marker_anchor}",
-            # mv <src> <dst containing marker name>
-            rf"mv\s+.*{marker_anchor}",
-            # tee <path containing marker name>
-            rf"tee\s+.*{marker_anchor}",
-            # Python Path(...).touch()
-            rf"Path\s*\(.*{marker_anchor}.*\)\s*\.touch\s*\(",
-            # Python open(<marker path>, ...) write modes
-            rf"open\s*\(.*{marker_anchor}.*,\s*['\"]w",
-            # Python .write_text(  near marker name in same statement
-            rf"{marker_anchor}.*\.write_text\s*\(",
-            rf"\.write_text\s*\(.*{marker_anchor}",
-        ]
-
-        matched = any(
-            re.search(pattern, command, re.IGNORECASE) for pattern in write_patterns
-        )
-
-        if not matched:
+        # Fast path: marker name not mentioned at all → nothing to check
+        if marker_anchor not in command.lower():
             return None
+
+        # --- Identify the command segment that references the marker ---
+        # For piped commands, only inspect the segment containing the marker.
+        cmd_lower = command.lower()
+        segments = command.split("|")
+        relevant_segment = command  # default: whole command
+        for seg in segments:
+            if marker_anchor in seg.lower():
+                relevant_segment = seg.strip()
+                break
+
+        seg_lower = relevant_segment.lower()
+        seg_stripped = relevant_segment.strip()
+
+        # --- Read-only / delete verbs: first token of the relevant segment ---
+        # Extract the first token (the command verb) from the segment.
+        # Handle leading env vars (FOO=bar cmd ...) and sudo.
+        tokens = seg_stripped.split()
+        verb = ""
+        for tok in tokens:
+            # Skip env-var assignments (VAR=value)
+            if "=" in tok and not tok.startswith("-"):
+                continue
+            # Skip sudo
+            if tok == "sudo":
+                continue
+            verb = tok.lower()
+            break
+
+        readonly_verbs = {
+            "cat", "ls", "stat", "test", "head", "tail", "wc", "file",
+            "rm", "readlink", "[",
+        }
+        if verb in readonly_verbs:
+            return None
+
+        # --- Reference-only mentions (grep, echo/printf without redirect to marker) ---
+        if verb == "grep":
+            return None
+
+        # echo/printf: allowed UNLESS a redirect targets the marker file
+        if verb in ("echo", "printf"):
+            # Check if there is a redirect (> or >>) followed by the marker name
+            # in the same segment
+            import re
+            if re.search(
+                r">\s*\S*" + re.escape(marker_anchor), seg_lower
+            ):
+                pass  # Fall through to blocking
+            else:
+                return None
+
+        # --- Allow-through conditions (unchanged) ---
 
         # Allow-through 1: Pipeline is active (writes the marker legitimately)
         if _is_pipeline_active():

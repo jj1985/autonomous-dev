@@ -89,10 +89,11 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 
 **Marker File Creation Guard** (Issue #627):
 - Blocks direct creation of the marker file `autonomous_dev_gh_issue_allowed.marker` outside approved contexts, closing the bypass where manually writing the marker file would short-circuit the gh issue create gate
-- Detected write operations: `touch`, redirect `>`, `cp`, `mv`, `tee`, Python `Path.touch()`, `open(..., "w")`, `.write_text()`; anchored on the filename fragment `autonomous_dev_gh_issue_allowed` to catch path variations
-- Read-only and delete operations (`cat`, `ls`, `rm`) are not blocked — only write-creating operations
+- Uses deny-by-default logic: if the substring `autonomous_dev_gh_issue_allowed` appears anywhere in the command, the command is blocked unless the operation is provably read-only or a delete — this prevents bypass via novel write methods (e.g. `python3 -c "..."`, `dd`, `install`, `os.open`) that a fixed allowlist would miss
+- Allowed (not blocked): read-only verbs (`cat`, `ls`, `stat`, `test`, `head`, `tail`, `wc`, `file`, `readlink`, `[`), delete (`rm`), reference-only mentions (`grep`; `echo`/`printf` without a redirect targeting the marker file)
 - Allow-through 1: active `/implement` pipeline (the pipeline legitimately writes the marker when authorizing issue creation)
 - Allow-through 2: agent name in `GH_ISSUE_AGENTS` (`continuous-improvement-analyst`, `issue-creator`)
+- Allow-through 3: issue-creating command is active (`_is_issue_command_active()`) — commands such as `/create-issue`, `/plan-to-issues`, `/improve`, `/refactor`, `/retrospective`
 - No marker-file allow-through (circular — the guard protects the marker itself)
 - Fails open on any detection error to avoid blocking legitimate work
 
