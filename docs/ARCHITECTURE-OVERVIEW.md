@@ -98,6 +98,8 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 
 **Key Features**: Dispatcher pattern (env var control), graceful degradation (non-blocking), backward compatible
 
+**Hook Output Visibility** (Issue #660): `permissionDecisionReason` on deny is model-visible — block messages include `REQUIRED NEXT ACTION:` carrots that the model reads and acts on. `systemMessage` is user-visible (injected into the conversation). These are distinct channels: enforcement directives belong in `permissionDecisionReason`; user notifications belong in `systemMessage`. See [docs/HOOKS.md](docs/HOOKS.md) for full output format specification.
+
 **Active Hooks**:
 - **PreToolUse**: unified_pre_tool.py (4-layer MCP validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass MCP layers but Agent/Task tool calls also pass through the Pipeline Ordering Gate before extensions — Issues #625, #629, #632)
 - **PrePromptSubmit**: unified_prompt_validator.py (workflow enforcement)

@@ -1115,7 +1115,10 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
             return (
                 f"BLOCKED: Inline env var spoofing detected — '{var}' cannot be "
                 f"set inline in Bash commands. Protected environment variables "
-                f"are managed by the pipeline. (Issue #557)"
+                f"are managed by the pipeline. (Issue #557) "
+                f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                f"from your command. Do NOT attempt to set protected variables "
+                f"via alternative methods."
             )
 
         # Pattern 2: export VAR=value
@@ -1124,7 +1127,10 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
             return (
                 f"BLOCKED: Export of protected env var '{var}' detected. "
                 f"Protected environment variables cannot be overridden via "
-                f"Bash export. (Issue #557)"
+                f"Bash export. (Issue #557) "
+                f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                f"from your command. Do NOT attempt to set protected variables "
+                f"via alternative methods."
             )
 
         # Pattern 3: env [-flags] [--] VAR=value command
@@ -1133,7 +1139,10 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
             return (
                 f"BLOCKED: Env command spoofing detected — '{var}' cannot be "
                 f"set via the env command. Protected environment variables "
-                f"are managed by the pipeline. (Issue #557)"
+                f"are managed by the pipeline. (Issue #557) "
+                f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                f"from your command. Do NOT attempt to set protected variables "
+                f"via alternative methods."
             )
 
     # --- Pass 2: Prefix-based detection (Issue #606) ---
@@ -1169,26 +1178,38 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
                 return (
                     f"BLOCKED: Export of protected env var '{var}' detected. "
                     f"Variables matching protected prefix cannot be overridden "
-                    f"via Bash export. (Issue #606)"
+                    f"via Bash export. (Issue #606) "
+                    f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                    f"from your command. Do NOT attempt to set protected variables "
+                    f"via alternative methods."
                 )
             if re.search(env_pat, stripped):
                 return (
                     f"BLOCKED: Env command spoofing detected — '{var}' cannot be "
                     f"set via the env command. Variables matching protected prefix "
-                    f"are managed by the pipeline. (Issue #606)"
+                    f"are managed by the pipeline. (Issue #606) "
+                    f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                    f"from your command. Do NOT attempt to set protected variables "
+                    f"via alternative methods."
                 )
             if re.search(inline_pat, stripped):
                 return (
                     f"BLOCKED: Inline env var spoofing detected — '{var}' cannot be "
                     f"set inline in Bash commands. Variables matching protected prefix "
-                    f"are managed by the pipeline. (Issue #606)"
+                    f"are managed by the pipeline. (Issue #606) "
+                    f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                    f"from your command. Do NOT attempt to set protected variables "
+                    f"via alternative methods."
                 )
             # Fallback: var was found in assignment but specific pattern didn't re-match
             # (shouldn't happen, but fail safe)
             return (
                 f"BLOCKED: Protected env var '{var}' assignment detected. "
                 f"Variables matching protected prefix cannot be set in "
-                f"Bash commands. (Issue #606)"
+                f"Bash commands. (Issue #606) "
+                f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                f"from your command. Do NOT attempt to set protected variables "
+                f"via alternative methods."
             )
 
     # Pattern 4: bash -c / sh -c subshell containing protected var assignments
@@ -1202,7 +1223,10 @@ def _detect_env_spoofing(command: str) -> "Optional[str]":
             return (
                 f"BLOCKED: Subshell env spoofing detected — protected environment "
                 f"variable assignment found inside bash -c / sh -c subshell. "
-                f"Inner violation: {inner_result}"
+                f"Inner violation: {inner_result} "
+                f"REQUIRED NEXT ACTION: Remove the environment variable override "
+                f"from your command. Do NOT attempt to set protected variables "
+                f"via alternative methods."
             )
 
     return None
@@ -1454,7 +1478,9 @@ def _detect_gh_issue_marker_creation(command: str) -> "Optional[str]":
 
         return (
             "BLOCKED: Cannot create gh issue marker file directly.\n"
-            "Use '/create-issue' or '/create-issue --quick' instead."
+            "REQUIRED NEXT ACTION: Use /create-issue or /create-issue --quick "
+            "to create issues through the approved pipeline. "
+            "Do NOT create the marker file directly."
         )
     except Exception:
         return None  # Fail-open on any error
@@ -1523,7 +1549,7 @@ def _detect_gh_issue_create(command: str) -> "Optional[str]":
 
         return (
             "BLOCKED: Cannot create GitHub issues with 'gh issue create' directly.\n"
-            "Use '/create-issue' or '/create-issue --quick' instead.\n\n"
+            "REQUIRED NEXT ACTION: Use /create-issue or /create-issue --quick instead.\n\n"
             "/create-issue includes research, duplicate detection, and ensures "
             "proper formatting.\n\n"
             "FORBIDDEN: Do NOT suggest the user run 'gh issue create' manually, "
@@ -1559,7 +1585,9 @@ def _detect_settings_json_write(command: str) -> "Optional[str]":
             if re.search(pat, target):
                 return (
                     f"BLOCKED: Bash write to '{target}' during active pipeline. "
-                    f"Settings files are protected during /implement sessions. (Issue #557)"
+                    f"Settings files are protected during /implement sessions. (Issue #557) "
+                    f"REQUIRED NEXT ACTION: Complete the current /implement pipeline first, "
+                    f"then modify settings. Do NOT write settings during an active pipeline."
                 )
 
     # Also check sed -i and python -c patterns
@@ -1567,7 +1595,9 @@ def _detect_settings_json_write(command: str) -> "Optional[str]":
         if re.search(r'\bsed\s+.*-i.*' + pat, command):
             return (
                 f"BLOCKED: In-place edit of settings file during active pipeline. "
-                f"Settings files are protected during /implement sessions. (Issue #557)"
+                f"Settings files are protected during /implement sessions. (Issue #557) "
+                f"REQUIRED NEXT ACTION: Complete the current /implement pipeline first, "
+                f"then modify settings. Do NOT write settings during an active pipeline."
             )
 
     return None
@@ -2143,7 +2173,10 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
                                 f"that reference protected path '{seg}'. This pattern may be "
                                 f"attempting to bypass write enforcement. "
                                 f"Infrastructure files require the /implement pipeline. "
-                                f"Run: /implement \"description\""
+                                f"Run: /implement \"description\" "
+                                f"REQUIRED NEXT ACTION: Delegate file modifications to the "
+                                f"implementer agent via the Agent tool. Do NOT use Bash to "
+                                f"write to infrastructure files."
                             )
                 else:
                     target_paths.append(t)
@@ -2175,13 +2208,19 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
                         f"BLOCKED (repeated attempt): Bash command writes to protected "
                         f"file '{file_name}'. This path was already denied recently. "
                         f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
-                        f"require the /implement pipeline. Run: /implement \"description\""
+                        f"require the /implement pipeline. Run: /implement \"description\" "
+                        f"REQUIRED NEXT ACTION: Delegate file modifications to the "
+                        f"implementer agent via the Agent tool. Do NOT use Bash to "
+                        f"write to infrastructure files."
                     )
                 else:
                     block_reason = (
                         f"BLOCKED: Bash command writes to protected file '{file_name}'. "
                         f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
-                        f"require the /implement pipeline. Run: /implement \"description\""
+                        f"require the /implement pipeline. Run: /implement \"description\" "
+                        f"REQUIRED NEXT ACTION: Delegate file modifications to the "
+                        f"implementer agent via the Agent tool. Do NOT use Bash to "
+                        f"write to infrastructure files."
                     )
                 _update_deny_cache(fp)
                 return (file_name, block_reason)
@@ -2337,11 +2376,20 @@ def main():
                     block_reason = (
                         f"BLOCKED: Direct edit to '{file_name}' denied. "
                         f"Infrastructure files (agents/, commands/, hooks/, lib/, skills/) "
-                        f"require the /implement pipeline. Run: /implement \"description\""
+                        f"require the /implement pipeline. Run: /implement \"description\" "
+                        f"REQUIRED NEXT ACTION: Run /implement with a description of your "
+                        f"change. Delegate the edit to the implementer agent. "
+                        f"Do NOT write infrastructure files directly."
                     )
                     _log_deviation(file_name, tool_name, "infrastructure_protection_block")
                     _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
-                    output_decision("deny", block_reason, system_message=block_reason)
+                    output_decision(
+                        "deny", block_reason,
+                        system_message=(
+                            f"BLOCKED: Direct edit to '{file_name}' denied. "
+                            f"Use /implement to modify infrastructure files."
+                        ),
+                    )
                     sys.exit(0)
 
                 # Issue #557: Block settings.json writes during active pipeline
@@ -2353,11 +2401,20 @@ def main():
                                 block_reason = (
                                     f"BLOCKED: Write to '{fname}' denied during active pipeline. "
                                     f"Settings files are protected during /implement sessions. "
-                                    f"(Issue #557)"
+                                    f"(Issue #557) "
+                                    f"REQUIRED NEXT ACTION: Complete the current /implement "
+                                    f"pipeline first, then modify settings. "
+                                    f"Do NOT write settings during an active pipeline."
                                 )
                                 _log_deviation(fname, tool_name, "settings_json_write_block")
                                 _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
-                                output_decision("deny", block_reason, system_message=block_reason)
+                                output_decision(
+                                    "deny", block_reason,
+                                    system_message=(
+                                        f"BLOCKED: Write to '{fname}' denied during pipeline. "
+                                        f"Complete /implement first."
+                                    ),
+                                )
                                 sys.exit(0)
                         except Exception:
                             pass  # Don't block on check failure
@@ -2370,7 +2427,10 @@ def main():
                     if bash_block is not None:
                         _log_deviation(bash_block[0], tool_name, "bash_infrastructure_protection_block")
                         _log_pretool_activity(tool_name, tool_input, "deny", bash_block[1])
-                        output_decision("deny", bash_block[1], system_message=bash_block[1])
+                        output_decision(
+                            "deny", bash_block[1],
+                            system_message="BLOCKED: Bash write to infrastructure file. Delegate to implementer agent.",
+                        )
                         sys.exit(0)
 
                     # Issue #557, #606: Detect inline env var spoofing
@@ -2389,7 +2449,10 @@ def main():
                             spoof_reason += " [CIRCUMVENTION-ESCALATION]"
                         _log_deviation("env_spoofing", tool_name, "env_var_spoofing_block")
                         _log_pretool_activity(tool_name, tool_input, "deny", spoof_reason)
-                        output_decision("deny", spoof_reason, system_message=spoof_reason)
+                        output_decision(
+                            "deny", spoof_reason,
+                            system_message="BLOCKED: Protected environment variable cannot be overridden.",
+                        )
                         sys.exit(0)
 
                     # Issue #627: Block direct creation of gh issue marker file
@@ -2397,7 +2460,10 @@ def main():
                     if marker_block:
                         _log_deviation("gh_issue_marker", tool_name, "gh_issue_marker_creation_blocked")
                         _log_pretool_activity(tool_name, tool_input, "deny", marker_block)
-                        output_decision("deny", marker_block, system_message=marker_block)
+                        output_decision(
+                            "deny", marker_block,
+                            system_message="BLOCKED: Use /create-issue to create GitHub issues.",
+                        )
                         sys.exit(0)
 
                     # Issue #599: Block direct gh issue create outside approved contexts
@@ -2405,7 +2471,10 @@ def main():
                     if gh_block:
                         _log_deviation("gh_issue_create", tool_name, "gh_issue_create_blocked")
                         _log_pretool_activity(tool_name, tool_input, "deny", gh_block)
-                        output_decision("deny", gh_block, system_message=gh_block)
+                        output_decision(
+                            "deny", gh_block,
+                            system_message="BLOCKED: Use /create-issue or /create-issue --quick.",
+                        )
                         sys.exit(0)
 
                     # Issue #557: Block settings.json writes during active pipeline
@@ -2415,7 +2484,10 @@ def main():
                             if settings_block is not None:
                                 _log_deviation("settings.json", tool_name, "settings_json_write_block")
                                 _log_pretool_activity(tool_name, tool_input, "deny", settings_block)
-                                output_decision("deny", settings_block, system_message=settings_block)
+                                output_decision(
+                                    "deny", settings_block,
+                                    system_message="BLOCKED: Settings write during pipeline. Complete /implement first.",
+                                )
                                 sys.exit(0)
                     except Exception:
                         pass  # Don't block on check failure
@@ -2433,7 +2505,10 @@ def main():
                         block_reason = (
                             "WORKFLOW ENFORCEMENT: /implement is active — code changes must be "
                             "made by pipeline agents (implementer, test-master, doc-master), "
-                            "not the coordinator. Delegate this work to the appropriate agent."
+                            "not the coordinator. Delegate this work to the appropriate agent. "
+                            "REQUIRED NEXT ACTION: Invoke the appropriate agent (implementer, "
+                            "test-master, or doc-master) via the Agent tool. "
+                            "Do NOT write code directly."
                         )
                         _log_deviation(
                             tool_input.get("file_path", "bash_command")
@@ -2442,7 +2517,10 @@ def main():
                             "explicit_implement_coordinator_block_native",
                         )
                         _log_pretool_activity(tool_name, tool_input, "deny", block_reason)
-                        output_decision("deny", block_reason, system_message=block_reason)
+                        output_decision(
+                            "deny", block_reason,
+                            system_message="WORKFLOW ENFORCEMENT: Delegate code changes to pipeline agents.",
+                        )
                         sys.exit(0)
 
             # Layer 4: Pipeline ordering gate (Issues #625, #629, #632)
@@ -2451,14 +2529,17 @@ def main():
                 ord_decision, ord_reason = validate_pipeline_ordering(tool_name, tool_input)
                 if ord_decision == "deny":
                     _log_pretool_activity(tool_name, tool_input, "deny", ord_reason)
-                    output_decision("deny", ord_reason, system_message=ord_reason)
+                    output_decision(
+                        "deny", ord_reason,
+                        system_message="ORDERING: Wait for prerequisite agents to complete.",
+                    )
                     sys.exit(0)
 
             # Run extensions even for native tools
             ext_decision, ext_reason = _run_extensions(tool_name, tool_input)
             if ext_decision == "deny":
                 _log_pretool_activity(tool_name, tool_input, "deny", ext_reason)
-                output_decision("deny", ext_reason)
+                output_decision("deny", ext_reason, system_message=ext_reason)
                 sys.exit(0)
 
             reason = f"Native tool '{tool_name}' - hook bypass (settings.json governs)"

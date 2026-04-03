@@ -50,6 +50,26 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 |------|---------|--------------|
 | **unified_pre_tool.py** | Native tool fast path + 4-layer permission validation (sandbox → MCP security → agent auth → batch approval) + pipeline ordering gate + hook extensions. 84% reduction in permission prompts. Blocks git bypass flags (--no-verify, --force push, reset --hard, clean -f). Blocks direct Write/Edit to infrastructure files (`agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md`) outside `/implement` pipeline — scoped to autonomous-dev repos only. Also inspects Bash command bodies for shell file-write patterns (sed -i, cp/mv, redirects, tee, python3 -c writes, cat heredoc `cat > file << EOF`, `dd of=FILE`, `Path.write_text/write_bytes` in python3 -c, python3 heredoc with open()/Path.write_text inside) to the same protected paths, closing the bypass gap where wrapping a write in Bash would evade the gate (Issue #558). Python snippet analysis (python3 -c and heredoc bodies) is backed by `python_write_detector.py` (Issue #589) using AST-based extraction with regex fallback; handles aliased `Path` imports, `shutil.copy/move` destination arguments, and `eval()`/`exec()` with dynamic arguments. Deny cache at `/tmp/.claude_deny_cache.jsonl` tracks repeated bypass attempts within a 60-second window and escalates the block message on second attempt (Issue #558). Detects inline env var spoofing in Bash commands (e.g. `VAR=value cmd` or `export VAR=value`) for protected pipeline variables. Individual variables protected by exact match: CLAUDE_AGENT_NAME, CLAUDE_AGENT_ROLE, PIPELINE_STATE_FILE, ENFORCEMENT_LEVEL, CLAUDE_SESSION_ID. Additionally, any variable whose name starts with the `CLAUDE_` prefix is blocked by prefix-based protection (Issue #606, `PROTECTED_ENV_PREFIXES`), preventing new CLAUDE_* variables from being spoofed without requiring explicit listing. A session-scoped escalation tracker (`_track_spoofing_escalation()`) persists attempt counts to `~/.claude/logs/spoofing_attempts.json` across hook invocations; repeated spoofing attempts within the same session produce an escalated block message — blocks attempts to forge agent identity or downgrade enforcement level. Blocks Write/Edit to `settings.json` and `settings.local.json` during active `/implement` pipeline sessions. Verifies HMAC integrity of pipeline state files to detect tampering. (Issue #557) Alignment gate: when `/implement` is active, blocks coordinator Write/Edit/Bash to code files until STEP 2 (PROJECT.md alignment) has completed — `alignment_passed: true` must be set in the pipeline state before any code changes are permitted; fails closed on HMAC failure or missing state. `alignment_passed` field included in the HMAC message to prevent tampering. (Issue #585) Blocks direct `gh issue create` in Bash outside the `/implement` pipeline, authorized issue-creation agents (`continuous-improvement-analyst`, `issue-creator`), or commands that write a command context file at `/tmp/autonomous_dev_cmd_context.json` (Issue #599, #630). | SANDBOX_ENABLED, MCP_AUTO_APPROVE, HOOK_EXTENSIONS_ENABLED, PRE_TOOL_PIPELINE_ORDERING |
 
+**Hook Output Format and Visibility Semantics** (Issue #660):
+
+The PreToolUse hook outputs a JSON object with two distinct channels that have different visibility:
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow|deny|ask",
+    "permissionDecisionReason": "Model-visible reason; used for REQUIRED NEXT ACTION carrots"
+  },
+  "systemMessage": "User-visible message injected into conversation (optional)"
+}
+```
+
+- **`permissionDecisionReason`** (model-visible on deny): Read by the model when a tool call is blocked. Block messages include a `REQUIRED NEXT ACTION:` carrot directive telling the model exactly what to do next (e.g., "Run /implement", "Use /create-issue", "Wait for prerequisite agents"). This is the primary enforcement mechanism — the carrot is a model-readable instruction, not a user-facing message.
+- **`systemMessage`** (user-visible): Injected into the conversation context as a system-level message visible to the human user. Used for escalated or user-facing notifications. `systemMessage` is omitted when not needed; its presence is optional.
+
+This distinction is fundamental: nudges in `systemMessage` are user-readable but the model cannot act on them. Enforcement directives in `permissionDecisionReason` are model-readable and drive corrective behavior. See MEMORY.md entry "Critical Behavioral Issue" for why this distinction matters.
+
 **unified_pre_tool.py Native Tool Fast Path** (v4.1.0+):
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip the 4-layer MCP validation
 - Governed by settings.json permissions instead

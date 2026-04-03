@@ -155,7 +155,9 @@ def check_ordering_prerequisites(
             passed=False,
             reason=(
                 f"ORDERING VIOLATION: '{target}' requires [{missing_str}] to complete first. "
-                f"Mode: {validation_mode}."
+                f"Mode: {validation_mode}. "
+                f"REQUIRED NEXT ACTION: Wait for the prerequisite agent(s) to complete "
+                f"before invoking this one. Do NOT skip or reorder pipeline agents."
             ),
             missing_agents=sorted(missing),
         )

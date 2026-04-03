@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Changed
+- **Stick+carrot enforcement pattern in all hook block messages** (#660): Every deny path in `unified_pre_tool.py` now includes a `REQUIRED NEXT ACTION:` carrot directive in the `permissionDecisionReason` field, giving the model an explicit next step after a block (e.g., "Run /implement", "Use /create-issue --quick", "Wait for prerequisite agents to complete"). `agent_ordering_gate.py` ordering violation messages include the same carrot. New tests in `tests/unit/hooks/test_stick_carrot_directives.py` validate that deny messages carry both the original block prefix and the REQUIRED NEXT ACTION directive.
+- **Documented `systemMessage` vs `permissionDecisionReason` visibility architecture** (#660): `docs/HOOKS.md` and `docs/ARCHITECTURE-OVERVIEW.md` now document that `permissionDecisionReason` on deny is model-visible (enforcement carrots go here) while `systemMessage` is user-visible (user notifications go here). This distinction was previously undocumented and is fundamental to why the carrot pattern works.
+
 ### Added
 - **`deploy-all.sh` now syncs settings.json hook registrations after file copy** (#648): Every deploy step (global `~/.claude/`, per-repo `.claude/`, and remote Mac Studio) now calls `scripts/sync_settings_hooks.py` immediately after rsync/cp to ensure hook lifecycle events in `settings.json` stay aligned with deployed hook files. The new `sync_settings_hooks.py` CLI wraps `SettingsMerger` and accepts `--global` (merges `config/global_settings_template.json` into `~/.claude/settings.json`) or `--repo <path>` (merges `templates/settings.default.json` into `<repo>/.claude/settings.json`). Supports `--dry-run` and `--count-only` modes. Outputs JSON to stdout (`success`, `hooks_added`, `hooks_preserved`, `hooks_migrated`, `total_lifecycle_events`, `message`). Non-fatal: sync failures emit a warning but do not abort deploy. Tests in `tests/unit/scripts/test_sync_settings_hooks.py`.
 
