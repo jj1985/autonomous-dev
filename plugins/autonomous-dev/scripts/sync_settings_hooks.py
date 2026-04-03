@@ -2,15 +2,18 @@
 """
 Sync settings.json hook registrations during deploy.
 
-CLI wrapper around SettingsMerger for use by deploy-all.sh. Ensures that
-settings.json in global (~/.claude/) and per-repo (.claude/) locations have
-all hook lifecycle events registered from the canonical templates.
+Replaces the hooks key in settings.json with the canonical template hooks,
+preserving all other user configuration (permissions, mcpServers, etc.).
+
+Previous implementation used SettingsMerger.merge_settings() which did ADDITIVE
+hook merging, causing duplicate hooks on each deploy run. This version does a
+full REPLACE of the hooks key to ensure idempotency.
 
 Usage:
-    # Global mode: merge global_settings_template.json into ~/.claude/settings.json
+    # Global mode: replace hooks in ~/.claude/settings.json from template
     python3 sync_settings_hooks.py --global
 
-    # Per-repo mode: merge settings.default.json into <repo>/.claude/settings.json
+    # Per-repo mode: replace hooks in <repo>/.claude/settings.json from template
     python3 sync_settings_hooks.py --repo /path/to/repo
 
     # Dry-run (no writes)
@@ -31,7 +34,9 @@ Agent: implementer
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict
 
@@ -46,31 +51,10 @@ def _find_plugin_root() -> Path:
 
 
 def _setup_imports() -> None:
-    """Add lib directory to sys.path for SettingsMerger import."""
+    """Add lib directory to sys.path for potential future imports."""
     lib_path = _find_plugin_root() / "lib"
     if str(lib_path) not in sys.path:
         sys.path.insert(0, str(lib_path))
-
-
-# Setup imports before importing SettingsMerger
-_setup_imports()
-
-try:
-    from settings_merger import SettingsMerger, MergeResult
-except ImportError:
-    # Fallback: try package import
-    try:
-        from autonomous_dev.lib.settings_merger import SettingsMerger, MergeResult
-    except ImportError:
-        print(json.dumps({
-            "success": False,
-            "hooks_added": 0,
-            "hooks_preserved": 0,
-            "hooks_migrated": 0,
-            "total_lifecycle_events": 0,
-            "message": "Failed to import SettingsMerger library",
-        }))
-        sys.exit(1)
 
 
 def _count_lifecycle_events(settings_path: Path) -> int:
@@ -91,13 +75,85 @@ def _count_lifecycle_events(settings_path: Path) -> int:
         return 0
 
 
+def _replace_hooks(
+    user_path: Path, template_path: Path, *, dry_run: bool = False
+) -> Dict[str, Any]:
+    """Replace hooks key in settings from template, preserving all other keys.
+
+    This is the core fix for the duplicate hooks bug. Instead of additively
+    merging hooks (which duplicates them on each run), we replace the entire
+    hooks key with the template's canonical hooks.
+
+    Args:
+        user_path: Path to the user's settings.json
+        template_path: Path to the template settings file
+        dry_run: If True, compute changes but do not write
+
+    Returns:
+        Result dict with success status and hook counts
+
+    Raises:
+        json.JSONDecodeError: If template or existing settings contain invalid JSON
+    """
+    # Read template
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+    template_hooks = template.get("hooks", {})
+
+    # Read existing settings (or create empty)
+    if user_path.exists():
+        user_settings = json.loads(user_path.read_text(encoding="utf-8"))
+    else:
+        user_settings = {}
+
+    # Count what's changing
+    old_hooks = user_settings.get("hooks", {})
+    old_events = set(old_hooks.keys())
+    new_events = set(template_hooks.keys())
+
+    # Replace hooks entirely
+    user_settings["hooks"] = template_hooks
+
+    if not dry_run:
+        # Atomic write
+        user_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(user_path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(user_settings, f, indent=2)
+                f.write("\n")
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, str(user_path))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    total_events = len(template_hooks)
+    hooks_added = len(new_events - old_events)
+    hooks_preserved = len(new_events & old_events)
+
+    return {
+        "success": True,
+        "hooks_added": hooks_added,
+        "hooks_preserved": hooks_preserved,
+        "hooks_migrated": 0,
+        "total_lifecycle_events": total_events,
+        "message": (
+            f"Hooks replaced: {total_events} lifecycle events "
+            f"({hooks_added} added, {hooks_preserved} updated)"
+        ),
+    }
+
+
 def sync_global(*, dry_run: bool = False, count_only: bool = False) -> Dict[str, Any]:
     """Sync global settings.json hook registrations.
 
-    Merges config/global_settings_template.json into ~/.claude/settings.json.
+    Replaces hooks in ~/.claude/settings.json from global_settings_template.json.
 
     Args:
-        dry_run: If True, merge without writing
+        dry_run: If True, compute changes without writing
         count_only: If True, only return hook count
 
     Returns:
@@ -128,24 +184,7 @@ def sync_global(*, dry_run: bool = False, count_only: bool = False) -> Dict[str,
             "message": f"Template not found: {template_path}",
         }
 
-    # Use Path.home() as project_root for global settings
-    merger = SettingsMerger(project_root=str(Path.home()))
-    result = merger.merge_settings(
-        template_path=template_path,
-        user_path=user_path,
-        write_result=not dry_run,
-    )
-
-    total_events = _count_lifecycle_events(user_path) if not dry_run else 0
-
-    return {
-        "success": result.success,
-        "hooks_added": result.hooks_added,
-        "hooks_preserved": result.hooks_preserved,
-        "hooks_migrated": result.hooks_migrated,
-        "total_lifecycle_events": total_events,
-        "message": result.message,
-    }
+    return _replace_hooks(user_path, template_path, dry_run=dry_run)
 
 
 def sync_repo(
@@ -153,11 +192,11 @@ def sync_repo(
 ) -> Dict[str, Any]:
     """Sync per-repo settings.json hook registrations.
 
-    Merges templates/settings.default.json into <repo>/.claude/settings.json.
+    Replaces hooks in <repo>/.claude/settings.json from settings.default.json.
 
     Args:
         repo_path: Path to the repository root
-        dry_run: If True, merge without writing
+        dry_run: If True, compute changes without writing
         count_only: If True, only return hook count
 
     Returns:
@@ -199,23 +238,7 @@ def sync_repo(
             "message": f"Repository path not found: {repo_path}",
         }
 
-    merger = SettingsMerger(project_root=str(repo))
-    result = merger.merge_settings(
-        template_path=template_path,
-        user_path=user_path,
-        write_result=not dry_run,
-    )
-
-    total_events = _count_lifecycle_events(user_path) if not dry_run else 0
-
-    return {
-        "success": result.success,
-        "hooks_added": result.hooks_added,
-        "hooks_preserved": result.hooks_preserved,
-        "hooks_migrated": result.hooks_migrated,
-        "total_lifecycle_events": total_events,
-        "message": result.message,
-    }
+    return _replace_hooks(user_path, template_path, dry_run=dry_run)
 
 
 def main() -> None:
