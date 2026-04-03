@@ -502,9 +502,9 @@ install_hook_files() {
         return 1
     fi
 
-    # Get list of .py files from hooks directory
+    # Get list of .py and .sh files from hooks directory
     local hook_files
-    hook_files=$(find "$hook_source_dir" -maxdepth 1 -type f -name "*.py")
+    hook_files=$(find "$hook_source_dir" -maxdepth 1 -type f \( -name "*.py" -o -name "*.sh" \))
 
     if [[ -z "$hook_files" ]]; then
         log_info "No hook files found to install"
