@@ -10,7 +10,7 @@ Ensures install_manifest.json is BIDIRECTIONALLY SYNCED with source directories.
 AUTOMATICALLY UPDATES the manifest when files are added OR removed.
 
 Scans:
-- hooks/*.py → manifest components.hooks.files
+- hooks/*.py, hooks/*.sh → manifest components.hooks.files
 - lib/*.py → manifest components.lib.files
 - agents/*.md → manifest components.agents.files
 - commands/*.md → manifest components.commands.files (excludes archive/)
@@ -71,6 +71,7 @@ def scan_source_files(plugin_dir: Path) -> dict:
     # Define what to scan: (directory, pattern, component_name, recursive)
     scans = [
         ("hooks", "*.py", "hooks", False),
+        ("hooks", "*.sh", "hooks", False),
         ("lib", "*.py", "lib", False),
         ("agents", "*.md", "agents", False),
         ("commands", "*.md", "commands", False),  # Top level only

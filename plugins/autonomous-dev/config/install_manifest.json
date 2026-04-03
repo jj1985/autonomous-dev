@@ -78,6 +78,10 @@
     },
     "hooks": {
       "files": [
+        "plugins/autonomous-dev/hooks/PreToolUseWrite-protect-sensitive.sh",
+        "plugins/autonomous-dev/hooks/SessionStart-batch-recovery.sh",
+        "plugins/autonomous-dev/hooks/UserPromptSubmit-orchestrator.sh",
+        "plugins/autonomous-dev/hooks/UserPromptSubmit-track-issues.sh",
         "plugins/autonomous-dev/hooks/auto_fix_docs.py",
         "plugins/autonomous-dev/hooks/auto_format.py",
         "plugins/autonomous-dev/hooks/auto_test.py",
@@ -86,6 +90,8 @@
         "plugins/autonomous-dev/hooks/genai_prompts.py",
         "plugins/autonomous-dev/hooks/genai_utils.py",
         "plugins/autonomous-dev/hooks/plan_mode_exit_detector.py",
+        "plugins/autonomous-dev/hooks/post_compact_enricher.sh",
+        "plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh",
         "plugins/autonomous-dev/hooks/security_scan.py",
         "plugins/autonomous-dev/hooks/session_activity_logger.py",
         "plugins/autonomous-dev/hooks/setup.py",
