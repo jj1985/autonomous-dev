@@ -319,13 +319,21 @@ import json, os
 with open('$dest/settings.json') as f:
     s = json.load(f)
 missing = []
+repo = '$repo_path'
 for event, matchers in s.get('hooks', {}).items():
     for matcher in matchers:
         for hook in matcher.get('hooks', []):
             cmd = hook.get('command', '')
-            for word in cmd.split():
-                if word.endswith('.py'):
-                    path = os.path.join('$repo_path', word) if not word.startswith('/') else os.path.expanduser(word)
+            # Substitute shell expansions that Python can't resolve
+            cmd_resolved = cmd.replace('\$(git rev-parse --show-toplevel)', repo)
+            for word in cmd_resolved.split():
+                if word.endswith('.py') or word.endswith('.sh'):
+                    if word.startswith('~'):
+                        path = os.path.expanduser(word)
+                    elif word.startswith('/'):
+                        path = word
+                    else:
+                        path = os.path.join(repo, word)
                     if not os.path.exists(path):
                         missing.append(word)
 if missing:
