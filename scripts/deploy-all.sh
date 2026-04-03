@@ -12,7 +12,7 @@
 #   ./scripts/deploy-all.sh --skip-validate  # Skip post-deploy validation
 #
 # Configuration (override via env vars):
-#   REMOTE_HOST  - SSH host (default: andrewkaszubski@10.55.0.2)
+#   REMOTE_HOST  - SSH host (auto-detects: 10.55.0.2 on LAN, 100.103.205.63 via Tailscale)
 #   LOCAL_REPOS  - Space-separated local repo names (default: autonomous-dev anyclaude realign spektiv)
 #   REMOTE_REPOS - Space-separated remote repo names (default: autonomous-dev anyclaude realign spektiv)
 #
@@ -27,7 +27,14 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLUGIN_SRC="$REPO_DIR/plugins/autonomous-dev"
 GLOBAL_DEST="$HOME/.claude"
 
-REMOTE_HOST="${REMOTE_HOST:-andrewkaszubski@10.55.0.2}"
+# Try local network first, fall back to Tailscale
+if [ -z "${REMOTE_HOST:-}" ]; then
+    if ssh -o ConnectTimeout=3 -o BatchMode=yes andrewkaszubski@10.55.0.2 true 2>/dev/null; then
+        REMOTE_HOST="andrewkaszubski@10.55.0.2"
+    else
+        REMOTE_HOST="andrewkaszubski@100.103.205.63"
+    fi
+fi
 LOCAL_REPOS="${LOCAL_REPOS:-autonomous-dev anyclaude realign spektiv}"
 REMOTE_REPOS="${REMOTE_REPOS:-autonomous-dev anyclaude realign spektiv}"
 SUBDIRS="hooks commands agents lib templates config skills scripts"
@@ -99,6 +106,9 @@ deploy_global() {
     done
     fix_permissions "$GLOBAL_DEST"
     echo "  Synced: $GLOBAL_SUBDIRS"
+
+    # Sync settings.json hook registrations
+    python3 "$PLUGIN_SRC/scripts/sync_settings_hooks.py" --global 2>/dev/null && echo "  Synced global settings.json hooks" || echo "  ⚠ global settings hook sync failed"
 }
 
 deploy_repo() {
@@ -128,6 +138,9 @@ deploy_repo() {
     done
     fix_permissions "$target"
     echo "  Deployed: $name"
+
+    # Sync settings.json hook registrations
+    python3 "$PLUGIN_SRC/scripts/sync_settings_hooks.py" --repo "$repo_path" 2>/dev/null && echo "  Synced $name settings.json hooks" || echo "  ⚠ $name settings hook sync failed"
 }
 
 deploy_remote() {
@@ -216,6 +229,8 @@ for repo in $REMOTE_REPOS; do
     find "\$target/scripts" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
     find "\$target/lib" -name "*.py" -exec chmod 644 {} \; 2>/dev/null || true
     echo "  Deployed: \$repo"
+    # Sync settings.json hook registrations
+    python3 "plugins/autonomous-dev/scripts/sync_settings_hooks.py" --repo "\$HOME/Dev/\$repo" 2>/dev/null && echo "  Synced \$repo settings.json hooks" || echo "  ⚠ \$repo settings hook sync failed"
 done
 
 # Also deploy global hooks/lib/config
@@ -230,6 +245,8 @@ find "\$HOME/.claude/hooks" -name "*.py" -exec chmod 755 {} \; 2>/dev/null || tr
 find "\$HOME/.claude/hooks" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 find "\$HOME/.claude/lib" -name "*.py" -exec chmod 644 {} \; 2>/dev/null || true
 echo "  Synced global: hooks lib config"
+# Sync global settings.json hook registrations
+python3 "plugins/autonomous-dev/scripts/sync_settings_hooks.py" --global 2>/dev/null && echo "  Synced global settings.json hooks" || echo "  ⚠ global settings hook sync failed"
 $validate_script
 REMOTE_EOF
 )"
@@ -321,7 +338,23 @@ if missing:
         fi
     fi
 
-    # 8. Stale hooks
+    # 8. Hook registration count
+    EXPECTED_HOOK_EVENTS=8
+    if [ -f "$dest/settings.json" ]; then
+        hook_count=$(python3 -c "
+import json
+with open('$dest/settings.json') as f:
+    d = json.load(f)
+print(len(d.get('hooks', {})))
+" 2>/dev/null || echo "0")
+        if [ "$hook_count" -ge "$EXPECTED_HOOK_EVENTS" ]; then
+            log_ok "hook registrations: $hook_count lifecycle events (>= $EXPECTED_HOOK_EVENTS)"
+        else
+            log_fail "hook registrations: $hook_count lifecycle events (expected >= $EXPECTED_HOOK_EVENTS)"
+        fi
+    fi
+
+    # 9. Stale hooks
     local found_stale=""
     for stale in $STALE_HOOKS; do
         if [ -f "$dest/hooks/$stale" ]; then

@@ -1,6 +1,9 @@
 ## [Unreleased]
 
 ### Added
+- **`deploy-all.sh` now syncs settings.json hook registrations after file copy** (#648): Every deploy step (global `~/.claude/`, per-repo `.claude/`, and remote Mac Studio) now calls `scripts/sync_settings_hooks.py` immediately after rsync/cp to ensure hook lifecycle events in `settings.json` stay aligned with deployed hook files. The new `sync_settings_hooks.py` CLI wraps `SettingsMerger` and accepts `--global` (merges `config/global_settings_template.json` into `~/.claude/settings.json`) or `--repo <path>` (merges `templates/settings.default.json` into `<repo>/.claude/settings.json`). Supports `--dry-run` and `--count-only` modes. Outputs JSON to stdout (`success`, `hooks_added`, `hooks_preserved`, `hooks_migrated`, `total_lifecycle_events`, `message`). Non-fatal: sync failures emit a warning but do not abort deploy. Tests in `tests/unit/scripts/test_sync_settings_hooks.py`.
+
+### Added
 - **Pipeline context saver for compaction resilience**: `pre_compact_batch_saver.sh` extended to capture single `/implement` pipeline state (run_id, feature, mode, current step, steps completed/remaining, modified files) from `/tmp/implement_pipeline_state.json` during PreCompact, in addition to existing batch state capture. `unified_prompt_validator.py` extended with `_check_compaction_recovery()` to re-inject both batch and pipeline context on the next UserPromptSubmit after compaction; pipeline recovery validates staleness (>900s discarded) and cwd match before injecting. `SessionStart-batch-recovery.sh` extended with a backup pipeline recovery path (fires for the `compact` session source when no batch state is present but pipeline state exists). 16 new tests in `tests/unit/hooks/test_pipeline_compaction_recovery.py`; test isolation fix in `tests/unit/hooks/test_compaction_hooks.py`.
 
 ### Added
