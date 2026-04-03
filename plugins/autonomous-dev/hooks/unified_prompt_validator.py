@@ -335,8 +335,8 @@ def _check_compaction_recovery() -> None:
     Check for and process compaction recovery marker.
 
     If `.claude/compaction_recovery.json` exists, reads it, formats batch
-    context for stderr output, and deletes the marker. This re-injects
-    batch state after context compaction.
+    and/or pipeline context for stderr output, and deletes the marker.
+    This re-injects state after context compaction.
 
     This function never raises exceptions and never blocks.
     """
@@ -347,58 +347,119 @@ def _check_compaction_recovery() -> None:
 
         marker_data = json.loads(marker_path.read_text())
 
-        batch_id = marker_data.get("batch_id", "unknown")
-        current_index = marker_data.get("current_index", 0)
-        total_features = marker_data.get("total_features", 0)
-        features = marker_data.get("features", [])
-        compact_summary = marker_data.get("compact_summary", "")
-        checkpoint = marker_data.get("checkpoint", {})
+        all_lines: list = []
 
-        next_feature_num = current_index + 1
+        # ----- Batch recovery section -----
+        batch_id = marker_data.get("batch_id")
+        if batch_id:
+            current_index = marker_data.get("current_index", 0)
+            total_features = marker_data.get("total_features", 0)
+            features = marker_data.get("features", [])
+            compact_summary = marker_data.get("compact_summary", "")
+            checkpoint = marker_data.get("checkpoint", {})
 
-        # Get next feature description
-        next_feature_desc = f"Feature {next_feature_num}"
-        if features and current_index < len(features):
-            feat = features[current_index]
-            if isinstance(feat, str):
-                next_feature_desc = feat
-            elif isinstance(feat, dict):
-                next_feature_desc = feat.get("description", feat.get("title", next_feature_desc))
+            next_feature_num = current_index + 1
 
-        # Get completed/failed counts from checkpoint
-        completed_count = len(checkpoint.get("completed_features", []))
-        failed_count = len(checkpoint.get("failed_features", []))
+            # Get next feature description
+            next_feature_desc = f"Feature {next_feature_num}"
+            if features and current_index < len(features):
+                feat = features[current_index]
+                if isinstance(feat, str):
+                    next_feature_desc = feat
+                elif isinstance(feat, dict):
+                    next_feature_desc = feat.get("description", feat.get("title", next_feature_desc))
 
-        # Format recovery context
-        lines = [
-            "",
-            "**BATCH STATE RECOVERED AFTER COMPACTION**",
-            "",
-            f"Batch ID: {batch_id}",
-            f"Progress: Feature {next_feature_num} of {total_features}",
-            f"Completed: {completed_count} | Failed: {failed_count}",
-            "",
-            f"Next Feature:",
-            f"  {next_feature_desc}",
-            "",
-        ]
+            # Get completed/failed counts from checkpoint
+            completed_count = len(checkpoint.get("completed_features", []))
+            failed_count = len(checkpoint.get("failed_features", []))
 
-        if compact_summary:
-            lines.extend([
-                "Compaction Summary:",
-                f"  {compact_summary}",
+            # Format recovery context
+            all_lines.extend([
+                "",
+                "**BATCH STATE RECOVERED AFTER COMPACTION**",
+                "",
+                f"Batch ID: {batch_id}",
+                f"Progress: Feature {next_feature_num} of {total_features}",
+                f"Completed: {completed_count} | Failed: {failed_count}",
+                "",
+                f"Next Feature:",
+                f"  {next_feature_desc}",
                 "",
             ])
 
-        lines.extend([
-            "CRITICAL WORKFLOW REQUIREMENT:",
-            "- Use /implement for EACH remaining feature",
-            "- NEVER implement directly (skips research, TDD, security audit, docs)",
-            "- Check .claude/batch_state.json for current feature",
-            "",
-        ])
+            if compact_summary:
+                all_lines.extend([
+                    "Compaction Summary:",
+                    f"  {compact_summary}",
+                    "",
+                ])
 
-        print("\n".join(lines), file=sys.stderr)
+            all_lines.extend([
+                "CRITICAL WORKFLOW REQUIREMENT:",
+                "- Use /implement for EACH remaining feature",
+                "- NEVER implement directly (skips research, TDD, security audit, docs)",
+                "- Check .claude/batch_state.json for current feature",
+                "",
+            ])
+
+        # ----- Pipeline recovery section -----
+        pipeline = marker_data.get("pipeline")
+        if pipeline and isinstance(pipeline, dict):
+            import time as _time
+
+            # Validate staleness (>900s = discard)
+            try:
+                saved_at_str = pipeline.get("saved_at", "")
+                if saved_at_str:
+                    from datetime import datetime as _dt, timezone as _tz
+
+                    saved_at = _dt.fromisoformat(saved_at_str.replace("Z", "+00:00"))
+                    age_seconds = (_dt.now(_tz.utc) - saved_at).total_seconds()
+                    if age_seconds > 900:
+                        pipeline = None
+            except (ValueError, TypeError):
+                pipeline = None
+
+            # Validate cwd match
+            if pipeline:
+                pipeline_cwd = pipeline.get("cwd", "")
+                if pipeline_cwd and pipeline_cwd != os.getcwd():
+                    pipeline = None
+
+        if pipeline and isinstance(pipeline, dict):
+            run_id = pipeline.get("run_id", "unknown")
+            feature = pipeline.get("feature", "unknown")
+            mode = pipeline.get("mode", "full")
+            current_step = pipeline.get("current_step", "unknown")
+            steps_completed = pipeline.get("steps_completed", 0)
+            steps_remaining = pipeline.get("steps_remaining", 0)
+            modified_files = pipeline.get("modified_files", [])
+
+            all_lines.extend([
+                "",
+                "**PIPELINE STATE RECOVERED AFTER COMPACTION**",
+                "",
+                f"Run ID: {run_id}",
+                f"Feature: {feature}",
+                f"Mode: {mode}",
+                f"Current Step: {current_step}",
+                f"Steps Completed: {steps_completed} | Steps Remaining: {steps_remaining}",
+                "",
+            ])
+
+            if modified_files:
+                all_lines.append("Modified Files:")
+                for f in modified_files:
+                    all_lines.append(f"  - {f}")
+                all_lines.append("")
+
+            all_lines.extend([
+                "CRITICAL: Resume /implement at current step",
+                "",
+            ])
+
+        if all_lines:
+            print("\n".join(all_lines), file=sys.stderr)
 
         # Delete marker after processing
         marker_path.unlink(missing_ok=True)

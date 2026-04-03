@@ -16,7 +16,51 @@ fi
 
 # Check if batch is in progress
 BATCH_STATE=".claude/batch_state.json"
+PIPELINE_STATE_FILE="${PIPELINE_STATE_FILE:-/tmp/implement_pipeline_state.json}"
+PIPELINE_STATE_DIR="${PIPELINE_STATE_DIR:-/tmp}"
+
 if [ ! -f "$BATCH_STATE" ]; then
+  # No batch state — check for pipeline state as backup recovery path
+  if [ -f "$PIPELINE_STATE_FILE" ]; then
+    run_id=$(jq -r '.run_id // ""' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
+    pipeline_mode=$(jq -r '.mode // "full"' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "full")
+    if [ -n "$run_id" ]; then
+      per_run_file="$PIPELINE_STATE_DIR/pipeline_state_${run_id}.json"
+      pipeline_feature=""
+      pipeline_current_step=""
+      pipeline_modified_files=""
+
+      if [ -f "$per_run_file" ]; then
+        pipeline_feature=$(jq -r '.feature // ""' "$per_run_file" 2>/dev/null || echo "")
+        pipeline_current_step=$(jq -r '
+          [.steps | to_entries[] | select(.value.status == "running") | .key] | last // ""
+        ' "$per_run_file" 2>/dev/null || echo "")
+        if [ -z "$pipeline_current_step" ]; then
+          pipeline_current_step=$(jq -r '
+            [.steps | to_entries[] | select(.value.status == "passed") | .key] | last // ""
+          ' "$per_run_file" 2>/dev/null || echo "")
+        fi
+      fi
+
+      pipeline_modified_files=$(git diff --name-only HEAD 2>/dev/null | head -20 || echo "")
+
+      cat <<EOF
+
+**PIPELINE STATE RECOVERED AFTER COMPACTION**
+
+Run ID: $run_id
+Feature: $pipeline_feature
+Mode: $pipeline_mode
+Current Step: $pipeline_current_step
+
+Modified Files:
+$(echo "$pipeline_modified_files" | while read -r f; do [ -n "$f" ] && echo "  - $f"; done)
+
+CRITICAL: Resume /implement at current step
+
+EOF
+    fi
+  fi
   exit 0
 fi
 

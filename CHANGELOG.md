@@ -1,6 +1,9 @@
 ## [Unreleased]
 
 ### Added
+- **Pipeline context saver for compaction resilience**: `pre_compact_batch_saver.sh` extended to capture single `/implement` pipeline state (run_id, feature, mode, current step, steps completed/remaining, modified files) from `/tmp/implement_pipeline_state.json` during PreCompact, in addition to existing batch state capture. `unified_prompt_validator.py` extended with `_check_compaction_recovery()` to re-inject both batch and pipeline context on the next UserPromptSubmit after compaction; pipeline recovery validates staleness (>900s discarded) and cwd match before injecting. `SessionStart-batch-recovery.sh` extended with a backup pipeline recovery path (fires for the `compact` session source when no batch state is present but pipeline state exists). 16 new tests in `tests/unit/hooks/test_pipeline_compaction_recovery.py`; test isolation fix in `tests/unit/hooks/test_compaction_hooks.py`.
+
+### Added
 - **`/skill-eval` command**: New slash command wrapping `scripts/skill-effectiveness-check.sh` for interactive skill evaluation. Measures behavioral delta from skill injection using LLM-as-judge scoring. Supports `--quick` (2 prompts/skill, degradation check only), `--skill <name>` (single skill evaluation), and `--update` (full run + write new baselines). Requires `OPENROUTER_API_KEY` and the `openai` pip package. See `/scaffold-genai-uat` for bootstrapping the underlying test infrastructure.
 
 ### Changed

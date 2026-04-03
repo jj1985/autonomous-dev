@@ -41,7 +41,7 @@ Hooks provide automated quality enforcement, validation, and workflow automation
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **unified_prompt_validator.py** | Workflow bypass detection + quality nudges | ENFORCE_WORKFLOW, QUALITY_NUDGE_ENABLED |
+| **unified_prompt_validator.py** | Compaction recovery re-injection (batch and pipeline state) + workflow bypass detection + quality nudges + plan mode exit enforcement. On each prompt, checks for `.claude/compaction_recovery.json` and if present re-injects saved batch/pipeline context to stderr, then deletes the marker. Pipeline recovery validates staleness and cwd before injecting. | ENFORCE_WORKFLOW, QUALITY_NUDGE_ENABLED |
 | **session_activity_logger.py** | Captures user prompt preview + length into session JSONL log. Pins session start date. Non-blocking. | ACTIVITY_LOGGING |
 
 ### PreToolUse
@@ -130,7 +130,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
-| **pre_compact_batch_saver.sh** | Saves in-progress batch state to `.claude/compaction_recovery.json` before context compaction. Captures batch_id, current_index, feature list, and RALPH checkpoint data. No-ops when no active batch. Always exits 0. | CHECKPOINT_DIR |
+| **pre_compact_batch_saver.sh** | Saves in-progress batch and/or pipeline state to `.claude/compaction_recovery.json` before context compaction. Captures batch_id, current_index, feature list, and RALPH checkpoint data when a batch is active. Also captures `/implement` pipeline state (run_id, feature, current step, steps completed/remaining, modified files) from `/tmp/implement_pipeline_state.json` when a pipeline run is active. No-ops when neither batch nor pipeline is active. Always exits 0. | CHECKPOINT_DIR, PIPELINE_STATE_FILE, PIPELINE_STATE_DIR |
 
 ### PostCompact
 
@@ -138,7 +138,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 |------|---------|--------------|
 | **post_compact_enricher.sh** | Enriches the compaction recovery marker with the compact_summary from stdin JSON after compaction completes. No-ops if no recovery marker present. Always exits 0. | — |
 
-**Compaction recovery flow**: PreCompact saves state → PostCompact adds summary → UserPromptSubmit (`unified_prompt_validator.py`) detects marker on next prompt, re-injects batch context into model output, and deletes marker. This ensures batch pipelines resume correctly after `/clear` or auto-compact without requiring manual state reconstruction.
+**Compaction recovery flow**: PreCompact saves state (batch and/or pipeline) → PostCompact adds summary → UserPromptSubmit (`unified_prompt_validator.py`) detects marker on next prompt, re-injects batch and/or pipeline context into model output, and deletes marker. Pipeline recovery validates staleness (discarded if >900 seconds old) and cwd match before injecting. This ensures both batch pipelines and single `/implement` pipeline runs resume correctly after `/clear` or auto-compact without requiring manual state reconstruction.
 
 ### TaskCompleted
 

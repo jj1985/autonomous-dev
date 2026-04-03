@@ -57,7 +57,14 @@ class TestPreCompactBatchSaver:
         claude_dir = tmp_path / ".claude"
         claude_dir.mkdir()
 
-        rc, _, _ = _run_hook(PRE_COMPACT_SCRIPT, cwd=str(tmp_path))
+        rc, _, _ = _run_hook(
+            PRE_COMPACT_SCRIPT,
+            cwd=str(tmp_path),
+            env_extra={
+                "PIPELINE_STATE_FILE": str(tmp_path / "nonexistent_pipeline.json"),
+                "PIPELINE_STATE_DIR": str(tmp_path),
+            },
+        )
         assert rc == 0
         assert not (claude_dir / "compaction_recovery.json").exists()
 
@@ -73,7 +80,14 @@ class TestPreCompactBatchSaver:
             "features": [],
         }))
 
-        rc, _, _ = _run_hook(PRE_COMPACT_SCRIPT, cwd=str(tmp_path))
+        rc, _, _ = _run_hook(
+            PRE_COMPACT_SCRIPT,
+            cwd=str(tmp_path),
+            env_extra={
+                "PIPELINE_STATE_FILE": str(tmp_path / "nonexistent_pipeline.json"),
+                "PIPELINE_STATE_DIR": str(tmp_path),
+            },
+        )
         assert rc == 0
         assert not (claude_dir / "compaction_recovery.json").exists()
 
