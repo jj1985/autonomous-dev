@@ -359,3 +359,244 @@ class TestHookRegistration:
         assert not missing, (
             f"Global template references hooks not found on disk: {missing}"
         )
+
+
+# ============================================================================
+# TestEndToEndSync - E2E tests with real templates
+# ============================================================================
+
+
+class TestEndToEndSync:
+    """E2E tests — verify sync produces correct settings with real templates."""
+
+    def test_sync_replaces_hooks_in_fake_repo(self, tmp_path):
+        """Create fake repo, sync with global template, verify portable paths."""
+        # Create fake .claude/settings.json with dummy hooks
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        settings = {
+            "permissions": {"allow": ["Bash", "Read"], "deny": []},
+            "mcpServers": {"test": {"command": "echo"}},
+            "hooks": {
+                "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "echo old", "timeout": 5}]}]
+            }
+        }
+        settings_path = claude_dir / "settings.json"
+        settings_path.write_text(json.dumps(settings))
+
+        # Import and run _replace_hooks with the REAL global template
+        sys.path.insert(0, str(PLUGIN_DIR / "scripts"))
+        from sync_settings_hooks import _replace_hooks
+        template_path = PLUGIN_DIR / "config" / "global_settings_template.json"
+
+        result = _replace_hooks(settings_path, template_path)
+        assert result["success"]
+        assert result["total_lifecycle_events"] >= 8
+
+        # Verify resulting hooks use ~/.claude/hooks/ paths (no git rev-parse)
+        updated = json.loads(settings_path.read_text())
+        for event, entries in updated["hooks"].items():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    cmd = hook.get("command", "")
+                    assert "$(git rev-parse" not in cmd, (
+                        f"{event} has non-portable git rev-parse path: {cmd}"
+                    )
+                    # Every .py/.sh reference should use ~/.claude/hooks/ or absolute path
+
+        # Verify user config preserved
+        assert updated["permissions"]["allow"] == ["Bash", "Read"]
+        assert "test" in updated.get("mcpServers", {})
+
+    def test_sync_hook_commands_reference_real_files(self):
+        """Every hook command in global template references a file that exists."""
+        template_path = PLUGIN_DIR / "config" / "global_settings_template.json"
+        template = json.loads(template_path.read_text())
+
+        hooks_dir = PLUGIN_DIR / "hooks"
+        missing = []
+
+        for event, entries in template.get("hooks", {}).items():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    cmd = hook.get("command", "")
+                    # Extract filename from command (last .py or .sh token)
+                    for word in cmd.split():
+                        if word.endswith(".py") or word.endswith(".sh"):
+                            # Extract just the filename
+                            filename = Path(word).name
+                            if not (hooks_dir / filename).exists():
+                                missing.append(f"{event}: {filename}")
+
+        assert not missing, f"Hook commands reference missing files: {missing}"
+
+    def test_sync_idempotent_with_real_template(self, tmp_path):
+        """Running sync twice produces identical output."""
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "settings.json").write_text(json.dumps({"hooks": {}}))
+
+        sys.path.insert(0, str(PLUGIN_DIR / "scripts"))
+        from sync_settings_hooks import _replace_hooks
+        template_path = PLUGIN_DIR / "config" / "global_settings_template.json"
+        settings_path = claude_dir / "settings.json"
+
+        _replace_hooks(settings_path, template_path)
+        first_content = settings_path.read_text()
+
+        _replace_hooks(settings_path, template_path)
+        second_content = settings_path.read_text()
+
+        assert first_content == second_content, "Sync is not idempotent — content differs on second run"
+
+
+# ============================================================================
+# TestInstallShIntegrity - install.sh discovery and global template correctness
+# ============================================================================
+
+
+class TestInstallShIntegrity:
+    """Verify install.sh discovery and global template correctness."""
+
+    def test_install_sh_finds_both_py_and_sh(self):
+        """install.sh hook discovery includes both *.py and *.sh files."""
+        install_sh = WORKTREE / "install.sh"
+        content = install_sh.read_text()
+
+        # The find command should have both patterns
+        assert "*.py" in content
+        assert "*.sh" in content
+
+        # Verify actual hooks exist for both types
+        hooks_dir = PLUGIN_DIR / "hooks"
+        py_hooks = list(hooks_dir.glob("*.py"))
+        sh_hooks = list(hooks_dir.glob("*.sh"))
+
+        assert len(py_hooks) > 0, "No .py hooks found"
+        assert len(sh_hooks) > 0, "No .sh hooks found"
+
+    def test_global_template_stop_hook_resolves(self):
+        """Stop hook in global template points to stop_quality_gate.py, which exists."""
+        template_path = PLUGIN_DIR / "config" / "global_settings_template.json"
+        template = json.loads(template_path.read_text())
+
+        stop_hooks = template["hooks"].get("Stop", [])
+        assert len(stop_hooks) > 0, "No Stop hooks in global template"
+
+        stop_cmd = stop_hooks[0]["hooks"][0]["command"]
+        assert "stop_quality_gate.py" in stop_cmd, (
+            f"Stop hook should reference stop_quality_gate.py, got: {stop_cmd}"
+        )
+
+        # Verify the file exists
+        assert (PLUGIN_DIR / "hooks" / "stop_quality_gate.py").exists(), (
+            "stop_quality_gate.py missing from hooks dir"
+        )
+
+
+# ============================================================================
+# TestDeployValidation - deploy-all.sh validation check 7 logic
+# ============================================================================
+
+
+class TestDeployValidation:
+    """Test the deploy-all.sh validation check 7 logic with real data."""
+
+    def _run_hook_validation(self, settings_path: Path, repo_path: Path) -> list:
+        """Run the same validation logic as deploy-all.sh check 7.
+
+        Checks hook file references against both:
+        - Expanded real paths (for absolute/~ paths)
+        - The plugin source hooks directory (for ~/ paths that may not be installed
+          in the test environment due to HOME isolation)
+        """
+        import os as _os
+        settings = json.loads(settings_path.read_text())
+        missing = []
+        repo = str(repo_path)
+        hooks_source_dir = PLUGIN_DIR / "hooks"
+        for event, matchers in settings.get("hooks", {}).items():
+            for matcher in matchers:
+                for hook in matcher.get("hooks", []):
+                    cmd = hook.get("command", "")
+                    cmd_resolved = cmd.replace("$(git rev-parse --show-toplevel)", repo)
+                    for word in cmd_resolved.split():
+                        if word.endswith(".py") or word.endswith(".sh"):
+                            if word.startswith("~"):
+                                # Check expanded path first; fall back to plugin source dir
+                                expanded = _os.path.expanduser(word)
+                                filename = Path(word).name
+                                if not _os.path.exists(expanded) and not (hooks_source_dir / filename).exists():
+                                    missing.append(word)
+                            elif word.startswith("/"):
+                                if not _os.path.exists(word):
+                                    missing.append(word)
+                            else:
+                                path = _os.path.join(repo, word)
+                                if not _os.path.exists(path):
+                                    missing.append(word)
+        return missing
+
+    def test_validation_against_real_autonomous_dev(self):
+        """deploy-all.sh validation finds 0 missing hooks in autonomous-dev."""
+        settings_path = WORKTREE / ".claude" / "settings.json"
+        if not settings_path.exists():
+            pytest.skip("No .claude/settings.json in autonomous-dev")
+        missing = self._run_hook_validation(settings_path, WORKTREE)
+        assert not missing, f"Validation found missing hooks: {missing}"
+
+    def test_validation_catches_broken_hook(self, tmp_path):
+        """Validation detects a deliberately broken hook path."""
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        broken_settings = {
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/nonexistent_hook_12345.py", "timeout": 5}]
+                }]
+            }
+        }
+        (claude_dir / "settings.json").write_text(json.dumps(broken_settings))
+        missing = self._run_hook_validation(claude_dir / "settings.json", tmp_path)
+        assert len(missing) > 0, "Validation should catch nonexistent hook"
+        assert "nonexistent_hook_12345.py" in missing[0]
+
+
+# ============================================================================
+# TestSetupPathPortability - template path strategy verification
+# ============================================================================
+
+
+class TestSetupPathPortability:
+    """Verify template path strategies are correct for each deployment context."""
+
+    def test_global_template_has_no_git_paths(self):
+        """Global template uses only portable ~/.claude/hooks/ paths."""
+        template = json.loads((PLUGIN_DIR / "config" / "global_settings_template.json").read_text())
+
+        for event, entries in template.get("hooks", {}).items():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    cmd = hook.get("command", "")
+                    assert "$(git rev-parse" not in cmd, (
+                        f"Global template {event} has non-portable path: {cmd}\n"
+                        "Global template must use ~/.claude/hooks/ paths"
+                    )
+                    assert "$(git" not in cmd, f"Global template {event} has git subshell: {cmd}"
+
+    def test_templates_have_same_lifecycle_events(self):
+        """Both templates register the same 8 lifecycle events."""
+        global_tmpl = json.loads((PLUGIN_DIR / "config" / "global_settings_template.json").read_text())
+        default_tmpl = json.loads((PLUGIN_DIR / "templates" / "settings.default.json").read_text())
+
+        global_events = set(global_tmpl.get("hooks", {}).keys())
+        default_events = set(default_tmpl.get("hooks", {}).keys())
+
+        expected = {
+            "PreToolUse", "PostToolUse", "UserPromptSubmit", "PreCompact",
+            "PostCompact", "Stop", "SubagentStop", "TaskCompleted",
+        }
+
+        assert global_events == expected, f"Global template missing events: {expected - global_events}"
+        assert default_events == expected, f"Default template missing events: {expected - default_events}"
