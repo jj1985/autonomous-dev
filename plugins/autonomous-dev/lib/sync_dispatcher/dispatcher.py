@@ -880,7 +880,7 @@ class SyncDispatcher:
             # Step 2.55: Sync settings.json hook registrations (Issue #648)
             # Replace hooks key from template (not additive merge — prevents duplicates)
             try:
-                settings_tmpl_path = Path(plugin_path) / "templates" / "settings.default.json"
+                settings_tmpl_path = Path(plugin_path) / "config" / "global_settings_template.json"
                 settings_json_path = claude_dir / "settings.json"
 
                 if settings_tmpl_path.exists() and settings_json_path.exists():

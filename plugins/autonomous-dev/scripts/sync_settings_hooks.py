@@ -203,7 +203,7 @@ def sync_repo(
         Result dict with success status and hook counts
     """
     plugin_root = _find_plugin_root()
-    template_path = plugin_root / "templates" / "settings.default.json"
+    template_path = plugin_root / "config" / "global_settings_template.json"
     repo = Path(repo_path)
     user_path = repo / ".claude" / "settings.json"
 
