@@ -810,12 +810,15 @@ class SyncDispatcher:
                     commands_src, commands_dst, pattern="*.md", description="command files"
                 )
 
-            # Copy hooks
+            # Copy hooks (.py and .sh)
             hooks_src = Path(plugin_path) / "hooks"
             hooks_dst = claude_dir / "hooks"
             if hooks_src.exists():
                 files_updated += self._sync_directory(
                     hooks_src, hooks_dst, pattern="*.py", description="hook files"
+                )
+                files_updated += self._sync_directory(
+                    hooks_src, hooks_dst, pattern="*.sh", description="hook shell scripts"
                 )
                 # Ensure extensions directory survives sync
                 (hooks_dst / "extensions").mkdir(exist_ok=True)
@@ -873,6 +876,60 @@ class SyncDispatcher:
                     },
                 )
                 # settings_merge_result stays None - sync continues
+
+            # Step 2.55: Sync settings.json hook registrations (Issue #648)
+            # Replace hooks key from template (not additive merge — prevents duplicates)
+            try:
+                settings_tmpl_path = Path(plugin_path) / "templates" / "settings.default.json"
+                settings_json_path = claude_dir / "settings.json"
+
+                if settings_tmpl_path.exists() and settings_json_path.exists():
+                    import tempfile as _tempfile
+
+                    tmpl_data = json.loads(settings_tmpl_path.read_text(encoding="utf-8"))
+                    template_hooks = tmpl_data.get("hooks", {})
+
+                    user_data = json.loads(settings_json_path.read_text(encoding="utf-8"))
+                    old_event_count = len(user_data.get("hooks", {}))
+
+                    # Replace hooks entirely (not merge)
+                    user_data["hooks"] = template_hooks
+
+                    # Atomic write
+                    fd, tmp = _tempfile.mkstemp(
+                        dir=str(settings_json_path.parent), suffix=".tmp"
+                    )
+                    try:
+                        with os.fdopen(fd, "w") as f:
+                            json.dump(user_data, f, indent=2)
+                            f.write("\n")
+                        os.chmod(tmp, 0o600)
+                        os.replace(tmp, str(settings_json_path))
+                    except Exception:
+                        try:
+                            os.unlink(tmp)
+                        except OSError:
+                            pass
+                        raise
+
+                    audit_log(
+                        "marketplace_sync",
+                        "settings_hooks_synced",
+                        {
+                            "project_path": str(self.project_path),
+                            "old_events": old_event_count,
+                            "new_events": len(template_hooks),
+                        },
+                    )
+            except Exception as e:
+                audit_log(
+                    "marketplace_sync",
+                    "settings_hooks_sync_failed",
+                    {
+                        "project_path": str(self.project_path),
+                        "error": str(e),
+                    },
+                )
 
             # Step 2.6: Migrate hooks from array format to object format (Issue #135)
             # This runs AFTER settings merge to catch any new hooks in array format

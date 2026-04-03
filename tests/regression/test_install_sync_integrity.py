@@ -91,6 +91,17 @@ class TestSyncIdempotent:
             assert result2["success"] is True
             assert data1 == data2, "Settings differ after second sync -- hooks duplicated"
 
+    def test_sync_dispatcher_replaces_settings_hooks(self):
+        """sync_dispatcher replaces settings.json hooks (not additive merge)."""
+        dispatcher_path = PLUGIN_DIR / "lib" / "sync_dispatcher" / "dispatcher.py"
+        content = dispatcher_path.read_text()
+        assert "settings_hooks_synced" in content, (
+            "sync_dispatcher must sync settings.json hook registrations"
+        )
+        assert 'user_data["hooks"] = template_hooks' in content, (
+            "sync_dispatcher must replace hooks key entirely"
+        )
+
     def test_sync_preserves_user_config(self):
         """After sync, mcpServers/permissions/enabledPlugins are preserved."""
         from sync_settings_hooks import _replace_hooks
@@ -165,6 +176,15 @@ class TestInstallShHooks:
         assert len(sh_files) >= 2, (
             f"Expected at least 2 .sh hook files, found {len(sh_files)}: "
             f"{[f.name for f in sh_files]}"
+        )
+
+    def test_sync_dispatcher_copies_sh_hooks(self):
+        """sync_dispatcher._sync_directory is called for both *.py and *.sh."""
+        dispatcher_path = PLUGIN_DIR / "lib" / "sync_dispatcher" / "dispatcher.py"
+        content = dispatcher_path.read_text()
+        assert 'pattern="*.py", description="hook files"' in content
+        assert 'pattern="*.sh"' in content, (
+            "sync_dispatcher must copy *.sh hooks alongside *.py hooks"
         )
 
 
