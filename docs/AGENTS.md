@@ -5,7 +5,7 @@ covers:
 
 # Agent Architecture
 
-**Last Updated**: 2026-03-17
+**Last Updated**: 2026-04-04
 **Location**: `plugins/autonomous-dev/agents/`
 
 This document describes the agent architecture, including core workflow agents, utility agents, model tier assignments, and their skill integrations.
@@ -14,9 +14,9 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-12 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+13 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, test-coverage-auditor, test-master
+**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, test-coverage-auditor, test-master, ui-tester
 
 **Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
 
@@ -24,7 +24,7 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Model Tier Strategy (Issue #108, Updated #147)
 
-Agent model assignments optimized for cost-performance balance (12 active agents):
+Agent model assignments optimized for cost-performance balance (13 active agents):
 
 ### Tier 1: Haiku (2 agents)
 
@@ -33,7 +33,7 @@ Fast, cost-effective for pattern matching:
 - **researcher-local**: Search codebase patterns
 - **test-coverage-auditor**: AST-based coverage analysis
 
-### Tier 2: Sonnet (7 agents)
+### Tier 2: Sonnet (8 agents)
 
 Balanced reasoning for judgment tasks:
 
@@ -44,6 +44,7 @@ Balanced reasoning for judgment tasks:
 - **issue-creator**: GitHub issue creation
 - **planner**: Architecture planning
 - **retrospective-analyst**: Intent evolution and session drift detection
+- **ui-tester**: E2E browser testing via Playwright MCP (optional, frontend only)
 
 ### Tier 3: Opus (3 agents)
 
@@ -67,8 +68,8 @@ Deep reasoning for complex synthesis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Active Agents**: 12
-**Note**: 12 active agents, all under 3,000 token target
+**Total Active Agents**: 13
+**Note**: 13 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
@@ -89,7 +90,7 @@ Deep reasoning for complex synthesis:
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 12 active agents under 3,000 token target
+- All 13 active agents under 3,000 token target
 
 ---
 
@@ -217,6 +218,17 @@ These agents execute the main autonomous development workflow and provide specia
 **Skills**: documentation-guide
 **Execution**: STEP 10 of /implement workflow — runs in background (non-blocking). In parallel mode, launched simultaneously with reviewer and security-auditor. In sequential mode, launched alongside STEP 10a (reviewer), not waiting for security-auditor to finish. Collected at STEP 12. If STEP 11 remediation occurred, the STEP 10 background result is discarded as stale; STEP 12 re-invokes doc-master BLOCKING with a fresh post-remediation file list (#624)
 **Drift Detection**: Uses `covers:` YAML frontmatter in `docs/*.md` files to map source paths to docs, then applies LLM judgment to detect factual drift, behavioral drift, structural drift, and missing coverage
+
+### ui-tester
+
+**Purpose**: E2E browser testing specialist — writes persistent test files in `tests/e2e/` using Playwright MCP tools (Issue #656)
+**Model**: Sonnet (Tier 2 - balanced reasoning for test writing and browser interaction)
+**Skills**: testing-guide, python-standards
+**Tools**: Read, Write, Edit, Bash, Grep, Glob, Playwright MCP
+**Execution**: STEP 9.7 of /implement workflow — OPTIONAL; invoked only when (1) changed files include frontend patterns (`*.html`, `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`) AND (2) Playwright MCP tools are available. Skipped silently otherwise.
+**Security**: Hard gate restricts navigation to `localhost`, `127.0.0.1`, `0.0.0.0`, or user-provided domains. Page content is treated as adversarial (prompt injection risk). `browser_evaluate` limited to read-only diagnostics.
+**Timeout**: 60 seconds per test case. Time-based waits (sleep, setTimeout) forbidden — condition-based waits only.
+**Verdict**: `UI-TESTER-VERDICT: PASS` or `UI-TESTER-VERDICT: SKIP`. E2E testing is ADVISORY — the verdict never blocks the pipeline.
 
 ### data-curator
 
