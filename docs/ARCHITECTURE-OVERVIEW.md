@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 12 agents (18 archived), 17 skills, 21 active commands, 186 libraries, 25 active hooks (62 archived).
+**Component Counts**: 13 agents (18 archived), 17 skills, 21 active commands, 186 libraries, 25 active hooks (62 archived).
 
 ---
 
@@ -28,7 +28,7 @@ Specialized agents with skill integration for autonomous development. See [docs/
 
 ## Model Tier Strategy
 
-Agent model assignments optimized for cost-performance balance (12 active agents):
+Agent model assignments optimized for cost-performance balance (13 active agents):
 
 **Tier 1 (Haiku)** - Fast, cost-effective for pattern matching
 - researcher-local - Search codebase patterns
@@ -42,6 +42,7 @@ Agent model assignments optimized for cost-performance balance (12 active agents
 - doc-master - Semantic documentation drift detection
 - continuous-improvement-analyst - Pipeline QA and gaming detection
 - retrospective-analyst - Intent evolution and session drift detection
+- ui-tester - E2E browser testing via Playwright MCP (optional, STEP 9.7)
 
 **Tier 3 (Opus)** - Deep reasoning for complex synthesis
 - planner - Architecture planning
@@ -124,6 +125,9 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - Default mode: validation-first approach (specification → acceptance tests → implementation)
    - Optional `--tdd-first` flag reverts to legacy TDD-first (failing unit tests first)
 7. **Implementation**: implementer makes tests pass
+7.5. **E2E UI Testing** (STEP 9.7, Issue #656, optional): ui-tester writes Playwright MCP browser tests
+   - Only invoked when changed files include frontend patterns AND Playwright MCP is available
+   - Advisory only — PASS or SKIP, never blocks the pipeline
 8. **Validation** (implement.md STEP 10) — mode selected based on changeset risk:
    - **Parallel mode** (default): reviewer, security-auditor, and doc-master launched simultaneously in one message (low-risk changesets with no security-sensitive files)
    - **Sequential mode** (security-sensitive files): reviewer runs first (10a), security-auditor runs only after reviewer returns (10b), doc-master runs in background alongside reviewer (10c)

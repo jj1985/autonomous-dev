@@ -119,6 +119,12 @@ class AgentInvoker:
             'artifacts_required': ['manifest', 'implementation', 'tests'],
             'description_template': 'Audit test coverage for: {request}',
             'mission': 'Analyze test coverage gaps and suggest improvements'
+        },
+        'ui-tester': {
+            'progress_pct': 72,
+            'artifacts_required': ['manifest', 'architecture', 'implementation'],
+            'description_template': 'Write E2E browser tests for: {request}',
+            'mission': 'Write persistent E2E test files using Playwright MCP tools'
         }
     }
 

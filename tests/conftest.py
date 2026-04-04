@@ -59,6 +59,7 @@ DIRECTORY_MARKERS = {
     "security/": ["unit"],  # Security tests are unit tests
     "hooks/": ["hooks", "unit"],
     "property/": ["property", "slow"],
+    "e2e/": ["e2e", "slow"],
 }
 
 

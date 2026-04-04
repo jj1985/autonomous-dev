@@ -70,6 +70,7 @@ AGENT_SKILL_MAP: Dict[str, List[str]] = {
     "continuous-improvement-analyst": [],
     "quality-validator": ["code-review", "python-standards"],
     "test-coverage-auditor": ["testing-guide"],
+    "ui-tester": ["testing-guide", "python-standards"],
 }
 
 

@@ -440,6 +440,21 @@ You MUST invoke the missing agents before proceeding to STEP 10.
 
 **FORBIDDEN**: Proceeding to STEP 10 with fewer than the minimum agents. If an agent was skipped due to a crash, the crash retry rule (forbidden list) applies — retry once, then block.
 
+### STEP 9.7: Conditional UI Testing (ui-tester)
+
+**This step is OPTIONAL.** Only invoke ui-tester when BOTH conditions are met:
+1. Changed files include frontend patterns: `*.html`, `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`
+2. Playwright MCP tools are available (test by attempting `mcp__playwright__browser_navigate` to `about:blank`)
+
+If both conditions are met:
+- **Agent**(subagent_type="ui-tester", model="sonnet") — Pass changed file list + target URL (from user prompt or `http://localhost:3000` default)
+- Parse output for `UI-TESTER-VERDICT: PASS` or `UI-TESTER-VERDICT: SKIP`
+- Either result allows proceeding — E2E testing is ADVISORY, never blocking
+
+If conditions are NOT met, skip this step silently and proceed to STEP 10.
+
+**FORBIDDEN**: Blocking the pipeline based on ui-tester output. The ui-tester verdict is informational only.
+
 ### STEP 10: Validation — Reviewer, Security, and Docs (3 agents)
 
 **Progress**: Output step banner (STEP 10/15 — Validation). Output each agent completion as they return.

@@ -32,10 +32,10 @@ pytest tests/genai/ --genai
 
 - **Pipeline**: 8-step SDLC (15 internal steps) — alignment → research → plan → acceptance tests → implement → validate → verify → git
 - **Enforcement**: 25 hooks with JSON `{"decision": "block"}` hard gates (not prompt-level nudges)
-- **Agents**: 12 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
+- **Agents**: 13 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
 - **Skills**: 17 domain packages, progressively injected per-step to prevent context bloat
 
-Component counts: 12 agents, 17 skills, 21 commands, 25 hooks, 184 libraries.
+Component counts: 13 agents, 17 skills, 21 commands, 25 hooks, 184 libraries.
 
 ## Commands
 
