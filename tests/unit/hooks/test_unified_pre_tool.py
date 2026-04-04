@@ -598,3 +598,110 @@ class TestStdinAgentTypeIntegration:
         output = json.loads(captured.out)
         # implementer is a pipeline agent — should NOT be blocked by coordinator check
         assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+class TestProjectDetectionGuard:
+    """Tests for the project detection guard (Issue #662).
+
+    Verifies that non-autonomous-dev projects skip enforcement layers,
+    while autonomous-dev projects continue through enforcement normally.
+    """
+
+    def setup_method(self):
+        """Reset module-level state before each test."""
+        upt._agent_type = ""
+
+    def teardown_method(self):
+        """Clean up module-level state after each test."""
+        upt._agent_type = ""
+
+    def test_non_adev_project_allows_mcp_tool(self, capsys):
+        """Non-autonomous-dev project: MCP tool is allowed without enforcement."""
+        inp = json.dumps({"tool_name": "mcp__custom__tool", "tool_input": {}})
+        with patch("sys.stdin", StringIO(inp)):
+            with patch.object(upt, "_is_adev_project", return_value=False):
+                with pytest.raises(SystemExit) as exc_info:
+                    upt.main()
+                assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "Non-autonomous-dev" in output["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_adev_project_continues_enforcement(self, capsys):
+        """Autonomous-dev project: enforcement layers are exercised (not short-circuited)."""
+        # Use a non-native MCP tool with enforcement env vars set so the
+        # agent-auth layer produces a predictable decision.
+        inp = json.dumps({"tool_name": "mcp__custom__tool", "tool_input": {}})
+        with patch("sys.stdin", StringIO(inp)):
+            with patch.object(upt, "_is_adev_project", return_value=True):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "PRE_TOOL_MCP_SECURITY": "false",
+                        "PRE_TOOL_AGENT_AUTH": "false",
+                        "PRE_TOOL_BATCH_PERMISSION": "false",
+                        "SANDBOX_ENABLED": "false",
+                    },
+                    clear=False,
+                ):
+                    with pytest.raises(SystemExit) as exc_info:
+                        upt.main()
+                    assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        # All layers disabled → allow, but the reason must NOT mention "Non-autonomous-dev"
+        # (i.e. the project guard was NOT triggered).
+        assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+        assert "Non-autonomous-dev" not in output["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_native_tool_bypasses_before_project_guard(self, capsys):
+        """Native tools are allowed via NATIVE_TOOLS fast path, never reaching project guard."""
+        inp = json.dumps({"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}})
+        with patch("sys.stdin", StringIO(inp)):
+            # Even if _is_adev_project returns False, native tools go through the fast
+            # path and produce "allow" with the native-tool reason, not the project-guard
+            # reason.
+            with patch.object(upt, "_is_adev_project", return_value=False):
+                with pytest.raises(SystemExit) as exc_info:
+                    upt.main()
+                assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+        # Reason must come from native fast path, NOT project guard
+        assert "Native tool" in output["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "Non-autonomous-dev" not in output["hookSpecificOutput"]["permissionDecisionReason"]
+
+    def test_repo_detector_import_failure_enforces(self):
+        """Fallback when _is_adev_project_fn is None returns True (fail-closed).
+
+        After the importlib-based fix, the fail-closed path is controlled by
+        _is_adev_project_fn being None.  Setting it to None temporarily and
+        calling _is_adev_project() must return True regardless of whether the
+        real repo_detector module was loaded in this environment.
+        """
+        original_fn = upt._is_adev_project_fn
+        upt._is_adev_project_fn = None
+        try:
+            assert upt._is_adev_project() is True
+        finally:
+            upt._is_adev_project_fn = original_fn
+
+    def test_project_guard_logs_activity(self, capsys):
+        """Non-adev project guard calls _log_pretool_activity with 'allow' decision."""
+        inp = json.dumps({"tool_name": "mcp__custom__tool", "tool_input": {}})
+        with patch("sys.stdin", StringIO(inp)):
+            with patch.object(upt, "_is_adev_project", return_value=False):
+                with patch.object(upt, "_log_pretool_activity") as mock_log:
+                    with pytest.raises(SystemExit):
+                        upt.main()
+                    # Verify logger was called with "allow" for the project guard exit
+                    calls = mock_log.call_args_list
+                    assert len(calls) >= 1
+                    # The last call should be the project guard allow
+                    last_call = calls[-1]
+                    args = last_call[0]
+                    assert args[0] == "mcp__custom__tool"   # tool_name
+                    assert args[2] == "allow"               # decision
+                    assert "Non-autonomous-dev" in args[3]  # reason

@@ -20,6 +20,7 @@ Native Tool Fast Path:
 
 Decision Logic:
 - If tool is native → skip all layers, return "allow" (settings.json governs)
+- If project is not autonomous-dev → skip enforcement layers, return "allow"
 - If ANY validator returns "deny" → output "deny" (block operation)
 - If ALL validators return "allow" → output "allow" (approve operation)
 - Otherwise → output "ask" (prompt user)
@@ -97,6 +98,44 @@ except Exception:
 # Module-level agent_type extracted from hook stdin JSON (set in main()).
 # Used by _get_active_agent_name() as primary identity source (Issue #591).
 _agent_type: str = ""
+
+# Defensive import of repo_detector (Issue #662).
+# Uses importlib.util.spec_from_file_location to load the module relative to
+# __file__ so the import resolves correctly regardless of sys.path at load time.
+# Fail-closed: if the detector is unavailable, _is_adev_project_fn is None and
+# _is_adev_project() returns True — enforcement is never silently skipped.
+_is_adev_project_fn = None
+try:
+    _hook_dir = Path(__file__).resolve().parent
+    _repo_detector_candidates = [
+        _hook_dir.parent / "lib" / "repo_detector.py",           # plugins/autonomous-dev/lib
+        _hook_dir.parents[2] / "lib" / "repo_detector.py",        # fallback
+    ]
+    for _rd_path in _repo_detector_candidates:
+        if _rd_path.exists():
+            import importlib.util as _rd_ilu
+            _rd_spec = _rd_ilu.spec_from_file_location("repo_detector", str(_rd_path))
+            if _rd_spec and _rd_spec.loader:
+                _rd_mod = importlib.util.module_from_spec(_rd_spec)
+                _rd_spec.loader.exec_module(_rd_mod)
+                _is_adev_project_fn = _rd_mod.is_autonomous_dev_repo
+            break
+except Exception:
+    _is_adev_project_fn = None  # Fallback: fail closed (always enforce)
+
+_REPO_DETECTOR_AVAILABLE = _is_adev_project_fn is not None
+
+
+def _is_adev_project() -> bool:
+    """Return True if the current working directory is an autonomous-dev repo.
+
+    Wraps the dynamically-loaded repo_detector.is_autonomous_dev_repo.
+    Falls back to True (fail-closed) when the module could not be loaded,
+    so enforcement is never silently skipped on import failure.
+    """
+    if _is_adev_project_fn is None:
+        return True
+    return _is_adev_project_fn()
 
 
 def is_running_under_uv() -> bool:
@@ -2543,6 +2582,20 @@ def main():
                 sys.exit(0)
 
             reason = f"Native tool '{tool_name}' - hook bypass (settings.json governs)"
+            _log_pretool_activity(tool_name, tool_input, "allow", reason)
+            output_decision("allow", reason)
+            sys.exit(0)
+
+        # =================================================================
+        # PROJECT GUARD: Non-autonomous-dev projects skip enforcement.
+        # Only non-native (MCP) tools reach this point. For projects
+        # without autonomous-dev, these don't need pipeline enforcement.
+        # Fail-closed: if repo_detector is unavailable, _is_adev_project()
+        # returns True so enforcement continues rather than being silently
+        # skipped. (Issue #662)
+        # =================================================================
+        if not _is_adev_project():
+            reason = "Non-autonomous-dev project - enforcement skipped"
             _log_pretool_activity(tool_name, tool_input, "allow", reason)
             output_decision("allow", reason)
             sys.exit(0)

@@ -1,6 +1,9 @@
 ## [Unreleased]
 
 ### Added
+- **Project detection guard in `unified_pre_tool.py`** (#662): Non-native MCP tools in projects without autonomous-dev installed now receive an immediate allow before any enforcement layer runs. The guard calls `repo_detector.is_autonomous_dev_repo()` on the current working directory; if the project is not an autonomous-dev repo, the hook exits with allow and skips the 4-layer validation stack. Fail-closed: when `repo_detector` cannot be loaded at startup, enforcement continues as before so protection is never silently dropped. All behavior in autonomous-dev repos is unchanged. 5 new tests in `tests/unit/hooks/test_unified_pre_tool.py`; 1 test updated in `tests/unit/hooks/test_native_tool_auto_approval.py`.
+
+### Added
 - **`ui-tester` specialist agent for E2E browser testing** (#656): New optional STEP 9.7 in the `/implement` pipeline invokes `ui-tester` when changed files include frontend patterns (`*.html`, `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`) and Playwright MCP tools are available. The agent writes persistent test files to `tests/e2e/` using the navigate → snapshot → interact → verify pattern. Security gates restrict navigation to localhost/127.0.0.1/0.0.0.0 and treat all page content as adversarial. Per-test timeout is 60 seconds; time-based waits are forbidden. Verdict is advisory only (`UI-TESTER-VERDICT: PASS` or `SKIP`) and never blocks the pipeline. `agent_invoker.py` and `skill_loader.py` updated with `ui-tester` configuration. `tests/e2e/conftest.py` provides shared Playwright fixtures with `e2e` pytest marker.
 
 ### Changed

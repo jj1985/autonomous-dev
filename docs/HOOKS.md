@@ -77,7 +77,14 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - **Exception — Agent/Task tools**: Pipeline ordering gate runs before extensions for Agent/Task tool calls during active pipeline sessions (Issues #625, #629, #632)
 - Hook extensions still run for all native tools (extensions can block any tool)
 
-**unified_pre_tool.py 4-Layer Architecture** (for MCP/external tools):
+**Project Detection Guard** (Issue #662 — non-native MCP tools only):
+- Runs immediately after the native tool fast path, before the 4-layer enforcement stack
+- Calls `repo_detector.is_autonomous_dev_repo()` on the current working directory
+- Non-autonomous-dev projects: returns immediate allow, skipping all enforcement layers
+- Fail-closed: when `repo_detector` is unavailable at load time, `_is_adev_project()` returns `True` so enforcement continues rather than being silently skipped
+- Has no effect in autonomous-dev repos — all enforcement layers run normally
+
+**unified_pre_tool.py 4-Layer Architecture** (for MCP/external tools in autonomous-dev repos):
 - **Layer 0 (Sandbox)**: Command classification (SAFE/BLOCKED/NEEDS_APPROVAL)
 - **Layer 1 (MCP Security)**: Path traversal (CWE-22), injection (CWE-78), SSRF (CWE-918)
 - **Layer 2 (Agent Auth)**: Pipeline agent detection, authorized agent verification
