@@ -35,8 +35,8 @@ if [ -z "${REMOTE_HOST:-}" ]; then
         REMOTE_HOST="andrewkaszubski@100.103.205.63"
     fi
 fi
-LOCAL_REPOS="${LOCAL_REPOS:-autonomous-dev anyclaude realign spektiv}"
-REMOTE_REPOS="${REMOTE_REPOS:-autonomous-dev anyclaude realign spektiv}"
+LOCAL_REPOS="${LOCAL_REPOS:-autonomous-dev anyclaude realign spektiv homeassistant}"
+REMOTE_REPOS="${REMOTE_REPOS:-autonomous-dev anyclaude realign spektiv homeassistant}"
 SUBDIRS="hooks commands agents lib templates config skills scripts"
 GLOBAL_SUBDIRS="hooks lib config"
 
