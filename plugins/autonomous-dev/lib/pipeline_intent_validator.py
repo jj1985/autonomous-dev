@@ -116,6 +116,10 @@ MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
 # Minimum word count for doc-master output to be considered a valid verdict
 MIN_DOC_VERDICT_WORDS = 30
 
+# Minimum word count for doc-master output to be considered a real semantic sweep
+# (as opposed to a shallow CHANGELOG-only update). Issue #672.
+MIN_DOC_SWEEP_WORDS = 100
+
 # Known valid agent types for file path construction (security whitelist)
 VALID_AGENT_TYPES = set(STEP_ORDER.keys())
 
@@ -954,6 +958,20 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
 
     for inv, comp in doc_pairs:
         if comp is None:
+            # No completion event found via correlation — but correlation can fail
+            # due to session grouping, timestamp parsing, or window boundary issues.
+            # Fallback: check if ANY doc-master completion exists in the full event list
+            # with sufficient word count and success=True (Issue #650).
+            any_healthy_completion = any(
+                e for e in events
+                if e.pipeline_action == "agent_completion"
+                and e.subagent_type == "doc-master"
+                and e.success
+                and e.result_word_count >= MIN_DOC_VERDICT_WORDS
+            )
+            if any_healthy_completion:
+                continue  # Skip this false positive
+
             # No completion event found — doc-master may have timed out or crashed
             findings.append(Finding(
                 finding_type="doc_verdict_missing",
@@ -1014,6 +1032,99 @@ def detect_doc_verdict_missing(events: List[PipelineEvent]) -> List[Finding]:
         # else: completion has sufficient output and success=True — no finding
 
     return findings
+
+def detect_doc_verdict_shallow(events: List[PipelineEvent]) -> List[Finding]:
+    """Detect doc-master invocations that produced shallow output (Issue #672).
+
+    A doc-master completion that passes the MIN_DOC_VERDICT_WORDS threshold
+    (so it is NOT caught by detect_doc_verdict_missing) but falls below
+    MIN_DOC_SWEEP_WORDS indicates the agent likely only updated CHANGELOG
+    without performing a real semantic drift sweep.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of WARNING findings for shallow doc-master output.
+    """
+    findings: List[Finding] = []
+
+    pairs = _correlate_invocation_completion(events)
+    doc_pairs = [(inv, comp) for inv, comp in pairs if inv.subagent_type == "doc-master"]
+
+    for inv, comp in doc_pairs:
+        if comp is not None:
+            # Only flag if completion succeeded and passes the "missing" threshold
+            # but falls below the "sweep" threshold
+            if (
+                comp.success
+                and comp.result_word_count >= MIN_DOC_VERDICT_WORDS
+                and comp.result_word_count < MIN_DOC_SWEEP_WORDS
+            ):
+                findings.append(Finding(
+                    finding_type="doc_verdict_shallow",
+                    severity="WARNING",
+                    pattern_id="doc_verdict_shallow",
+                    description=(
+                        f"[DOC-VERDICT-SHALLOW] doc-master produced only "
+                        f"{comp.result_word_count} result words at {comp.timestamp} "
+                        f"(minimum for real sweep: {MIN_DOC_SWEEP_WORDS}) — "
+                        f"output too short for a semantic drift check. "
+                        f"Only CHANGELOG may have been updated."
+                    ),
+                    evidence=[
+                        f"subagent_type: {comp.subagent_type}",
+                        f"result_word_count: {comp.result_word_count}",
+                        f"minimum_sweep_words: {MIN_DOC_SWEEP_WORDS}",
+                        f"invocation_timestamp: {inv.timestamp}",
+                        f"completion_timestamp: {comp.timestamp}",
+                        f"success: {comp.success}",
+                    ],
+                ))
+        else:
+            # Fallback: correlation failed — check if ANY doc-master completion
+            # exists that is healthy but shallow (Issue #650 pattern applied to #672)
+            any_shallow_completion = any(
+                e for e in events
+                if e.pipeline_action == "agent_completion"
+                and e.subagent_type == "doc-master"
+                and e.success
+                and e.result_word_count >= MIN_DOC_VERDICT_WORDS
+                and e.result_word_count < MIN_DOC_SWEEP_WORDS
+            )
+            if any_shallow_completion:
+                # Find the actual completion for evidence
+                shallow_comp = next(
+                    e for e in events
+                    if e.pipeline_action == "agent_completion"
+                    and e.subagent_type == "doc-master"
+                    and e.success
+                    and e.result_word_count >= MIN_DOC_VERDICT_WORDS
+                    and e.result_word_count < MIN_DOC_SWEEP_WORDS
+                )
+                findings.append(Finding(
+                    finding_type="doc_verdict_shallow",
+                    severity="WARNING",
+                    pattern_id="doc_verdict_shallow",
+                    description=(
+                        f"[DOC-VERDICT-SHALLOW] doc-master produced only "
+                        f"{shallow_comp.result_word_count} result words "
+                        f"(minimum for real sweep: {MIN_DOC_SWEEP_WORDS}) — "
+                        f"output too short for a semantic drift check. "
+                        f"Only CHANGELOG may have been updated."
+                    ),
+                    evidence=[
+                        f"subagent_type: doc-master",
+                        f"result_word_count: {shallow_comp.result_word_count}",
+                        f"minimum_sweep_words: {MIN_DOC_SWEEP_WORDS}",
+                        f"invocation_timestamp: {inv.timestamp}",
+                        f"completion_timestamp: {shallow_comp.timestamp}",
+                        f"success: {shallow_comp.success}",
+                    ],
+                ))
+
+    return findings
+
 
 def detect_batch_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
     """Detect batch issues where continuous-improvement-analyst was not invoked.
@@ -1084,6 +1195,69 @@ def detect_batch_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
 
     return findings
 
+
+def detect_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
+    """Detect missing continuous-improvement-analyst in non-batch pipeline runs.
+
+    Complements detect_batch_cia_skip (which handles batch_issue_number > 0).
+    This function detects CIA skip in single /implement runs where the full
+    pipeline ran but CIA was never invoked.
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of findings for single-pipeline CIA skip violations.
+    """
+    findings: List[Finding] = []
+
+    # Collect all agent types from both invocation and completion events
+    agent_events = [
+        e for e in events
+        if e.pipeline_action in ("agent_invocation", "agent_completion")
+        and e.subagent_type
+        and e.tool in AGENT_TOOL_NAMES
+    ]
+
+    if not agent_events:
+        return findings
+
+    # Skip if this looks like a batch run (handled by detect_batch_cia_skip)
+    if any(e.batch_issue_number > 0 for e in agent_events):
+        return findings
+
+    # Build set of all agent types that ran
+    agents_ran: set[str] = {e.subagent_type for e in agent_events}
+
+    # Core agents that indicate a full pipeline run
+    core_agents = {"implementer", "planner", "reviewer", "security-auditor"}
+    core_present = agents_ran & core_agents
+
+    # Only flag if this looks like a full pipeline run (at least 3 core agents)
+    if len(core_present) < 3:
+        return findings
+
+    # Check if CIA ran
+    if "continuous-improvement-analyst" not in agents_ran:
+        findings.append(Finding(
+            finding_type="cia_skip",
+            severity="WARNING",
+            pattern_id="single_pipeline_cia_skip",
+            description=(
+                f"[INCOMPLETE] Full pipeline run missing continuous-improvement-analyst. "
+                f"Agents that ran: {sorted(agents_ran)}. "
+                f"CIA was not invoked — quality check skipped."
+            ),
+            evidence=[
+                f"agents_ran: {sorted(agents_ran)}",
+                f"core_agents_present: {sorted(core_present)}",
+                f"cia_invoked: False",
+            ],
+        ))
+
+    return findings
+
+
 def _run_checks_on_events(events: List[PipelineEvent]) -> List[Finding]:
     """Run all check functions on a list of events from a single session.
 
@@ -1102,7 +1276,9 @@ def _run_checks_on_events(events: List[PipelineEvent]) -> List[Finding]:
     findings.extend(detect_progressive_compression(events))
     findings.extend(detect_minimum_prompt_violation(events))
     findings.extend(detect_doc_verdict_missing(events))
+    findings.extend(detect_doc_verdict_shallow(events))
     findings.extend(detect_batch_cia_skip(events))
+    findings.extend(detect_cia_skip(events))
     return findings
 
 

@@ -1,6 +1,13 @@
 ## [Unreleased]
 
+### Added
+- **Single-pipeline CIA skip detection** (Issue #667): New `detect_cia_skip()` function in `pipeline_intent_validator.py` detects non-batch pipeline runs where `continuous-improvement-analyst` was not invoked. Complements the existing `detect_batch_cia_skip()` (Issue #559) which handles batch runs. Skips sessions with no completed pipeline agents (not a real run) and sessions that appear to be batch runs (any event has `batch_issue_number > 0`). Emits `WARNING` finding with `pattern_id="single_pipeline_cia_skip"`. Integrated into `validate_pipeline_intent()`. New unit tests in `tests/unit/lib/test_pipeline_intent_validator.py`.
+
+### Added
+- **Shallow doc-master sweep detection** (Issue #672): New `detect_doc_verdict_shallow()` function and `MIN_DOC_SWEEP_WORDS = 100` constant in `pipeline_intent_validator.py` detect doc-master completions that pass the existing `MIN_DOC_VERDICT_WORDS = 30` threshold (so they evade the missing-verdict check) but produce fewer than 100 words — indicating the agent only updated CHANGELOG without performing a real semantic drift sweep. Emits a `WARNING` finding with `finding_type="doc_verdict_shallow"`. Uses the same `_correlate_invocation_completion()` pairing strategy as `detect_doc_verdict_missing`, with a fallback scan when correlation fails. Integrated into `validate_pipeline_intent()`.
+
 ### Fixed
+- **False positive `doc_verdict_missing` findings when correlation fails** (Issue #650): `detect_doc_verdict_missing()` in `pipeline_intent_validator.py` now performs a fallback scan of the full event list when `_correlate_invocation_completion()` returns no completion match for a doc-master invocation. If any doc-master completion event with `success=True` and `result_word_count >= MIN_DOC_VERDICT_WORDS` exists, the unmatched invocation is skipped rather than flagged as missing. This prevents spurious CRITICAL findings caused by session grouping, timestamp parsing, or time-window boundary edge cases in the correlation algorithm.
 - **`gh issue create` self-block when invoked via issue-creating slash commands** (#647, #663): `unified_pre_tool.py` now auto-writes the command context file (`/tmp/autonomous_dev_cmd_context.json`) in the `NATIVE_TOOLS` fast path when a `Skill` tool invocation for an issue-creating command is detected. Previously, the context file was never written before the subsequent Bash `gh issue create` call fired, causing the hook to incorrectly block commands like `/create-issue`, `/plan-to-issues`, `/improve`, `/refactor`, and `/retrospective`. Regression test added: `tests/unit/hooks/test_gh_issue_create_selfblock.py`.
 
 ### Added

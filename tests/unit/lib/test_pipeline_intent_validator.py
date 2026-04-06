@@ -30,13 +30,16 @@ sys.path.insert(0, str(PROJECT_ROOT / "plugins" / "autonomous-dev" / "lib"))
 
 from pipeline_intent_validator import (
     Finding,
+    MIN_DOC_SWEEP_WORDS,
     MIN_DOC_VERDICT_WORDS,
     PipelineEvent,
     VALID_AGENT_TYPES,
     _correlate_invocation_completion,
     detect_batch_cia_skip,
+    detect_cia_skip,
     detect_context_dropping,
     detect_doc_verdict_missing,
+    detect_doc_verdict_shallow,
     detect_ghost_invocations,
     detect_hard_gate_ordering,
     detect_parallelization_violations,
@@ -149,6 +152,7 @@ def _write_clean_pipeline(log_file: Path, session_id: str = "test-session") -> N
         _make_jsonl_line(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=12)).isoformat(), session_id=session_id),
         _make_jsonl_line(subagent_type="doc-master", timestamp=(base + timedelta(minutes=10, seconds=4)).isoformat(), session_id=session_id),
         doc_master_completion,
+        _make_jsonl_line(subagent_type="continuous-improvement-analyst", timestamp=(base + timedelta(minutes=16)).isoformat(), session_id=session_id),
     ]
     log_file.write_text("\n".join(lines) + "\n")
 
@@ -948,6 +952,213 @@ class TestDetectDocVerdictMissing:
         assert len(doc_findings) == 1
         assert "[DOC-VERDICT-MISSING]" in doc_findings[0].description
 
+    def test_correlation_failure_with_healthy_completion_no_false_positive(self):
+        """Issue #650: correlation failure should NOT flag when a healthy completion exists.
+
+        When the invocation and completion have timestamps > 600s apart (exceeding
+        max_window_seconds), correlation fails and comp is None. But if a healthy
+        doc-master completion event exists in the event list, the fallback check
+        should suppress the false positive.
+        """
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                result_word_count=0,
+                success=True,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            # Completion event is 15 minutes later — exceeds 600s correlation window
+            PipelineEvent(
+                timestamp="2026-03-22T10:15:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=59,  # >= MIN_DOC_VERDICT_WORDS (30)
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 0, (
+            "#650: correlation failure with healthy completion should NOT produce "
+            "false positive — fallback scan should suppress it"
+        )
+
+    def test_correlation_failure_without_healthy_completion_still_flags(self):
+        """Issue #650: fallback should NOT suppress when no healthy completion exists.
+
+        If correlation fails AND there is no healthy completion in the event list,
+        the finding should still be emitted.
+        """
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                result_word_count=0,
+                success=True,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            # Completion event exists but has low word count — not healthy
+            PipelineEvent(
+                timestamp="2026-03-22T10:15:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=5,  # Below MIN_DOC_VERDICT_WORDS (30)
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 1, (
+            "#650: correlation failure with NO healthy completion should still flag"
+        )
+        assert findings[0].finding_type == "doc_verdict_missing"
+
+    def test_correlation_failure_failed_completion_still_flags(self):
+        """Issue #650: fallback should NOT suppress when completion has success=False."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                result_word_count=0,
+                success=True,
+                timestamp="2026-03-22T10:00:00+00:00",
+            ),
+            # Completion has enough words but success=False — not healthy
+            PipelineEvent(
+                timestamp="2026-03-22T10:15:00+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="doc-master",
+                pipeline_action="agent_completion",
+                result_word_count=200,
+                success=False,
+            ),
+        ]
+        findings = detect_doc_verdict_missing(events)
+        assert len(findings) == 1, (
+            "#650: correlation failure with failed completion should still flag"
+        )
+
+
+class TestDetectDocVerdictShallow:
+    """Tests for detect_doc_verdict_shallow function (Issue #672)."""
+
+    def test_doc_master_shallow_output_flagged(self):
+        """doc-master with 42 words (between 30 and 100) should produce WARNING finding."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-02-28T10:00:00+00:00",
+                result_word_count=0,
+                success=True,
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_completion",
+                timestamp="2026-02-28T10:01:00+00:00",
+                result_word_count=42,
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_shallow(events)
+        assert len(findings) == 1
+        assert findings[0].finding_type == "doc_verdict_shallow"
+        assert findings[0].severity == "WARNING"
+        assert findings[0].pattern_id == "doc_verdict_shallow"
+        assert "[DOC-VERDICT-SHALLOW]" in findings[0].description
+        assert "42" in findings[0].description
+        assert str(MIN_DOC_SWEEP_WORDS) in findings[0].description
+
+    def test_doc_master_sufficient_output_passes(self):
+        """doc-master with 150 words (>= MIN_DOC_SWEEP_WORDS) should produce no finding."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-02-28T10:00:00+00:00",
+                result_word_count=0,
+                success=True,
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_completion",
+                timestamp="2026-02-28T10:01:00+00:00",
+                result_word_count=150,
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_shallow(events)
+        assert len(findings) == 0
+
+    def test_doc_master_below_min_not_shallow(self):
+        """doc-master with 5 words (below MIN_DOC_VERDICT_WORDS) should NOT be flagged by shallow detector.
+
+        This case is handled by detect_doc_verdict_missing instead.
+        """
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-02-28T10:00:00+00:00",
+                result_word_count=0,
+                success=True,
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_completion",
+                timestamp="2026-02-28T10:01:00+00:00",
+                result_word_count=5,
+                success=True,
+            ),
+        ]
+        findings = detect_doc_verdict_shallow(events)
+        assert len(findings) == 0
+
+    def test_doc_master_failed_not_shallow(self):
+        """doc-master with success=False should NOT be flagged by shallow detector."""
+        events = [
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_invocation",
+                timestamp="2026-02-28T10:00:00+00:00",
+                result_word_count=0,
+                success=True,
+            ),
+            _make_event(
+                subagent_type="doc-master",
+                tool="Agent",
+                pipeline_action="agent_completion",
+                timestamp="2026-02-28T10:01:00+00:00",
+                result_word_count=42,
+                success=False,
+            ),
+        ]
+        findings = detect_doc_verdict_shallow(events)
+        assert len(findings) == 0
+
+    def test_no_doc_master_events_no_findings(self):
+        """No doc-master events should produce empty findings."""
+        events = [
+            _make_event(subagent_type="researcher", tool="Agent", result_word_count=500),
+            _make_event(subagent_type="implementer", tool="Agent", result_word_count=1000),
+        ]
+        findings = detect_doc_verdict_shallow(events)
+        assert len(findings) == 0
+
 
 class TestDetectBatchCiaSkip:
     """Tests for detect_batch_cia_skip function (Issue #559)."""
@@ -1682,4 +1893,127 @@ class TestPublicTimestampAPI:
 
         result = parse_timestamp("2026-03-01T10:00:00.123456+00:00")
         assert result is not None
+
+
+class TestDetectCiaSkip:
+    """Tests for detect_cia_skip function (Issue #667)."""
+
+    def test_full_pipeline_missing_cia_flagged(self):
+        """Full pipeline (4+ core agents) missing CIA should produce WARNING finding."""
+        events = [
+            _make_event(subagent_type="planner", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:00:00+00:00"),
+            _make_event(subagent_type="implementer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:05:00+00:00"),
+            _make_event(subagent_type="reviewer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:10:00+00:00"),
+            _make_event(subagent_type="security-auditor", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:15:00+00:00"),
+            _make_event(subagent_type="doc-master", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:20:00+00:00"),
+        ]
+        findings = detect_cia_skip(events)
+        assert len(findings) == 1, "#667: full pipeline missing CIA should produce one finding"
+        assert findings[0].severity == "WARNING"
+        assert findings[0].pattern_id == "single_pipeline_cia_skip"
+        assert findings[0].finding_type == "cia_skip"
+        assert "[INCOMPLETE]" in findings[0].description
+        assert "continuous-improvement-analyst" in findings[0].description
+
+    def test_full_pipeline_with_cia_passes(self):
+        """Full pipeline with CIA invoked should produce no findings."""
+        events = [
+            _make_event(subagent_type="planner", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:00:00+00:00"),
+            _make_event(subagent_type="implementer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:05:00+00:00"),
+            _make_event(subagent_type="reviewer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:10:00+00:00"),
+            _make_event(subagent_type="security-auditor", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:15:00+00:00"),
+            _make_event(subagent_type="continuous-improvement-analyst", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:20:00+00:00"),
+        ]
+        findings = detect_cia_skip(events)
+        assert findings == [], "#667: full pipeline with CIA should have no findings"
+
+    def test_partial_pipeline_missing_cia_not_flagged(self):
+        """Partial pipeline (< 3 core agents) missing CIA should not be flagged."""
+        events = [
+            _make_event(subagent_type="implementer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:00:00+00:00"),
+            _make_event(subagent_type="reviewer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        timestamp="2026-03-25T10:05:00+00:00"),
+        ]
+        findings = detect_cia_skip(events)
+        assert findings == [], "#667: partial pipeline should not flag missing CIA"
+
+    def test_batch_events_skipped(self):
+        """Events with batch_issue_number > 0 should be skipped (handled by detect_batch_cia_skip)."""
+        events = [
+            _make_event(subagent_type="planner", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        batch_issue_number=42,
+                        timestamp="2026-03-25T10:00:00+00:00"),
+            _make_event(subagent_type="implementer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        batch_issue_number=42,
+                        timestamp="2026-03-25T10:05:00+00:00"),
+            _make_event(subagent_type="reviewer", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        batch_issue_number=42,
+                        timestamp="2026-03-25T10:10:00+00:00"),
+            _make_event(subagent_type="security-auditor", tool="Agent",
+                        pipeline_action="agent_invocation",
+                        batch_issue_number=42,
+                        timestamp="2026-03-25T10:15:00+00:00"),
+        ]
+        findings = detect_cia_skip(events)
+        assert findings == [], "#667: batch events should be skipped"
+
+    def test_no_agent_events_no_findings(self):
+        """Empty or non-agent events should produce no findings."""
+        # Empty list
+        assert detect_cia_skip([]) == [], "#667: empty events should return empty"
+
+        # Non-agent events (pipeline_action not agent_invocation/agent_completion)
+        events = [
+            _make_event(subagent_type="implementer", tool="Agent",
+                        pipeline_action="step_start",
+                        timestamp="2026-03-25T10:00:00+00:00"),
+        ]
+        findings = detect_cia_skip(events)
+        assert findings == [], "#667: non-agent events should return empty"
+
+    def test_agent_completion_events_also_detected(self):
+        """agent_completion events should also be used to build the agents set."""
+        events = [
+            _make_event(subagent_type="planner", tool="Agent",
+                        pipeline_action="agent_completion",
+                        timestamp="2026-03-25T10:00:00+00:00"),
+            _make_event(subagent_type="implementer", tool="Agent",
+                        pipeline_action="agent_completion",
+                        timestamp="2026-03-25T10:05:00+00:00"),
+            _make_event(subagent_type="reviewer", tool="Agent",
+                        pipeline_action="agent_completion",
+                        timestamp="2026-03-25T10:10:00+00:00"),
+            _make_event(subagent_type="security-auditor", tool="Agent",
+                        pipeline_action="agent_completion",
+                        timestamp="2026-03-25T10:15:00+00:00"),
+        ]
+        findings = detect_cia_skip(events)
+        assert len(findings) == 1, "#667: agent_completion events should also trigger detection"
+        assert findings[0].pattern_id == "single_pipeline_cia_skip"
 
