@@ -238,7 +238,7 @@ For existing projects, use:
 
 ```bash
 /refactor                # Code, docs, and test optimization (--tests, --docs, --code, --fix)
-/sweep                   # Quick codebase hygiene (alias for /refactor --quick)
+/sweep                   # Quick codebase hygiene (alias for /refactor --quick); --tests for AST-based test pruning analysis
 /audit                   # Quality audit (--quick, --security, --docs, --code, --tests)
 /skill-eval              # Measure skill effectiveness via behavioral delta scoring (--quick, --skill, --update)
 /advise                  # Critical thinking analysis
@@ -315,7 +315,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 | Agents | 12 | Specialized AI for each SDLC stage |
 | Skills | 17 | Domain knowledge (progressive disclosure) |
 | Hooks | 25 | Automatic validation and enforcement |
-| Libraries | 184 | Python utilities |
+| Libraries | 190 | Python utilities |
 
 ---
 
@@ -333,7 +333,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 ### Reference
 - [Commands](plugins/autonomous-dev/commands/) - All 21 commands
 - [Hooks](docs/HOOKS.md) - 25 active hooks
-- [Libraries](docs/LIBRARIES.md) - 184 Python utilities
+- [Libraries](docs/LIBRARIES.md) - 190 Python utilities
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model
 
 ### Troubleshooting

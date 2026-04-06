@@ -23,6 +23,7 @@ Parse the ARGUMENTS for optional flags:
 - `--claude`: CLAUDE.md structure validation (runs `validate_project_alignment.py`)
 - `--tests`: Test coverage analysis (invokes test-coverage-auditor agent with AST analysis)
 - `--genai`: GenAI UAT test audit — retrofit or expand LLM-as-judge tests
+- `--test-tracing`: Test-to-issue tracing — map tests to GitHub issues, flag gaps
 
 If no flags provided, run full audit (all categories).
 
@@ -65,6 +66,29 @@ For each gap found, invoke test-master agent to write GenAI functional tests in 
 GENAI_TESTS=true pytest tests/genai/ -v --no-cov 2>&1 | tail -20
 ```
 Report: total tests, pass/fail, any flaky tests that need threshold tuning.
+
+### --test-tracing flag: Test-to-Issue Tracing (Issue #675)
+
+When `--test-tracing` is passed (or as part of full audit), perform test-to-issue tracing:
+
+**STEP 1: Scan test references**
+```python
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from test_issue_tracer import TestIssueTracer
+tracer = TestIssueTracer(Path('.'))
+report = tracer.analyze()
+```
+
+**STEP 2: Display report**
+Output `report.format_table()` as markdown. The report includes:
+- **Untested issues**: Open GitHub issues with no corresponding test reference
+- **Orphaned pairs**: Tests that reference closed issues (candidates for cleanup)
+- **Untraced tests**: Test files with zero issue references (convention gap)
+
+**STEP 3: Summary**
+This is informational only — it does NOT block the audit. Include findings in the overall audit report.
+
+Supported reference patterns: `TestIssue(\d+)`, `test_issue_(\d+)`, docstring `#(\d+)`, `# Issue: #(\d+)`, `GH-(\d+)`, `@pytest.mark.issue(\d+)`.
 
 Use the doc-master agent to compile all findings into a report at `docs/sessions/AUDIT_REPORT_<timestamp>.md`
 

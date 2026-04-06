@@ -167,35 +167,44 @@ assert any(Path("plugins/autonomous-dev/lib").glob("*skill*"))
 
 ---
 
-## Test Tiers (auto-categorized by directory)
+## Test Tiers — Diamond Model (auto-categorized by directory)
 
-No manual `@pytest.mark` needed — directory location determines tier.
+No manual `@pytest.mark` needed — directory location determines tier. Source of truth: `plugins/autonomous-dev/lib/tier_registry.py`.
 
-```
-tests/
-├── regression/
-│   ├── smoke/           # Tier 0: Critical path (<5s) — CI GATE
-│   ├── regression/      # Tier 1: Feature protection (<30s)
-│   ├── extended/        # Tier 2: Deep validation (<5min)
-│   └── progression/     # Tier 3: Forward-looking tests (next milestone)
-├── unit/                # Isolated functions (<1s each)
-├── integration/         # Multi-component workflows (<30s)
-├── genai/               # LLM-as-judge (opt-in via --genai flag)
-└── archived/            # Excluded from runs
-```
+| Tier | Lifecycle | Directory | Markers | Max Duration |
+|------|-----------|-----------|---------|--------------|
+| T0 | permanent | `tests/genai/` | genai, acceptance | - |
+| T0 | permanent | `tests/regression/smoke/` | smoke | 5s |
+| T1 | stable | `tests/e2e/` | e2e, slow | 5min |
+| T1 | stable | `tests/integration/` | integration | 30s |
+| T2 | semi-stable | `tests/regression/regression/` | regression | 30s |
+| T2 | semi-stable | `tests/regression/extended/` | extended, slow | 5min |
+| T2 | semi-stable | `tests/property/` | property, slow | 5min |
+| T3 | ephemeral | `tests/regression/progression/` | progression, tdd_red | - |
+| T3 | ephemeral | `tests/unit/` | unit | 1s |
+| T3 | ephemeral | `tests/hooks/` | hooks, unit | 1s |
+| T3 | ephemeral | `tests/security/` | unit | 1s |
+
+**Lifecycle definitions**:
+- **permanent**: Never delete. Critical path validation and acceptance criteria.
+- **stable**: Delete only if the feature being tested is removed from the product.
+- **semi-stable**: Prune after 90 days unused. Feature regression protection.
+- **ephemeral**: Prune freely. Implementation-coupled tests that change with the code.
 
 **Where to put a new test**:
-- Protecting a released critical path? → `regression/smoke/`
-- Protecting a released feature? → `regression/regression/`
-- Testing a pure function? → `unit/`
-- Testing component interaction? → `integration/`
-- Checking doc↔code drift? → `genai/`
+- Protecting a released critical path? -> `regression/smoke/`
+- Protecting a released feature? -> `regression/regression/`
+- Testing a pure function? -> `unit/`
+- Testing component interaction? -> `integration/`
+- Full workflow end-to-end? -> `e2e/`
+- Checking doc-to-code drift? -> `genai/`
 
 **Run commands**:
 ```bash
-pytest -m smoke                    # CI gate
-pytest -m "smoke or regression"    # Feature protection
-pytest tests/genai/ --genai        # GenAI validation (opt-in)
+pytest -m smoke                    # CI gate (T0)
+pytest -m "smoke or regression"    # Feature protection (T0+T2)
+pytest -m "not slow"               # Fast tests only
+pytest tests/genai/ --genai        # GenAI validation (opt-in, T0)
 ```
 
 ---
@@ -227,6 +236,44 @@ pytest tests/genai/ --genai        # GenAI validation (opt-in)
 | Security posture | GenAI judge | Regex scanning |
 | Config structure | Structural | Config values |
 | Agent output quality | GenAI judge | Output string matching |
+
+---
+
+## Test-to-Issue Tracing Convention (Issue #675)
+
+Link tests to GitHub issues for traceability. The `TestIssueTracer` library (`plugins/autonomous-dev/lib/test_issue_tracer.py`) scans for these patterns automatically.
+
+### Supported Reference Patterns
+
+| Pattern | Example | Type |
+|---------|---------|------|
+| Class name | `class TestIssue656:` | class_name |
+| Function name | `def test_issue_589_regression():` | function_name |
+| Docstring | `"""Regression for #656"""` | docstring |
+| Comment | `# Issue: #656` | comment |
+| GH shorthand | `GH-42` | gh_shorthand |
+| Pytest marker | `@pytest.mark.issue(656)` | marker |
+
+### Convention Rules
+
+- **Regression tests MUST** reference the issue they protect (e.g., `class TestIssue656` or `# Fixes #656`)
+- **Feature tests SHOULD** reference the implementing issue (e.g., docstring `"""Implements #675"""`)
+- **Unit tests MAY** reference issues when the test covers a specific bug or feature
+
+### Usage
+
+```python
+# Quick check: does an issue have a test?
+from test_issue_tracer import TestIssueTracer
+tracer = TestIssueTracer(Path('.'))
+tracer.check_issue_has_test(675)  # True/False
+
+# Full analysis report
+report = tracer.analyze()
+print(report.format_table())
+```
+
+Run via `/audit --test-tracing` for a full tracing report.
 
 ---
 

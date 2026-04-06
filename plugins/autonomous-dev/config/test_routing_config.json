@@ -19,7 +19,34 @@
     "unit_skills": "unit",
     "regression": "regression",
     "genai": "genai",
-    "property": "property"
+    "property": "property",
+    "e2e": "e2e"
+  },
+  "tier_metadata": {
+    "T0": {
+      "name": "Permanent",
+      "lifecycle": "permanent",
+      "directories": ["tests/genai/", "tests/regression/smoke/"],
+      "description": "Never delete. Critical path and acceptance validation."
+    },
+    "T1": {
+      "name": "Stable",
+      "lifecycle": "stable",
+      "directories": ["tests/e2e/", "tests/integration/"],
+      "description": "Delete only if the feature is removed."
+    },
+    "T2": {
+      "name": "Semi-Stable",
+      "lifecycle": "semi-stable",
+      "directories": ["tests/regression/regression/", "tests/regression/extended/", "tests/property/"],
+      "description": "Prune after 90 days unused."
+    },
+    "T3": {
+      "name": "Ephemeral",
+      "lifecycle": "ephemeral",
+      "directories": ["tests/regression/progression/", "tests/unit/", "tests/hooks/", "tests/security/"],
+      "description": "Prune freely. Implementation-coupled tests."
+    }
   },
   "always_smoke": true,
   "docs_only_skip_all": true
