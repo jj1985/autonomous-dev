@@ -2353,6 +2353,41 @@ def _run_extensions(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
     return ("allow", "")
 
 
+def _maybe_write_issue_context(tool_input: Dict) -> None:
+    """Write issue command context file when Skill invokes an issue-creating command.
+
+    Called from the NATIVE_TOOLS fast path when tool_name == "Skill".
+    Writes the context JSON that _is_issue_command_active() checks, enabling
+    downstream gh issue create Bash commands to pass through the hook.
+
+    Fails open (silently) — a write failure should not block the Skill invocation.
+
+    Args:
+        tool_input: The tool_input dict from the hook, containing "skill" and/or "args".
+    """
+    skill_name = (
+        tool_input.get("skill", "")
+        or (tool_input.get("args", "").split()[0] if tool_input.get("args") else "")
+    )
+    # Normalize: strip leading slash if present
+    skill_name = skill_name.lstrip("/")
+    if skill_name in GH_ISSUE_COMMANDS:
+        try:
+            import json as _json
+            from datetime import datetime, timezone
+
+            with open(GH_ISSUE_COMMAND_CONTEXT_PATH, "w") as f:
+                _json.dump(
+                    {
+                        "command": skill_name,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    f,
+                )
+        except Exception:
+            pass  # Fail open - don't block Skill invocation on context write failure
+
+
 def main():
     """Main entry point - dispatch to all validators and combine decisions."""
     try:
@@ -2396,6 +2431,13 @@ def main():
         # settings.json, not by this hook.
         # =================================================================
         if tool_name in NATIVE_TOOLS:
+            # Auto-write context file when Skill invokes issue-creating commands
+            # (Issue #647, #663). This MUST happen before any Bash gh-issue-create
+            # check, because the Skill tool fires first and sets up the context
+            # that _is_issue_command_active() reads.
+            if tool_name == "Skill":
+                _maybe_write_issue_context(tool_input)
+
             # Infrastructure protection: block direct edits to agents/, commands/,
             # hooks/, lib/, skills/ unless /implement pipeline is active (Issue #483)
             # Threat model: accidental direct edits, not malicious local attacker.

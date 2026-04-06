@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Fixed
+- **`gh issue create` self-block when invoked via issue-creating slash commands** (#647, #663): `unified_pre_tool.py` now auto-writes the command context file (`/tmp/autonomous_dev_cmd_context.json`) in the `NATIVE_TOOLS` fast path when a `Skill` tool invocation for an issue-creating command is detected. Previously, the context file was never written before the subsequent Bash `gh issue create` call fired, causing the hook to incorrectly block commands like `/create-issue`, `/plan-to-issues`, `/improve`, `/refactor`, and `/retrospective`. Regression test added: `tests/unit/hooks/test_gh_issue_create_selfblock.py`.
+
 ### Added
 - **Acceptance criteria coverage tracking in STEP 8 quality gate** (#676): New `acceptance_criteria_tracker.py` library provides `save_criteria_registry()`, `load_criteria_registry()`, and `compute_criteria_coverage()` to track which acceptance criteria from STEP 6 have matching tests. `step5_quality_gate.run_quality_gate()` now loads the criteria registry from `.claude/local/acceptance_criteria.json`, computes N/M coverage ratios, and appends the result to the STEP 8 summary line (e.g., `Acceptance: 3/4 criteria`). When total > 0 but covered == 0, a WARNING is appended (advisory only, never blocks). `implement.md` STEP 6 now saves the criteria-to-test mapping via `save_criteria_registry()` after generating acceptance tests. `docs/LIBRARIES.md` updated with entry 78 (`acceptance_criteria_tracker.py`) and the `step5_quality_gate.py` entry updated to describe the acceptance coverage feature. `docs/ARCHITECTURE-OVERVIEW.md` library count updated from 189 to 190.
 
