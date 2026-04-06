@@ -48,19 +48,26 @@ def pytest_addoption(parser):
 # Automatically applies pytest markers based on file location
 # =============================================================================
 
-# Map directory patterns to markers
-DIRECTORY_MARKERS = {
-    "regression/smoke": ["smoke"],
-    "regression/regression": ["regression"],
-    "regression/extended": ["extended", "slow"],
-    "regression/progression": ["progression", "tdd_red"],
-    "unit/": ["unit"],
-    "integration/": ["integration"],
-    "security/": ["unit"],  # Security tests are unit tests
-    "hooks/": ["hooks", "unit"],
-    "property/": ["property", "slow"],
-    "e2e/": ["e2e", "slow"],
-}
+# Import tier registry as source of truth for directory -> marker mapping.
+# Falls back to hardcoded dict if import fails (e.g. running tests outside project).
+try:
+    from tier_registry import build_directory_markers
+    DIRECTORY_MARKERS = build_directory_markers()
+except ImportError:
+    # Fallback: hardcoded markers (keep in sync with tier_registry.py)
+    DIRECTORY_MARKERS = {
+        "genai/": ["genai", "acceptance"],
+        "regression/smoke/": ["smoke"],
+        "e2e/": ["e2e", "slow"],
+        "integration/": ["integration"],
+        "regression/regression/": ["regression"],
+        "regression/extended/": ["extended", "slow"],
+        "property/": ["property", "slow"],
+        "regression/progression/": ["progression", "tdd_red"],
+        "unit/": ["unit"],
+        "hooks/": ["hooks", "unit"],
+        "security/": ["unit"],
+    }
 
 
 def pytest_collection_modifyitems(config, items):
@@ -80,6 +87,33 @@ def pytest_collection_modifyitems(config, items):
                     marker = getattr(pytest.mark, marker_name)
                     item.add_marker(marker)
                 break  # Only match first pattern
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Print tier distribution summary after test runs."""
+    try:
+        from tier_registry import get_tier_for_path
+    except ImportError:
+        return  # Skip if tier_registry not available
+
+    stats = terminalreporter.stats
+    all_items = []
+    for key in ("passed", "failed", "error", "skipped"):
+        all_items.extend(stats.get(key, []))
+
+    if not all_items:
+        return
+
+    distribution: dict = {}
+    for item in all_items:
+        fspath = str(getattr(item, "fspath", getattr(item, "nodeid", "")))
+        tier = get_tier_for_path(fspath)
+        tier_id = tier.tier_id if tier else "unknown"
+        distribution[tier_id] = distribution.get(tier_id, 0) + 1
+
+    terminalreporter.write_sep("=", "Tier Distribution (Diamond Model)")
+    for tier_id in sorted(distribution.keys()):
+        terminalreporter.write_line(f"  {tier_id}: {distribution[tier_id]} tests")
 
 
 @pytest.fixture(autouse=True)

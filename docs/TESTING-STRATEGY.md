@@ -82,7 +82,7 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 - Structure invariants (every hook in settings must exist on disk)
 - Manifest sync (install_manifest.json matches source files)
 
-**pytest integration**: `tests/property/` is auto-marked `property` + `slow` via `tests/conftest.py` directory markers. The `property` marker is registered in `pytest.ini`. Tests use `hypothesis` library with per-class `@settings(max_examples=200)`.
+**pytest integration**: `tests/property/` is auto-marked `property` + `slow` via `tests/conftest.py` directory markers. The marker-to-directory mapping is driven by `tier_registry.py` (Diamond Model tier registry — the canonical source of truth); `conftest.py` imports `build_directory_markers()` from it at startup. The `property` marker is registered in `pytest.ini`. Tests use `hypothesis` library with per-class `@settings(max_examples=200)`.
 
 **Research data**: Property-Generated Solver (PGS) framework shows +23-37% improvement in pass@1 over traditional TDD (arXiv 2506.18315). LLMs excel at discovering properties from function names, docstrings, and call patterns.
 

@@ -14,7 +14,7 @@ import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import coverage_baseline
 
@@ -25,6 +25,22 @@ except ImportError:
         from test_routing import route_tests as _route_tests
     except ImportError:
         _route_tests = None  # type: ignore[assignment]
+
+try:
+    from tier_registry import get_tier_distribution as _get_tier_distribution
+except ImportError:
+    _get_tier_distribution = None  # type: ignore[assignment]
+
+try:
+    from acceptance_criteria_tracker import (
+        CriteriaCoverageResult as _CriteriaCoverageResult,
+        compute_criteria_coverage as _compute_criteria_coverage,
+        load_criteria_registry as _load_criteria_registry,
+    )
+except ImportError:
+    _load_criteria_registry = None  # type: ignore[assignment]
+    _compute_criteria_coverage = None  # type: ignore[assignment]
+    _CriteriaCoverageResult = None  # type: ignore[assignment]
 
 
 COVERAGE_BASELINE_PATH = Path(".claude/local/coverage_baseline.json")
@@ -401,7 +417,50 @@ def run_quality_gate(*, full_tests: bool = False) -> dict:
         test_result.passed and coverage_result.passed and skip_passed
     )
 
+    # Compute tier distribution by globbing test directories
+    tier_distribution: Dict[str, int] = {}
+    if _get_tier_distribution is not None:
+        try:
+            tests_dir = Path("tests")
+            if tests_dir.exists():
+                test_files = [
+                    str(p) for p in tests_dir.rglob("test_*.py")
+                ]
+                test_files.extend(
+                    str(p) for p in tests_dir.rglob("*_test.py")
+                    if str(p) not in test_files
+                )
+                if test_files:
+                    tier_distribution = _get_tier_distribution(test_files)
+        except Exception:
+            pass  # Non-critical, skip on error
+
+    # Compute acceptance criteria coverage if tracker is available
+    acceptance_coverage: Optional[Dict[str, Any]] = None
+    if _load_criteria_registry is not None and _compute_criteria_coverage is not None:
+        try:
+            artifact_dir = Path(".claude/local")
+            registry = _load_criteria_registry(artifact_dir)
+            coverage = _compute_criteria_coverage(registry, Path("tests"))
+            acceptance_coverage = {
+                "total": coverage.total,
+                "covered": coverage.covered,
+                "uncovered_criteria": coverage.uncovered_criteria,
+                "coverage_ratio": coverage.coverage_ratio,
+                "has_warning": coverage.has_warning,
+            }
+        except Exception:
+            pass  # Non-critical, skip on error
+
     summary_parts = [test_result.message, coverage_result.message, skip_message]
+    if acceptance_coverage and acceptance_coverage["total"] > 0:
+        acc_str = f"Acceptance: {acceptance_coverage['covered']}/{acceptance_coverage['total']} criteria"
+        summary_parts.append(acc_str)
+        if acceptance_coverage["has_warning"]:
+            summary_parts.append("WARNING: 0 acceptance tests cover defined criteria")
+    if tier_distribution:
+        tier_str = ", ".join(f"{k}={v}" for k, v in sorted(tier_distribution.items()))
+        summary_parts.append(f"Tiers: {tier_str}")
     if test_result.blocker:
         summary_parts.append(f"BLOCKER: {test_result.blocker}")
 
@@ -413,11 +472,13 @@ def run_quality_gate(*, full_tests: bool = False) -> dict:
             total_tests=test_result.test_count,
         )
 
-    result = {
+    result: Dict[str, Any] = {
         "passed": overall_passed,
         "test_result": asdict(test_result),
         "coverage_result": asdict(coverage_result),
         "skip_regression": {"passed": skip_passed, "message": skip_message},
+        "tier_distribution": tier_distribution,
+        "acceptance_coverage": acceptance_coverage,
         "summary": " | ".join(summary_parts),
     }
 

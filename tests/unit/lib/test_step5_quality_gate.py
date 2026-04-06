@@ -333,3 +333,122 @@ class TestSkipRegressionInQualityGate:
         # 85 - 84 = 1.0 > 0.5 threshold, should fail
         assert result.passed is False
         assert result.baseline_coverage == 85.0
+
+
+class TestAcceptanceCoverageInQualityGate:
+    """Tests for acceptance criteria coverage integration in run_quality_gate."""
+
+    @patch("step5_quality_gate._compute_criteria_coverage")
+    @patch("step5_quality_gate._load_criteria_registry")
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_quality_gate_includes_acceptance_coverage(
+        self, mock_tests, mock_cov, mock_skip, mock_load_reg, mock_compute_cov
+    ):
+        """Quality gate result includes acceptance_coverage when registry exists."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=0, skip_rate=0.0, message="PASS: 10 passed",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (True, "Skip count OK: 0 (baseline: 0)")
+
+        # Simulate a registry with 3 criteria, 2 covered
+        mock_load_reg.return_value = [
+            {"criterion": "A", "scenario_name": "test_a", "test_file": ""},
+            {"criterion": "B", "scenario_name": "test_b", "test_file": ""},
+            {"criterion": "C", "scenario_name": "test_c", "test_file": ""},
+        ]
+        # Import the actual dataclass to create a proper return value
+        from acceptance_criteria_tracker import CriteriaCoverageResult
+        mock_compute_cov.return_value = CriteriaCoverageResult(
+            total=3, covered=2, uncovered_criteria=["C"],
+            coverage_ratio=0.6667, has_warning=False,
+        )
+
+        result = run_quality_gate()
+        assert result["acceptance_coverage"] is not None
+        assert result["acceptance_coverage"]["total"] == 3
+        assert result["acceptance_coverage"]["covered"] == 2
+        assert result["acceptance_coverage"]["coverage_ratio"] == 0.6667
+        assert "Acceptance: 2/3 criteria" in result["summary"]
+
+    @patch("step5_quality_gate._compute_criteria_coverage")
+    @patch("step5_quality_gate._load_criteria_registry")
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_quality_gate_warns_zero_acceptance(
+        self, mock_tests, mock_cov, mock_skip, mock_load_reg, mock_compute_cov
+    ):
+        """Quality gate warns (does not block) when 0 acceptance tests cover criteria."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=0, skip_rate=0.0, message="PASS: 10 passed",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (True, "Skip count OK: 0 (baseline: 0)")
+
+        mock_load_reg.return_value = [
+            {"criterion": "Feature X", "scenario_name": "test_feature_x", "test_file": ""},
+        ]
+        from acceptance_criteria_tracker import CriteriaCoverageResult
+        mock_compute_cov.return_value = CriteriaCoverageResult(
+            total=1, covered=0, uncovered_criteria=["Feature X"],
+            coverage_ratio=0.0, has_warning=True,
+        )
+
+        result = run_quality_gate()
+        # WARNING only, gate still passes
+        assert result["passed"] is True
+        assert result["acceptance_coverage"]["has_warning"] is True
+        assert "WARNING" in result["summary"]
+
+    @patch("step5_quality_gate._get_tier_distribution")
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_quality_gate_includes_tier_distribution(
+        self, mock_tests, mock_cov, mock_skip, mock_tier_dist
+    ):
+        """Quality gate includes tier distribution from globbed test files."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=0, skip_rate=0.0, message="PASS: 10 passed",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (True, "Skip count OK: 0 (baseline: 0)")
+        mock_tier_dist.return_value = {"T0": 2, "T1": 5, "T3": 20}
+
+        result = run_quality_gate()
+        assert result["tier_distribution"] == {"T0": 2, "T1": 5, "T3": 20}
+        assert "Tiers:" in result["summary"]
+
+    @patch("step5_quality_gate._load_criteria_registry", None)
+    @patch("step5_quality_gate._compute_criteria_coverage", None)
+    @patch("step5_quality_gate.coverage_baseline.check_skip_regression")
+    @patch("step5_quality_gate.check_coverage_regression")
+    @patch("step5_quality_gate.run_tests")
+    def test_quality_gate_no_registry_graceful(
+        self, mock_tests, mock_cov, mock_skip
+    ):
+        """Quality gate works gracefully when acceptance tracker is not available."""
+        mock_tests.return_value = TestResult(
+            passed=True, test_count=10, failures=0, errors=0,
+            skipped=0, skip_rate=0.0, message="PASS: 10 passed",
+        )
+        mock_cov.return_value = CoverageResult(
+            passed=True, current_coverage=90.0, message="Coverage: 90%",
+        )
+        mock_skip.return_value = (True, "Skip count OK: 0 (baseline: 0)")
+
+        result = run_quality_gate()
+        assert result["passed"] is True
+        assert result["acceptance_coverage"] is None

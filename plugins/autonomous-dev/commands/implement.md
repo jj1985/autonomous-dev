@@ -75,7 +75,7 @@ or:
 
 **Test Gate Result** (STEP 8) — output after pytest:
 ```
-  Tests: N passed, M failed, K skipped | Coverage: X.X% (baseline: Y.Y%)
+  Tests: N passed, M failed, K skipped | Coverage: X.X% (baseline: Y.Y%) | Acceptance: N/M criteria | Tiers: T0=X, T1=Y, T2=Z, T3=W
 ```
 
 **Final Summary** (STEP 13) — output the full pipeline summary:
@@ -370,6 +370,17 @@ Skip if `--tdd-first`. Check `tests/genai/conftest.py` exists (if not, fall back
 - If the test body only reads files, checks strings, runs regex, or asserts on file contents → `tests/unit/` without `@pytest.mark.genai`
 - When in doubt: static checks belong in unit, LLM calls belong in genai
 
+**Save Acceptance Criteria Registry** — After generating acceptance tests, save the criteria-to-test mapping for later coverage tracking:
+```python
+from acceptance_criteria_tracker import save_criteria_registry
+criteria = [
+    {"criterion": "<acceptance criterion text>", "scenario_name": "<test function name>", "test_file": "<test file path>"}
+    # ... one entry per acceptance criterion
+]
+save_criteria_registry(criteria, Path(".claude/local"))
+```
+This registry is consumed by `step5_quality_gate.run_quality_gate()` to report acceptance coverage (N/M criteria) in the STEP 8 test gate output.
+
 ### STEP 7: Test-Master (--tdd-first only)
 
 **Progress**: Output step banner (STEP 7/15 — Test-Master, Agent: test-master (Opus)). Skip banner if not --tdd-first. Output agent completion after.
@@ -409,6 +420,13 @@ Test Routing: hook, lib changes detected
 If `--full-tests` was passed, report "Full test suite (--full-tests override)".
 
 Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 | tail -5` — must be >= baseline - 0.5%. On success, baseline is automatically updated via `coverage_baseline.save_baseline()`.
+
+**Test Gate Output Format** — The quality gate (`step5_quality_gate.run_quality_gate()`) now reports acceptance coverage and tier distribution in the summary:
+```
+PASS: 45 passed | Coverage: 87% (baseline: 85%) | Skip count OK: 2 | Acceptance: 3/4 criteria | Tiers: T0=2, T1=5, T2=8, T3=30
+```
+- **Acceptance coverage** (WARNING only, never blocks): Reports how many acceptance criteria from STEP 6 have matching tests. When total > 0 but covered == 0, a WARNING is appended to the summary.
+- **Tier distribution**: Reports test count by Diamond Model tier (T0-T3), computed by globbing `tests/**/*.py`.
 
 ### STEP 9: Hook Registration Check — HARD GATE
 
@@ -624,6 +642,20 @@ git push origin $(git branch --show-current) 2>/dev/null || echo "Warning: Push 
 # Close GitHub issue (if feature references #NNN)
 COMMIT_SHA=$(git rev-parse --short HEAD)
 gh issue close <number> -c "Implemented in $COMMIT_SHA" 2>/dev/null || echo "Warning: Could not close issue"
+
+# Test-tracing warning (Issue #675) — non-blocking, informational only
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+try:
+    from test_issue_tracer import TestIssueTracer
+    from pathlib import Path
+    tracer = TestIssueTracer(Path('.'))
+    issue_number = <number>  # Replace with actual issue number
+    if not tracer.check_issue_has_test(issue_number):
+        print(f'WARNING: Issue #{issue_number} has no corresponding test. Consider adding a regression test.')
+except Exception:
+    pass
+" 2>/dev/null || true
 ```
 
 ### STEP 14: Documentation Congruence — HARD GATE

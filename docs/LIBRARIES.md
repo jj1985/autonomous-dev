@@ -5,7 +5,7 @@ covers:
 
 # Shared Libraries Reference
 
-**Last Updated**: 2026-03-30 (Issue #621 - Added pipeline_timing_analyzer.py)
+**Last Updated**: 2026-04-06 (Issue #675 - Added test_issue_tracer.py)
 **Purpose**: Comprehensive API documentation for autonomous-dev shared libraries
 
 This document provides detailed API documentation for shared libraries in `plugins/autonomous-dev/lib/` and `plugins/autonomous-dev/scripts/`. For high-level overview, see [CLAUDE.md](../CLAUDE.md) Architecture section.
@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (75)
+### Core Libraries (77)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -76,7 +76,7 @@ The autonomous-dev plugin includes shared libraries organized into the following
 58. **batch_git_finalize.py** - Batch git finalization with auto-commit, merge, and worktree cleanup (v1.0.0, Issues #333-334)
 59. **pipeline_intent_validator.py** - Intent-level pipeline validation via JSONL session logs for coordinator-level violations. Detects step ordering, hard gate bypasses, context dropping, parallelization violations, progressive prompt compression across batch issues (Issue #367, compression detection Issue #544), doc-master verdict timeouts/failures (Issue #543), and batch issues missing continuous-improvement-analyst invocations (Issue #559). `Finding` dataclass includes `recommended_action: Optional[str]` field for remediation guidance. `detect_progressive_compression()` accepts optional `agents_dir` parameter and populates `recommended_action` with prompt reload instructions. `get_minimum_prompt_content(agent_type, agents_dir)` reads baseline prompt content from agent `.md` files with `VALID_AGENT_TYPES` whitelist path validation (Issue #561). `detect_doc_verdict_missing()` uses `_correlate_invocation_completion()` to pair PostToolUse invocation events with SubagentStop completion events by subagent type and temporal proximity, enabling accurate verdict detection from completion word counts rather than invocation placeholders; `MIN_DOC_VERDICT_WORDS = 30` constant sets minimum output threshold (Issue #562). `PipelineEvent` dataclass includes `session_id: str` field populated from JSONL log entries. `validate_pipeline_intent()` is now session-scoped: when no `session_id` filter is provided, events are grouped by their `session_id` field and each session's events are checked independently, preventing false CRITICAL `step_ordering` findings from cross-session event comparisons in a shared daily log file; legacy events with an empty `session_id` are grouped together as a fallback virtual session (Issue #587). `parse_session_logs()` accepts an optional `additional_log_paths` parameter to merge events from multiple JSONL files; duplicates are removed by `(timestamp, tool, session_id)` key before sorting. `validate_pipeline_intent()` automatically detects worktree context via `path_utils.get_main_repo_activity_log_dir()` and passes the corresponding main-repo log file as `additional_log_paths`, preventing false INCOMPLETE findings when logs are split across the worktree and its parent repository (Issue #593)
 60. **pipeline_state.py** - Pipeline state tracker with gate enforcement (stdlib only, zero dependencies) (Issue #402). HMAC integrity protection added in Issue #557: `_compute_state_hmac(state, session_id)` computes HMAC-SHA256 over critical state fields (session_start, mode, run_id, explicitly_invoked, nonce) keyed by session_id+nonce; `verify_state_hmac(state, session_id)` verifies the stored HMAC — backward compatible (returns True when no hmac field present), returns False when nonce is missing with hmac present (tampering indicator). Consumed by `unified_pre_tool.py` to reject forged pipeline state files.
-61. **step5_quality_gate.py** - STEP 5 quality gate: runs tests with smart routing or full suite, checks coverage regression, enforces skip baseline (Issue #508)
+61. **step5_quality_gate.py** - STEP 5 quality gate: runs tests with smart routing or full suite, checks coverage regression, enforces skip baseline, reports Diamond Model tier distribution via `tier_registry.get_tier_distribution()`, and reports acceptance criteria coverage (N/M criteria covered) via `acceptance_criteria_tracker`. When total acceptance criteria > 0 but covered == 0, a WARNING is appended to the summary (never blocks). (Issue #508; tier reporting Issue #677; acceptance coverage Issue #676)
 62. **test_routing.py** - Smart test routing: classifies changed files into categories and computes minimal pytest marker expression to skip irrelevant test tiers; `--full-tests` override runs complete suite (Issue #508)
 63. **refactor_analyzer.py** - `RefactorAnalyzer` class: deep analysis of test shape (Quality Diamond), test waste, doc redundancy, dead code, and unused libraries; composes `SweepAnalyzer` for quick-sweep mode; `ConfidenceLevel` enum for findings; word-boundary regex to reduce false positives (Issue #513)
 64. **genai_refactor_analyzer.py** - `GenAIRefactorAnalyzer`: hybrid static-candidate + LLM-semantic analysis wrapper around `RefactorAnalyzer`; three-pass analysis (doc-code drift via `covers:` frontmatter, hollow test detection, dead code verification with dynamic dispatch context); Haiku for first-pass classification, Sonnet escalation for HIGH findings; SHA-256 content hash caching; Anthropic Batch API support for 50% cost reduction (Issue #515)
@@ -90,7 +90,10 @@ The autonomous-dev plugin includes shared libraries organized into the following
 72. **doc_verdict_validator.py** - Validates that doc-master output contains a properly formatted `DOC-DRIFT-VERDICT` line. `validate_doc_verdict(doc_master_output)` returns a `DocVerdictResult` dataclass with: `found` (bool), `verdict` ("PASS"/"FAIL"/""), `finding_count` (int, -1 if unparseable, 0 for PASS, N for FAIL(N)), `raw_line` (the matched verdict line), and `position_warning` (non-empty if verdict is not the final non-empty line). Strips ANSI escape codes before matching. When multiple verdict lines appear, uses the last one. `FAIL(0)` is treated as PASS. Used by the coordinator to detect missing verdicts before the pipeline completes. (v1.0.0, Issue #602)
 73. **prompt_integrity.py** - Real-time prevention of progressive prompt compression in batch processing. `validate_prompt_word_count(agent_type, prompt, baseline_word_count)` checks: (1) prompt must not be empty; (2) critical agents (security-auditor, reviewer) must have at least 80 words; (3) shrinkage vs baseline must be ≤ 20% (configurable via `max_shrinkage`). Returns `PromptIntegrityResult` with `passed`, `reason`, `shrinkage_pct`, and `should_reload` fields. `record_prompt_baseline(agent_type, issue_number, word_count)` persists word counts to `.claude/logs/prompt_baselines.json`. `get_prompt_baseline(agent_type)` retrieves the word count from the lowest-numbered (first) issue. `get_agent_prompt_template(agent_type)` reads the agent's `.md` source file for prompt reconstruction. `clear_prompt_baselines()` resets state at batch start. `COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer"}`. (v1.0.0, Issues #601, #603)
 74. **pipeline_timing_analyzer.py** - Automatic pipeline timing analysis for the continuous-improvement-analyst (check #11, Issue #621).
-75. **version_reader.py** - Lightweight plugin version + git SHA stamping for session logs and auto-filed issues (Issue #630). `get_plugin_version()` returns a human-readable string in the format `"X.Y.Z (abc1234)"` when git is available, `"X.Y.Z"` when git is unavailable, or `"unknown"` on any failure. Result is cached after first call. `_find_plugin_json()` discovers `plugin.json` from three candidate locations (relative to module, CWD-based, and global `~/.autonomous-dev/`). `reset_cache()` clears the module-level cache (primarily for testing). Uses only stdlib (`json`, `subprocess`, `pathlib`) — no external dependencies. `extract_agent_timings(events)` pairs agent_invocation/agent_completion events by subagent_type and computes wall-clock duration from timestamp deltas (not duration_ms, which is always 0). `analyze_timings(timings, history_path)` applies static thresholds (`STATIC_THRESHOLDS`: per-agent max_seconds and optional min_result_words) and adaptive p95-based thresholds (computed from historical data when `DEFAULT_MIN_OBSERVATIONS`=10 entries exist). Emits `TimingFinding` dataclasses with `finding_type` in `{SLOW, WASTEFUL, GHOST, SLOW_REGRESSION}`. `WASTEFUL` detection uses `WASTEFUL_WPS_THRESHOLD`=1.0 words/sec minimum for invocations longer than `WASTEFUL_MIN_DURATION`=60s. `GHOST` detection flags invocations with duration <`GHOST_MAX_DURATION`=10s and result word count <`GHOST_MAX_WORDS`=50. `save_timing_entry(agent_type, seconds, result_word_count, history_path)` appends to the JSONL history file (thread-safe, caps at `MAX_HISTORY_PER_AGENT`=20 entries per agent). `check_consecutive_violations(agent_type, finding_type, history_path, min_consecutive)` returns True when the same finding type appears in the last N history entries — used as a circuit breaker before filing GitHub issues. `format_timing_report(timings, findings)` returns a formatted text table for CLI output. Imports `STEP_ORDER`, `VALID_AGENT_TYPES`, `PipelineEvent`, `parse_timestamp`, `seconds_between` from `pipeline_intent_validator`. (v1.0.0, Issue #621)
+75. **version_reader.py** - Lightweight plugin version + git SHA stamping for session logs and auto-filed issues (Issue #630).
+76. **test_pruning_analyzer.py** - AST-based test hygiene analyzer for `/sweep --tests`. Detects 5 categories of pruning candidates: dead imports, archived references, zero-assertion tests, duplicate coverage, and stale regression references. All output is informational — never auto-deletes. (v1.0.0, Issue #674)
+77. **test_issue_tracer.py** - Test-to-issue traceability library: scans test files for issue references (class names, function names, docstrings, comments, GH-NNN shorthand, pytest markers), cross-references with GitHub issues via `gh` CLI, and produces a `TracingReport` with three finding categories: untested issues, orphaned pairs, and untraced tests. Non-blocking — used by `/audit --test-tracing` and STEP 13 non-blocking warning in `/implement`. (v1.0.0, Issue #675)
+78. **acceptance_criteria_tracker.py** - Tracks which acceptance criteria from STEP 6 have corresponding tests, computing N/M coverage ratios surfaced in the STEP 8 quality gate report. `save_criteria_registry(criteria, artifact_dir)` writes a JSON registry mapping each criterion to its scenario_name and test_file. `load_criteria_registry(artifact_dir)` reads the registry (returns empty list if missing or corrupt). `compute_criteria_coverage(registry, tests_dir)` scans all test files under tests_dir and returns a `CriteriaCoverageResult` dataclass with `total`, `covered`, `uncovered_criteria`, `coverage_ratio`, and `has_warning` (True when total > 0 but covered == 0). Consumed by `step5_quality_gate.run_quality_gate()`. Coverage is advisory only — never blocks the pipeline. (v1.0.0, Issue #676) `get_plugin_version()` returns a human-readable string in the format `"X.Y.Z (abc1234)"` when git is available, `"X.Y.Z"` when git is unavailable, or `"unknown"` on any failure. Result is cached after first call. `_find_plugin_json()` discovers `plugin.json` from three candidate locations (relative to module, CWD-based, and global `~/.autonomous-dev/`). `reset_cache()` clears the module-level cache (primarily for testing). Uses only stdlib (`json`, `subprocess`, `pathlib`) — no external dependencies. `extract_agent_timings(events)` pairs agent_invocation/agent_completion events by subagent_type and computes wall-clock duration from timestamp deltas (not duration_ms, which is always 0). `analyze_timings(timings, history_path)` applies static thresholds (`STATIC_THRESHOLDS`: per-agent max_seconds and optional min_result_words) and adaptive p95-based thresholds (computed from historical data when `DEFAULT_MIN_OBSERVATIONS`=10 entries exist). Emits `TimingFinding` dataclasses with `finding_type` in `{SLOW, WASTEFUL, GHOST, SLOW_REGRESSION}`. `WASTEFUL` detection uses `WASTEFUL_WPS_THRESHOLD`=1.0 words/sec minimum for invocations longer than `WASTEFUL_MIN_DURATION`=60s. `GHOST` detection flags invocations with duration <`GHOST_MAX_DURATION`=10s and result word count <`GHOST_MAX_WORDS`=50. `save_timing_entry(agent_type, seconds, result_word_count, history_path)` appends to the JSONL history file (thread-safe, caps at `MAX_HISTORY_PER_AGENT`=20 entries per agent). `check_consecutive_violations(agent_type, finding_type, history_path, min_consecutive)` returns True when the same finding type appears in the last N history entries — used as a circuit breaker before filing GitHub issues. `format_timing_report(timings, findings)` returns a formatted text table for CLI output. Imports `STEP_ORDER`, `VALID_AGENT_TYPES`, `PipelineEvent`, `parse_timestamp`, `seconds_between` from `pipeline_intent_validator`. (v1.0.0, Issue #621)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
@@ -16077,3 +16080,177 @@ completed = get_completed_agents(session_id="abc123", issue_number=42)
 - `tests/unit/lib/test_pipeline_completion_state.py` — unit tests
 
 **Version History**: v1.0.0 (2026-03-30) - Initial release for pipeline ordering state management (Issues #625, #629, #632)
+
+---
+
+## 176+5. tier_registry.py (226 lines, v1.0.0 - Issue #677)
+
+**Purpose**: Single source of truth for Diamond Model test tier classification. Maps test directories to tier IDs (T0–T3), lifecycle policies, pytest markers, and max duration constraints. Replaces the hardcoded `DIRECTORY_MARKERS` dict that previously lived in `tests/conftest.py`.
+
+**GitHub Issue**: #677 — Test tiering classification — Diamond Model layer metadata
+
+### Public API
+
+```python
+from tier_registry import get_tier_for_path, get_all_tiers, get_tier_distribution, is_prunable, build_directory_markers
+
+# Match a test path to its tier
+tier = get_tier_for_path("tests/unit/lib/test_foo.py")
+# => TierInfo(tier_id="T3", name="Unit", lifecycle="ephemeral", markers=["unit"], max_duration="1s")
+
+# Check pruning eligibility
+is_prunable("tests/unit/lib/test_foo.py")  # => True (ephemeral)
+is_prunable("tests/genai/test_congruence.py")  # => False (permanent)
+
+# Count tiers across a set of paths
+distribution = get_tier_distribution(["tests/unit/...", "tests/genai/..."])
+# => {"T3": 1, "T0": 1}
+
+# Build conftest-compatible marker dict
+markers = build_directory_markers()
+# => {"unit/": ["unit"], "genai/": ["genai", "acceptance"], ...}
+```
+
+### Key Data Structure
+
+`TierInfo` (frozen dataclass): `tier_id` (T0–T3), `name`, `directory_pattern`, `lifecycle` (permanent|stable|semi-stable|ephemeral), `markers` (list), `max_duration` (optional string).
+
+`TIER_REGISTRY` (list of TierInfo): Ordered most-specific to least-specific for pattern matching. First match wins.
+
+### Tier Definitions
+
+| Tier | Lifecycle | Directories |
+|------|-----------|-------------|
+| T0 | permanent | `tests/genai/`, `tests/regression/smoke/` |
+| T1 | stable | `tests/e2e/`, `tests/integration/` |
+| T2 | semi-stable | `tests/regression/regression/`, `tests/regression/extended/`, `tests/property/` |
+| T3 | ephemeral | `tests/regression/progression/`, `tests/unit/`, `tests/hooks/`, `tests/security/` |
+
+### Functions
+
+- **`get_tier_for_path(test_path: str) -> Optional[TierInfo]`** — Match a test file path against the registry. Normalizes path separators. Returns first matching TierInfo or None.
+- **`get_all_tiers() -> List[TierInfo]`** — Return all tier definitions sorted by tier_id then name.
+- **`get_tier_distribution(test_paths: List[str]) -> Dict[str, int]`** — Count paths per tier_id; unmatched paths counted under `"unknown"`.
+- **`is_prunable(test_path: str) -> bool`** — True for ephemeral (T3, always prunable) and semi-stable (T2, prunable after 90d unused). False for T0, T1, or unknown.
+- **`build_directory_markers() -> Dict[str, List[str]]`** — Convert registry to conftest.py-compatible `{pattern_suffix: [markers]}` dict.
+
+### Integration
+
+- **`tests/conftest.py`**: Imports `build_directory_markers()` at startup to populate `DIRECTORY_MARKERS`. Falls back to hardcoded dict if import fails (e.g., running outside project).
+- **`tests/conftest.py` terminal summary**: Uses `get_tier_for_path()` in `pytest_terminal_summary` hook to print tier distribution after each test run.
+- **`step5_quality_gate.py`**: Imports `get_tier_distribution()` to include tier breakdown in the STEP 5 quality gate report.
+
+### Testing
+
+- `tests/unit/lib/test_tier_registry.py` — unit tests for all public functions
+
+**Version History**: v1.0.0 (2026-04-06) - Initial release for Diamond Model tier classification (Issue #677)
+
+---
+
+## 176+6. test_pruning_analyzer.py (818 lines, v1.0.0 - Issue #674)
+
+**Purpose**: AST-based test hygiene analyzer that detects orphaned, stale, and redundant tests. Invoked by `/sweep --tests` to produce an informational pruning report. Never auto-deletes files.
+
+**Problem**: Test suites accumulate dead weight — imports that reference deleted modules, tests for archived code, zero-assertion stubs, and stale regression markers. Manual identification is tedious and error-prone.
+
+**Solution**: `TestPruningAnalyzer` walks all `test_*.py` / `*_test.py` files using Python's `ast` module and runs 5 detectors in sequence, reporting each finding with severity, prunable flag (from `tier_registry`), and a suggested action.
+
+### Detection Categories
+
+| Category | Enum Value | Severity | Description |
+|----------|------------|----------|-------------|
+| Dead Imports | `DEAD_IMPORT` | HIGH | Import from a module not found in source |
+| Archived References | `ARCHIVED_REF` | MEDIUM | Import referencing an `archived/` path |
+| Zero-Assertion Tests | `ZERO_ASSERTION` | HIGH/MEDIUM | Test function with no meaningful assertions |
+| Duplicate Coverage | `DUPLICATE_COVERAGE` | LOW | Two test functions calling the same function with identical args |
+| Stale Regressions | `STALE_REGRESSION` | LOW | Test name matches `TestIssueNNN` / `test_issue_NNN` pattern |
+
+### Public API
+
+```python
+from test_pruning_analyzer import TestPruningAnalyzer, PruningReport, PruningFinding
+from pathlib import Path
+
+analyzer = TestPruningAnalyzer(Path("."))
+report = analyzer.analyze()
+print(report.format_table())
+```
+
+**`TestPruningAnalyzer(project_root: Path)`**
+- `analyze() -> PruningReport` — runs all detectors and returns consolidated report
+
+**`PruningReport`**
+- `findings: List[PruningFinding]` — all findings across scanned files
+- `scan_duration_ms: float` — total scan time
+- `files_scanned: int` — number of test files analyzed
+- `format_table() -> str` — renders findings as a markdown table sorted by severity
+
+**`PruningFinding`**
+- `file_path: str`, `line: int`, `category: PruningCategory`, `severity: Severity`
+- `description: str`, `suggestion: str`, `prunable: bool`
+
+### Prunable Flag
+
+`prunable` is determined by `tier_registry.is_prunable(path)`. T2/T3 tier test files are prunable; T0/T1 are not. This prevents accidentally flagging smoke tests and critical regression tests as safe to delete.
+
+### Integration
+
+- Used by `plugins/autonomous-dev/commands/sweep.md` (`/sweep --tests` mode)
+- Depends on `tier_registry.get_tier_for_path()` and `tier_registry.is_prunable()`
+- Skips `__pycache__`, `.git`, `archived`, `node_modules`, `.tox`, `.venv`, `venv` directories
+
+### Testing
+
+- `tests/unit/lib/test_test_pruning_analyzer.py` — unit tests for all 5 detectors
+
+## 176+7. test_issue_tracer.py (v1.0.0 - Issue #675)
+
+**Purpose**: Map test files to GitHub issues and flag tracing gaps (untested issues, orphaned pairs, untraced test files).
+
+**Problem**: As the codebase grows, it becomes difficult to verify that every GitHub issue has a corresponding test and that tests reference current (not closed) issues.
+
+**Solution**: Static scan of `tests/` for 7 issue-reference patterns, cross-referenced against live GitHub issues via `gh` CLI, producing a structured `TracingReport` with three finding categories.
+
+**Location**: `plugins/autonomous-dev/lib/test_issue_tracer.py`
+
+**Key Features**:
+- 7 reference patterns: `TestIssueNNN` class names, `test_issue_NNN` function names, docstring `#NNN`, comment `# Issue: #NNN`, `GH-NNN` shorthand, `@pytest.mark.issue(NNN)`, and keyword phrases (`Regression #NNN`, `Closes #NNN`, `Fixes #NNN`)
+- False-positive filtering: excludes hex colors, `# noqa`, `# type: ignore`, `# pragma`, and `#0`–`#2`
+- Deduplication: one `IssueReference` per `(file_path, issue_number)` pair
+- GitHub cross-reference via `gh issue list --state all --limit 500`; caches results for 300s
+- Non-blocking: `check_issue_has_test()` returns `True` on any exception to never block the pipeline
+- Three finding categories: `UNTESTED_ISSUE` (open issue, no test ref), `ORPHANED_PAIR` (test refs closed issue), `UNTRACED_TEST` (test file with zero issue refs)
+- All findings are severity `info` — advisory only
+
+### Public API
+
+**`TestIssueTracer(project_root: Path)`**
+- `scan_test_references() -> List[IssueReference]` — scan `tests/` for all issue references
+- `fetch_github_issues(*, cache_ttl_seconds=300) -> Dict[int, dict]` — fetch issues via `gh` CLI with caching
+- `analyze() -> TracingReport` — full cross-reference analysis
+- `check_issue_has_test(issue_number: int) -> bool` — quick single-issue check
+
+**`TracingReport`**
+- `findings: List[TracingFinding]`, `references: List[IssueReference]`
+- `scan_duration_ms: float`, `issues_scanned: int`, `tests_scanned: int`
+- `format_table() -> str` — renders markdown summary table
+
+**`IssueReference`**
+- `file_path: str`, `line: int`, `issue_number: int`, `reference_type: str`
+
+**`TracingFinding`**
+- `category: TracingCategory`, `severity: str`, `description: str`
+- `issue_number: Optional[int]`, `file_path: Optional[str]`
+
+### Integration
+
+- Used by `plugins/autonomous-dev/commands/audit.md` (`/audit --test-tracing` flag)
+- Used by `plugins/autonomous-dev/commands/implement.md` STEP 13 non-blocking warning
+- Gracefully degrades when `gh` CLI is unavailable or unauthenticated (returns empty issue dict)
+
+### Testing
+
+- `tests/unit/test_test_issue_tracer.py` — unit tests for scanning, cross-reference, and false-positive filtering
+
+**Version History**: v1.0.0 (2026-04-06) - Initial release for `/sweep --tests` test pruning analysis (Issue #674)

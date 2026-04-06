@@ -288,4 +288,5 @@ def route_tests(
         "skipped_tiers": skipped,
         "full_suite": full_suite,
         "skip_all": skip_all,
+        "tier_pass_rates": {},  # Populated by quality gate after test execution
     }
