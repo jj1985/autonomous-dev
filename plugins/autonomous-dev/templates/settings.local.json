@@ -138,6 +138,10 @@
           {
             "type": "command",
             "command": "python \"$(git rev-parse --show-toplevel)/.claude/hooks/validate_command_file_ops.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"$(git rev-parse --show-toplevel)/.claude/hooks/validate_claude_md_size.py\""
           }
         ]
       }

@@ -39,7 +39,7 @@ def clean_env(monkeypatch):
     env_keys = [
         "SANDBOX_ENABLED", "PRE_TOOL_MCP_SECURITY", "PRE_TOOL_AGENT_AUTH",
         "PRE_TOOL_BATCH_PERMISSION", "MCP_AUTO_APPROVE", "ENFORCEMENT_LEVEL",
-        "CLAUDE_AGENT_NAME", "PIPELINE_STATE_FILE",
+        "CLAUDE_AGENT_NAME", "PIPELINE_STATE_FILE", "PRE_TOOL_PIPELINE_ORDERING",
     ]
     for key in env_keys:
         monkeypatch.delenv(key, raising=False)
@@ -660,4 +660,184 @@ class TestPolicyFileSchema:
         assert source_data == installed_data, (
             "Source and installed policy files have diverged. "
             "Run install or sync to reconcile."
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. Regression: subagent_type priority over text extraction (Issue #636)
+# ---------------------------------------------------------------------------
+
+class TestSubagentTypePriority:
+    """Regression tests for subagent_type field taking precedence over text extraction.
+
+    Bug (Issue #636, commit 45565eb): When a planner's prompt contained
+    "implementer" in research context, _extract_subagent_type matched
+    "implementer" (longest-first), causing a false ORDERING VIOLATION.
+
+    Fix: validate_pipeline_ordering() now checks tool_input["subagent_type"]
+    before falling back to text extraction from prompt content.
+    """
+
+    def test_extract_subagent_type_basic(self):
+        """_extract_subagent_type finds agent names in text."""
+        assert hook._extract_subagent_type("Run the planner agent") == "planner"
+        assert hook._extract_subagent_type("Launch implementer") == "implementer"
+        assert hook._extract_subagent_type("no agent here") == ""
+        assert hook._extract_subagent_type("") == ""
+
+    def test_planner_prompt_mentioning_implementer_uses_subagent_type(self, monkeypatch):
+        """Planner prompt that mentions 'implementer' should be identified as planner.
+
+        This is the exact regression from Issue #636: the planner's prompt
+        contained research context mentioning the implementer agent, and
+        _extract_subagent_type matched 'implementer' instead of 'planner'.
+
+        With the fix, subagent_type='planner' takes precedence over text.
+        """
+        monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
+        # Mock pipeline as active and ordering gate to capture the target_agent
+        captured = {}
+
+        def mock_check(target, completed, validation_mode=None):
+            captured["target"] = target
+            result = MagicMock()
+            result.passed = True
+            result.reason = "OK"
+            return result
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch("pipeline_completion_state.get_completed_agents", return_value=set()), \
+             patch("pipeline_completion_state.get_validation_mode", return_value="strict"), \
+             patch("agent_ordering_gate.check_ordering_prerequisites", side_effect=mock_check):
+            decision, reason = hook.validate_pipeline_ordering("Agent", {
+                "subagent_type": "planner",
+                "prompt": (
+                    "You are the planner. Review the research context.\n"
+                    "The implementer agent will handle implementation.\n"
+                    "The researcher found that the implementer needs test data.\n"
+                    "Plan the work for the implementer to execute."
+                ),
+            })
+        assert decision == "allow"
+        assert "planner" in reason.lower(), f"Expected reason to mention 'planner', got: {reason}"
+        assert captured["target"] == "planner", (
+            f"Expected target agent 'planner' but got '{captured['target']}'. "
+            f"subagent_type field should take precedence over text extraction."
+        )
+
+    def test_no_subagent_type_falls_back_to_text_extraction(self, monkeypatch):
+        """Agent with no subagent_type field should fall back to text extraction.
+
+        This ensures backward compatibility for callers that do not set
+        subagent_type.
+        """
+        monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
+        captured = {}
+
+        def mock_check(target, completed, validation_mode=None):
+            captured["target"] = target
+            result = MagicMock()
+            result.passed = True
+            result.reason = "OK"
+            return result
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch("pipeline_completion_state.get_completed_agents", return_value=set()), \
+             patch("pipeline_completion_state.get_validation_mode", return_value="strict"), \
+             patch("agent_ordering_gate.check_ordering_prerequisites", side_effect=mock_check):
+            decision, reason = hook.validate_pipeline_ordering("Agent", {
+                "prompt": "You are the researcher-local agent. Research this topic.",
+            })
+        assert decision == "allow"
+        assert captured["target"] == "researcher-local", (
+            f"Expected text extraction to find 'researcher-local', got '{captured['target']}'."
+        )
+
+    def test_implementer_blocked_when_prerequisites_not_met(self, monkeypatch):
+        """Implementer agent launched normally should be blocked if prerequisites not met.
+
+        Ordering enforcement must still work correctly when subagent_type
+        is properly set.
+        """
+        monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
+
+        def mock_check(target, completed, validation_mode=None):
+            result = MagicMock()
+            result.passed = False
+            result.reason = "ORDERING VIOLATION: implementer requires planner to complete first"
+            return result
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch("pipeline_completion_state.get_completed_agents", return_value=set()), \
+             patch("pipeline_completion_state.get_validation_mode", return_value="strict"), \
+             patch("agent_ordering_gate.check_ordering_prerequisites", side_effect=mock_check):
+            decision, reason = hook.validate_pipeline_ordering("Agent", {
+                "subagent_type": "implementer",
+                "prompt": "You are the agent. Execute the plan.",
+            })
+        assert decision == "deny"
+        assert "ORDERING VIOLATION" in reason
+
+    def test_multiple_agent_names_in_prompt_subagent_type_wins(self, monkeypatch):
+        """Agent prompt mentions multiple agent names -- subagent_type takes precedence.
+
+        Text extraction would match whichever agent name appears first
+        (longest-first sort), but subagent_type should override all text matches.
+        """
+        monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
+        captured = {}
+
+        def mock_check(target, completed, validation_mode=None):
+            captured["target"] = target
+            result = MagicMock()
+            result.passed = True
+            result.reason = "OK"
+            return result
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch("pipeline_completion_state.get_completed_agents", return_value=set()), \
+             patch("pipeline_completion_state.get_validation_mode", return_value="strict"), \
+             patch("agent_ordering_gate.check_ordering_prerequisites", side_effect=mock_check):
+            decision, reason = hook.validate_pipeline_ordering("Agent", {
+                "subagent_type": "reviewer",
+                "prompt": (
+                    "You are the reviewer. Check the implementer output.\n"
+                    "The planner defined these requirements.\n"
+                    "The researcher-local gathered this context.\n"
+                    "The security-auditor will run after you."
+                ),
+            })
+        assert decision == "allow"
+        assert captured["target"] == "reviewer", (
+            f"Expected 'reviewer' from subagent_type, got '{captured['target']}'. "
+            f"Text extraction would have matched 'researcher-local' or 'security-auditor'."
+        )
+
+    def test_empty_subagent_type_falls_back_to_text_extraction(self, monkeypatch):
+        """Empty subagent_type field should fall back to text extraction.
+
+        Some callers may set subagent_type to an empty string explicitly.
+        This must behave identically to the field being absent.
+        """
+        monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
+        captured = {}
+
+        def mock_check(target, completed, validation_mode=None):
+            captured["target"] = target
+            result = MagicMock()
+            result.passed = True
+            result.reason = "OK"
+            return result
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch("pipeline_completion_state.get_completed_agents", return_value=set()), \
+             patch("pipeline_completion_state.get_validation_mode", return_value="strict"), \
+             patch("agent_ordering_gate.check_ordering_prerequisites", side_effect=mock_check):
+            decision, reason = hook.validate_pipeline_ordering("Agent", {
+                "subagent_type": "",
+                "prompt": "You are the test-master. Run the acceptance tests.",
+            })
+        assert decision == "allow"
+        assert captured["target"] == "test-master", (
+            f"Expected text extraction fallback to find 'test-master', got '{captured['target']}'."
         )

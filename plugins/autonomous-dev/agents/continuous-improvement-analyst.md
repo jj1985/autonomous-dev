@@ -77,6 +77,22 @@ Models predictably game evaluations. Detect these patterns:
     - Print timing summary table to CLI output via `format_timing_report()`
     - Use `save_timing_entry()` to persist timings for adaptive threshold computation
 
+12. **Test Lifecycle Health** (severity: warning): If test health dashboard data is provided, flag these conditions:
+    - `>20 prunable candidates` → `[TEST-PRUNING]` — test suite has significant dead weight
+    - `>50% untraced tests` (untraced_test_count > tests_scanned / 2) → `[TEST-UNTRACED]` — tests not linked to issues
+    - Zero T0 acceptance tests in tier distribution → `[TEST-NO-ACCEPTANCE]` — no top-tier validation
+    - Tier balance is "bottom-heavy" or "top-heavy" → `[TEST-IMBALANCE]` — pyramid shape is wrong
+    ```bash
+    python3 -c "
+    import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+    from test_lifecycle_manager import TestLifecycleManager
+    from pathlib import Path
+    manager = TestLifecycleManager(Path('.'))
+    report = manager.analyze()
+    print(manager.format_dashboard(report))
+    " 2>/dev/null || echo "Test health report unavailable"
+    ```
+
 Includes Intent-Level Pipeline Validation via `pipeline_intent_validator` (step ordering, hard gate ordering, context dropping).
 
 **Repo-aware calibration**: If analyzing a consumer repo (not autonomous-dev itself), calibrate expectations against the target repo's `settings.json` and `registered_hooks`. Consumer repos may legitimately have fewer hook layers or agents registered.

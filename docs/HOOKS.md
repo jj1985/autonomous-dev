@@ -139,6 +139,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 | **validate_command_file_ops.py** | Commands execute Python libs, not just describe them | — |
 | **validate_session_quality.py** | Session log completeness | — |
 | **auto_fix_docs.py** | Documentation consistency auto-fixes | AUTO_FIX_DOCS |
+| **validate_claude_md_size.py** | Warns when CLAUDE.md exceeds 200 lines (Anthropic best practice). Non-blocking — always exits 0. | — |
 
 ### SubagentStop
 

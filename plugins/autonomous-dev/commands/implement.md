@@ -589,6 +589,44 @@ This ensures deferred findings are tracked as searchable artifacts, not lost in 
 - ❌ Deferring a finding to "future work" without filing a GitHub issue
 - ❌ Logging findings only in Stop hook messages (these are not searchable artifacts)
 
+### STEP 11.5: Skill Effectiveness Gate (Conditional)
+
+**Progress**: Output step banner only if skill files were modified.
+
+Check if any changed files match `skills/*/SKILL.md`:
+```bash
+CHANGED_SKILLS=$(python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from skill_change_detector import detect_skill_changes
+import subprocess
+files = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD'], text=True).strip().split('\n')
+skills = detect_skill_changes(files)
+print(','.join(skills) if skills else '')
+")
+```
+
+If `CHANGED_SKILLS` is empty: skip silently (no banner needed).
+
+If skills were modified:
+1. Output step banner: `STEP 11.5/15 — Skill Effectiveness Gate`
+2. For each skill, check eval status:
+   ```bash
+   python3 -c "
+   import sys, json; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+   from skill_change_detector import get_eval_status, format_skill_eval_report
+   from pathlib import Path
+   skills = '$CHANGED_SKILLS'.split(',')
+   results = [get_eval_status(s, repo_root=Path('.')) for s in skills if s]
+   print(format_skill_eval_report(results))
+   "
+   ```
+   - If no eval prompts for a skill: WARNING "Skill {name} modified but has no eval prompts"
+   - If eval prompts exist and `OPENROUTER_API_KEY` is set: run `scripts/skill-effectiveness-check.sh --quick --skill {name}`
+   - If `OPENROUTER_API_KEY` not set: WARNING "Skill eval skipped (no OPENROUTER_API_KEY)"
+3. Parse results: delta < -0.10 → BLOCK. Otherwise → PASS with advisory.
+
+**FORBIDDEN**: Blocking the pipeline when `OPENROUTER_API_KEY` is missing or when eval prompts don't exist for a skill. These are advisory warnings only.
+
 ### STEP 12: Final Verification + Doc-Drift Gate — HARD GATE
 
 **Progress**: Output step banner (STEP 12/15 — Final Verification + Doc-Drift Gate). Output result after.
@@ -650,8 +688,8 @@ try:
     from test_issue_tracer import TestIssueTracer
     from pathlib import Path
     tracer = TestIssueTracer(Path('.'))
-    issue_number = <number>  # Replace with actual issue number
-    if not tracer.check_issue_has_test(issue_number):
+    issue_number = int('$ISSUE_NUMBER') if '$ISSUE_NUMBER'.isdigit() else 0
+    if issue_number > 0 and not tracer.check_issue_has_test(issue_number):
         print(f'WARNING: Issue #{issue_number} has no corresponding test. Consider adding a regression test.')
 except Exception:
     pass
