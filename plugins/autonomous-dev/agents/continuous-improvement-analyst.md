@@ -100,6 +100,14 @@ Models predictably game evaluations. Detect these patterns:
     " 2>/dev/null || echo "Test health report unavailable"
     ```
 
+13. **Token Efficiency Analysis** (severity: warning): Use token data from activity logs to detect inefficient agent invocations:
+    - For each agent completion event with `total_tokens > 0`, compute `tokens_per_word = total_tokens / result_word_count`
+    - Flag agents with `tokens_per_word > 500` as `[TOKEN-EFFICIENCY]` — high token consumption relative to output
+    - Flag agents with `total_tokens > 100000` as `[TOKEN-BUDGET]` — single invocation consuming excessive tokens
+    - Recommend model tier review: if a Haiku-eligible agent (researcher-local, doc-master) runs on Opus, suggest downgrade
+    - Use find-or-create+comment dedup (same as timing issues)
+    - Circuit breaker: max 2 token efficiency issues per run
+
 Includes Intent-Level Pipeline Validation via `pipeline_intent_validator` (step ordering, hard gate ordering, context dropping).
 
 **Repo-aware calibration**: If analyzing a consumer repo (not autonomous-dev itself), calibrate expectations against the target repo's `settings.json` and `registered_hooks`. Consumer repos may legitimately have fewer hook layers or agents registered.

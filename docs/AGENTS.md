@@ -393,6 +393,8 @@ These agents provide specialized functionality for alignment, git operations, pr
   - Hook health (errors, missing layers, silent failures)
   - Rule bypasses (steps skipped, raw edits, nudges ignored)
   - Pipeline timing analysis (slow, wasteful, ghost invocations via `pipeline_timing_analyzer.py`; check #11)
+  - Test lifecycle health (pruning candidates, untraced tests, tier imbalance; check #12)
+  - Token efficiency analysis (tokens-per-word ratio, per-invocation budget; check #13)
 **Excluded**: Feature code quality, security vulnerabilities, documentation completeness (handled by other agents)
 **Mission**: "Is autonomous-dev's automation working correctly?"
 

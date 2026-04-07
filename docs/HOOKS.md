@@ -154,7 +154,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
 | **plan_mode_exit_detector.py** | Detects `ExitPlanMode` tool calls and writes a marker at `.claude/plan_mode_exit.json`. Marker is consumed by `unified_prompt_validator.py` to enforce `/implement` or `/create-issue` routing before raw edits are allowed. Auto-expires after 30 minutes. Always exits 0. | — |
-| **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Handles PostToolUse (tool calls) and UserPromptSubmit (user prompts). Sets `"hook": "PostToolUse"` correctly for tool-call entries. Falls back to parsing hook stdin JSON for `session_id` when `CLAUDE_SESSION_ID` env var is absent (common in PostToolUse lifecycle). Session date pinned on first activity to prevent midnight log splits. Non-blocking. | ACTIVITY_LOGGING |
+| **session_activity_logger.py** | Structured JSONL activity logging for continuous improvement analysis. Handles PostToolUse (tool calls) and UserPromptSubmit (user prompts). Sets `"hook": "PostToolUse"` correctly for tool-call entries. Falls back to parsing hook stdin JSON for `session_id` when `CLAUDE_SESSION_ID` env var is absent (common in PostToolUse lifecycle). Session date pinned on first activity to prevent midnight log splits. For Agent/Task tool outputs, extracts `total_tokens`, `tool_uses`, and `agent_duration_ms` from `<usage>` blocks in the result text (Issue #704) — consumed by `pipeline_timing_analyzer.py` for token efficiency analysis. Non-blocking. | ACTIVITY_LOGGING |
 
 ### PreCompact
 

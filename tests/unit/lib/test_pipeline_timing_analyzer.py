@@ -516,3 +516,104 @@ class TestSanitizeMarkdown:
         result = _sanitize_markdown(long_text)
         assert len(result) == 2000
         assert result.endswith("...")
+
+
+# --- token tracking tests (Issue #704) ---
+
+
+class TestAgentTimingTokenFields:
+    """Tests for token fields on AgentTiming."""
+
+    def test_agent_timing_has_token_fields(self):
+        """AgentTiming with token data stores total_tokens and tool_uses."""
+        timing = AgentTiming(
+            agent_type="researcher",
+            wall_clock_seconds=60.0,
+            result_word_count=500,
+            invocation_ts="2026-03-01T10:00:00+00:00",
+            completion_ts="2026-03-01T10:01:00+00:00",
+            step_number=2.0,
+            total_tokens=25000,
+            tool_uses=5,
+        )
+        assert timing.total_tokens == 25000
+        assert timing.tool_uses == 5
+
+    def test_agent_timing_defaults_zero(self):
+        """AgentTiming without token data defaults to 0."""
+        timing = _make_timing()
+        assert timing.total_tokens == 0
+        assert timing.tool_uses == 0
+
+
+class TestFormatTimingReportTokens:
+    """Tests for token columns in format_timing_report."""
+
+    def test_format_timing_report_with_tokens(self):
+        """Report includes Tokens and Tok/Word columns when token data present."""
+        timings = [
+            AgentTiming(
+                agent_type="researcher",
+                wall_clock_seconds=60.0,
+                result_word_count=300,
+                invocation_ts="2026-03-01T10:00:00+00:00",
+                completion_ts="2026-03-01T10:01:00+00:00",
+                step_number=2.0,
+                total_tokens=15000,
+                tool_uses=3,
+            ),
+        ]
+        report = format_timing_report(timings, [])
+        assert "Tokens" in report
+        assert "Tok/Word" in report
+        assert "15000" in report
+
+    def test_format_timing_report_without_tokens(self):
+        """Report omits Tokens and Tok/Word columns when no token data."""
+        timings = [
+            _make_timing(agent_type="researcher", wall_clock_seconds=60, result_word_count=300),
+        ]
+        report = format_timing_report(timings, [])
+        assert "Tokens" not in report
+        assert "Tok/Word" not in report
+
+
+class TestTokenEfficiencyFinding:
+    """Tests for TOKEN_EFFICIENCY finding in analyze_timings."""
+
+    def test_token_efficiency_finding(self):
+        """High tokens/word ratio produces TOKEN_EFFICIENCY finding."""
+        timings = [
+            AgentTiming(
+                agent_type="researcher",
+                wall_clock_seconds=60.0,
+                result_word_count=100,
+                invocation_ts="2026-03-01T10:00:00+00:00",
+                completion_ts="2026-03-01T10:01:00+00:00",
+                step_number=2.0,
+                total_tokens=60000,  # 600 tokens/word > 500 threshold
+                tool_uses=5,
+            ),
+        ]
+        findings = analyze_timings(timings)
+        token_findings = [f for f in findings if f.finding_type == "TOKEN_EFFICIENCY"]
+        assert len(token_findings) == 1
+        assert "smaller model tier" in token_findings[0].recommendation
+
+    def test_token_efficiency_normal(self):
+        """Normal tokens/word ratio produces no TOKEN_EFFICIENCY finding."""
+        timings = [
+            AgentTiming(
+                agent_type="researcher",
+                wall_clock_seconds=60.0,
+                result_word_count=500,
+                invocation_ts="2026-03-01T10:00:00+00:00",
+                completion_ts="2026-03-01T10:01:00+00:00",
+                step_number=2.0,
+                total_tokens=25000,  # 50 tokens/word < 500 threshold
+                tool_uses=3,
+            ),
+        ]
+        findings = analyze_timings(timings)
+        token_findings = [f for f in findings if f.finding_type == "TOKEN_EFFICIENCY"]
+        assert len(token_findings) == 0

@@ -274,8 +274,42 @@ def _summarize_output(tool_output: dict) -> dict:
     return {"success": True}
 
 
+def _extract_usage_from_result(tool_output: str) -> dict:
+    """Extract token usage data from Agent tool result text.
+
+    Parses the ``<usage>`` block returned by the Agent tool, e.g.::
+
+        <usage>total_tokens: 27169
+        tool_uses: 2
+        duration_ms: 18677</usage>
+
+    Args:
+        tool_output: Raw output text from the Agent/Task tool.
+
+    Returns:
+        Dict with ``total_tokens``, ``tool_uses``, and ``duration_ms`` keys
+        (int values) for any fields found, or empty dict if no usage block.
+    """
+    if not tool_output or not isinstance(tool_output, str):
+        return {}
+
+    match = re.search(r"<usage>(.*?)</usage>", tool_output, re.DOTALL)
+    if not match:
+        return {}
+
+    usage_text = match.group(1)
+    result: dict = {}
+
+    for key in ("total_tokens", "tool_uses", "duration_ms"):
+        field_match = re.search(rf"{key}:\s*(\d+)", usage_text)
+        if field_match:
+            result[key] = int(field_match.group(1))
+
+    return result
+
+
 def _add_result_word_count(tool_name: str, tool_output: dict, summary: dict) -> dict:
-    """Add result_word_count for Task tool outputs (Issue #367)."""
+    """Add result_word_count and token usage for Task/Agent tool outputs (Issue #367, #704)."""
     if tool_name in ("Task", "Agent"):
         output_text = ""
         if isinstance(tool_output, dict):
@@ -283,6 +317,12 @@ def _add_result_word_count(tool_name: str, tool_output: dict, summary: dict) -> 
         elif isinstance(tool_output, str):
             output_text = tool_output
         summary["result_word_count"] = len(output_text.split()) if output_text else 0
+
+        # Extract token usage from <usage> block (Issue #704)
+        usage = _extract_usage_from_result(output_text)
+        summary["total_tokens"] = usage.get("total_tokens", 0)
+        summary["tool_uses"] = usage.get("tool_uses", 0)
+        summary["agent_duration_ms"] = usage.get("duration_ms", 0)
     return summary
 
 

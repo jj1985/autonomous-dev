@@ -39,6 +39,8 @@ class PipelineEvent:
     duration_ms: int = 0
     success: bool = True
     agent_transcript_path: str = ""
+    total_tokens: int = 0
+    tool_uses: int = 0
     batch_issue_number: int = 0
     session_id: str = ""
 
@@ -246,6 +248,8 @@ def _parse_single_log(
                 result_word_count=output_summary.get("result_word_count", 0),
                 duration_ms=entry.get("duration_ms", 0),
                 success=output_summary.get("success", True),
+                total_tokens=output_summary.get("total_tokens", 0),
+                tool_uses=output_summary.get("tool_uses", 0),
                 batch_issue_number=batch_issue_number,
                 session_id=entry.get("session_id", ""),
             ))
@@ -285,6 +289,8 @@ def _parse_single_log(
                 result_word_count=entry.get("result_word_count", 0),
                 duration_ms=entry.get("duration_ms", 0),
                 success=entry.get("success", True),
+                total_tokens=entry.get("total_tokens", 0),
+                tool_uses=entry.get("tool_uses", 0),
                 agent_transcript_path=entry.get("agent_transcript_path", ""),
                 session_id=entry.get("session_id", ""),
             ))

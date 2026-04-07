@@ -78,6 +78,8 @@ class AgentTiming:
     invocation_ts: str
     completion_ts: str
     step_number: float = 0.0
+    total_tokens: int = 0
+    tool_uses: int = 0
 
 
 @dataclass
@@ -159,6 +161,8 @@ def extract_agent_timings(events: list[PipelineEvent]) -> list[AgentTiming]:
                 invocation_ts=inv.timestamp,
                 completion_ts=best_comp.timestamp,
                 step_number=step_num,
+                total_tokens=best_comp.total_tokens,
+                tool_uses=best_comp.tool_uses,
             ))
         else:
             logger.warning(
@@ -401,6 +405,24 @@ def analyze_timings(
                 recommendation=recommendation,
             ))
 
+        # Token efficiency detection (Issue #704)
+        if t.total_tokens > 0 and t.result_word_count > 0:
+            tokens_per_word = t.total_tokens / t.result_word_count
+            if tokens_per_word > 500:
+                findings.append(TimingFinding(
+                    agent_type=t.agent_type,
+                    finding_type="TOKEN_EFFICIENCY",
+                    actual_seconds=t.wall_clock_seconds,
+                    threshold_seconds=0,
+                    threshold_type="token_ratio",
+                    result_word_count=t.result_word_count,
+                    recommendation=(
+                        f"{t.agent_type} used {t.total_tokens} tokens to produce "
+                        f"{t.result_word_count} words ({tokens_per_word:.0f} tokens/word). "
+                        f"Consider using a smaller model tier (Haiku/Sonnet) for this agent."
+                    ),
+                ))
+
     return findings
 
 
@@ -420,15 +442,30 @@ def format_timing_report(
     lines: list[str] = []
     lines.append("## Pipeline Timing Report")
     lines.append("")
-    lines.append("| Agent | Duration (s) | Words | Words/sec | Step |")
-    lines.append("|-------|-------------|-------|-----------|------|")
+
+    has_tokens = any(t.total_tokens > 0 for t in timings)
+
+    if has_tokens:
+        lines.append("| Agent | Duration (s) | Words | Words/sec | Tokens | Tok/Word | Step |")
+        lines.append("|-------|-------------|-------|-----------|--------|----------|------|")
+    else:
+        lines.append("| Agent | Duration (s) | Words | Words/sec | Step |")
+        lines.append("|-------|-------------|-------|-----------|------|")
 
     for t in sorted(timings, key=lambda x: x.step_number):
         wps = t.result_word_count / t.wall_clock_seconds if t.wall_clock_seconds > 0 else 0
-        lines.append(
-            f"| {t.agent_type} | {t.wall_clock_seconds:.1f} | "
-            f"{t.result_word_count} | {wps:.1f} | {t.step_number} |"
-        )
+        if has_tokens:
+            tpw = t.total_tokens / t.result_word_count if t.result_word_count > 0 else 0
+            lines.append(
+                f"| {t.agent_type} | {t.wall_clock_seconds:.1f} | "
+                f"{t.result_word_count} | {wps:.1f} | "
+                f"{t.total_tokens} | {tpw:.1f} | {t.step_number} |"
+            )
+        else:
+            lines.append(
+                f"| {t.agent_type} | {t.wall_clock_seconds:.1f} | "
+                f"{t.result_word_count} | {wps:.1f} | {t.step_number} |"
+            )
 
     if findings:
         lines.append("")
