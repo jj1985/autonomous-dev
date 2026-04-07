@@ -21,9 +21,11 @@ from pipeline_completion_state import (
     _state_file_path,
     clear_session,
     get_completed_agents,
+    get_launched_agents,
     get_prompt_baseline,
     get_validation_mode,
     record_agent_completion,
+    record_agent_launch,
     record_prompt_baseline,
     set_validation_mode,
 )
@@ -119,6 +121,53 @@ class TestClearSession:
 
     def test_clear_nonexistent_session_is_safe(self):
         clear_session("nonexistent_session_12345")
+
+
+class TestLaunchTracking:
+    """Tests for agent launch tracking. Issue #686."""
+
+    def test_record_and_get_single_launch(self, session_id):
+        record_agent_launch(session_id, "reviewer")
+        launched = get_launched_agents(session_id)
+        assert "reviewer" in launched
+
+    def test_multiple_launches_accumulate(self, session_id):
+        record_agent_launch(session_id, "reviewer")
+        record_agent_launch(session_id, "security-auditor")
+        launched = get_launched_agents(session_id)
+        assert launched == {"reviewer", "security-auditor"}
+
+    def test_launch_issue_isolation(self, session_id):
+        record_agent_launch(session_id, "reviewer", issue_number=1)
+        record_agent_launch(session_id, "implementer", issue_number=2)
+
+        issue1 = get_launched_agents(session_id, issue_number=1)
+        issue2 = get_launched_agents(session_id, issue_number=2)
+
+        assert issue1 == {"reviewer"}
+        assert issue2 == {"implementer"}
+
+    def test_missing_file_returns_empty_set(self, session_id):
+        launched = get_launched_agents(session_id)
+        assert launched == set()
+
+    def test_launches_independent_of_completions(self, session_id):
+        """Launches and completions are tracked separately."""
+        record_agent_launch(session_id, "reviewer")
+        record_agent_completion(session_id, "implementer")
+
+        launched = get_launched_agents(session_id)
+        completed = get_completed_agents(session_id)
+
+        assert launched == {"reviewer"}
+        assert completed == {"implementer"}
+
+    def test_launch_idempotent(self, session_id):
+        """Recording same launch twice doesn't break anything."""
+        record_agent_launch(session_id, "reviewer")
+        record_agent_launch(session_id, "reviewer")
+        launched = get_launched_agents(session_id)
+        assert launched == {"reviewer"}
 
 
 class TestCorruptedFile:

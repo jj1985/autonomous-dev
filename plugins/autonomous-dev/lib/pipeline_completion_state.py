@@ -157,6 +157,59 @@ def get_completed_agents(
     return {k for k, v in issue_completions.items() if v}
 
 
+def record_agent_launch(
+    session_id: str,
+    agent_type: str,
+    *,
+    issue_number: int = 0,
+) -> None:
+    """Record that an agent has been launched (started) for a given session and issue.
+
+    Called from PreToolUse BEFORE the agent runs. Tracks which agents have been
+    started, separate from completions. Used by the parallel-mode defense-in-depth
+    guard to distinguish "running concurrently" from "skipped entirely".
+
+    Args:
+        session_id: The pipeline session identifier.
+        agent_type: The agent type (e.g., "reviewer", "security-auditor").
+        issue_number: The issue number (0 for non-batch).
+
+    Issues: #686
+    """
+    state = _ensure_state(session_id)
+    launches = state.setdefault("launches", {})
+    issue_key = str(issue_number)
+    issue_launches = launches.setdefault(issue_key, {})
+    issue_launches[agent_type] = True
+    _write_state(session_id, state)
+
+
+def get_launched_agents(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+) -> set[str]:
+    """Get the set of agents that have been launched for a session/issue.
+
+    Args:
+        session_id: The pipeline session identifier.
+        issue_number: The issue number (0 for non-batch).
+
+    Returns:
+        Set of agent type strings that have been launched.
+
+    Issues: #686
+    """
+    state = _read_state(session_id)
+    if not state:
+        return set()
+
+    launches = state.get("launches", {})
+    issue_key = str(issue_number)
+    issue_launches = launches.get(issue_key, {})
+    return {k for k, v in issue_launches.items() if v}
+
+
 def record_prompt_baseline(
     session_id: str,
     agent_type: str,

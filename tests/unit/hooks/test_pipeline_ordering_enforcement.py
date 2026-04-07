@@ -80,14 +80,18 @@ class TestPipelineOrderingGate:
             assert decision == "deny"
             assert "ORDERING" in reason.upper()
 
+    @patch("pipeline_completion_state.get_launched_agents")
+    @patch("pipeline_completion_state.record_agent_launch")
     @patch("pipeline_completion_state.get_completed_agents")
     @patch("pipeline_completion_state.get_validation_mode")
     def test_parallel_mode_allows_simultaneous_validators(
-        self, mock_mode, mock_completed, monkeypatch
+        self, mock_mode, mock_completed, mock_record_launch, mock_get_launched, monkeypatch
     ):
-        """In parallel mode, security-auditor should pass without reviewer."""
+        """In parallel mode, security-auditor should pass when reviewer is launched."""
         mock_completed.return_value = {"planner", "implementer"}
         mock_mode.return_value = "parallel"
+        # Issue #686: reviewer must be launched for parallel mode to allow
+        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
@@ -417,3 +421,101 @@ class TestIssue669RegressionHookLevel:
             )
             assert decision == "deny"
             assert "sequential" in reason.lower()
+
+
+class TestIssue686LaunchedAgentsWiring:
+    """Regression tests for Issue #686: launched_agents never passed to check_ordering_prerequisites.
+
+    The bug: unified_pre_tool.py called check_ordering_prerequisites() WITHOUT passing
+    launched_agents, so the parallel-mode defense-in-depth guard was dead code.
+
+    Fix: Wire record_agent_launch() and get_launched_agents() in validate_pipeline_ordering(),
+    and pass launched_agents to check_ordering_prerequisites().
+    """
+
+    @patch("pipeline_completion_state.get_launched_agents")
+    @patch("pipeline_completion_state.record_agent_launch")
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_record_agent_launch_called_before_gate(
+        self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
+    ):
+        """Issue #686: record_agent_launch must be called before the ordering gate check."""
+        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_mode.return_value = "sequential"
+        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit"}
+            )
+            assert decision == "allow"
+            mock_record_launch.assert_called_once_with(
+                "test-session", "security-auditor", issue_number=0
+            )
+
+    @patch("pipeline_completion_state.get_launched_agents")
+    @patch("pipeline_completion_state.record_agent_launch")
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_launched_agents_passed_to_gate(
+        self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
+    ):
+        """Issue #686: get_launched_agents result must be passed to check_ordering_prerequisites."""
+        mock_completed.return_value = {"planner", "implementer"}
+        mock_mode.return_value = "parallel"
+        # reviewer NOT launched — should block security-auditor even in parallel mode
+        mock_get_launched.return_value = {"planner", "implementer", "security-auditor"}
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit"}
+            )
+            # The defense-in-depth guard fires: reviewer not launched
+            assert decision == "deny"
+            assert "reviewer" in reason.lower()
+
+    @patch("pipeline_completion_state.get_launched_agents")
+    @patch("pipeline_completion_state.record_agent_launch")
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_parallel_mode_allows_when_reviewer_launched(
+        self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
+    ):
+        """Issue #686: parallel mode allows security-auditor when reviewer is launched."""
+        mock_completed.return_value = {"planner", "implementer"}
+        mock_mode.return_value = "parallel"
+        # reviewer IS launched (running concurrently)
+        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit"}
+            )
+            assert decision == "allow"
+
+    @patch("pipeline_completion_state.get_launched_agents")
+    @patch("pipeline_completion_state.record_agent_launch")
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_batch_context_passes_issue_number(
+        self, mock_mode, mock_completed, mock_record_launch, mock_get_launched, monkeypatch
+    ):
+        """Issue #686: PIPELINE_ISSUE_NUMBER should be passed to record_agent_launch."""
+        monkeypatch.setenv("PIPELINE_ISSUE_NUMBER", "42")
+        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_mode.return_value = "sequential"
+        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit"}
+            )
+            assert decision == "allow"
+            mock_record_launch.assert_called_once_with(
+                "test-session", "security-auditor", issue_number=42
+            )

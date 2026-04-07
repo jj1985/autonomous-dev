@@ -16043,31 +16043,44 @@ result = check_ordering_prerequisites(
 - v1.1.0 (2026-04-07) - Defense-in-depth: `launched_agents` parameter blocks parallel mode bypass when prerequisite not launched; `GateResult.warning` field for observability; fail-open logging in `unified_pre_tool.py` (Issue #669)
 - v1.0.0 (2026-03-30) - Initial release for hook-level pipeline ordering enforcement (Issues #625, #629, #632)
 
-## 176+4. pipeline_completion_state.py (236 lines, v1.0.0 - Issues #625, #629, #632)
+## 176+4. pipeline_completion_state.py (289 lines, v1.1.0 - Issues #625, #629, #632, #686)
 
-**Purpose**: Shared state for agent ordering enforcement. Manages a per-session JSON state file that tracks which pipeline agents have completed. Written by `unified_session_tracker.py` (SubagentStop) and read by `unified_pre_tool.py` (PreToolUse) to enforce ordering.
+**Purpose**: Shared state for agent ordering enforcement. Manages a per-session JSON state file that tracks which pipeline agents have completed and which have been launched. Written by `unified_session_tracker.py` (SubagentStop for completions) and `unified_pre_tool.py` (PreToolUse for launches), read by `unified_pre_tool.py` to enforce ordering.
 
 **State file path**: `/tmp/pipeline_agent_completions_{sha256(session_id)[:8]}.json` (auto-expires after 2 hours)
 
-**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering
+**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #686 — Agent launch tracking for parallel-mode defense-in-depth
 
 ### Public API
 
 ```python
-from pipeline_completion_state import record_agent_completion, get_completed_agents, set_validation_mode, get_validation_mode, clear_session
+from pipeline_completion_state import (
+    record_agent_completion, get_completed_agents,
+    record_agent_launch, get_launched_agents,
+    set_validation_mode, get_validation_mode, clear_session,
+)
 
 # Record that an agent completed (called by unified_session_tracker.py)
 record_agent_completion(session_id="abc123", agent_type="planner", issue_number=42, success=True)
 
+# Record that an agent was launched (called by unified_pre_tool.py in PreToolUse)
+record_agent_launch(session_id="abc123", agent_type="reviewer", issue_number=42)
+
 # Read completed agents (called by unified_pre_tool.py)
 completed = get_completed_agents(session_id="abc123", issue_number=42)
 # => {"planner"}
+
+# Read launched agents (used by parallel-mode defense-in-depth guard)
+launched = get_launched_agents(session_id="abc123", issue_number=42)
+# => {"reviewer"}
 ```
 
 ### Functions
 
 - **`record_agent_completion(session_id, agent_type, *, issue_number=0, success=True) -> None`** — Record that an agent has completed for a given session and issue. Called by `unified_session_tracker.py` on SubagentStop.
 - **`get_completed_agents(session_id, *, issue_number=0) -> set[str]`** — Get the set of agents that have completed successfully for a session/issue. Returns empty set on any read error (fail-open).
+- **`record_agent_launch(session_id, agent_type, *, issue_number=0) -> None`** — Record that an agent has been launched (started) for a given session and issue. Called by `unified_pre_tool.py` in PreToolUse BEFORE the agent runs. Used by the parallel-mode defense-in-depth guard to distinguish "running concurrently" from "skipped entirely". (Issue #686)
+- **`get_launched_agents(session_id, *, issue_number=0) -> set[str]`** — Get the set of agents that have been launched for a session/issue. Returns empty set on any read error. (Issue #686)
 - **`record_prompt_baseline(session_id, agent_type, word_count, issue_number) -> None`** — Record baseline prompt word count for an agent.
 - **`get_prompt_baseline(session_id, agent_type) -> Optional[int]`** — Get baseline prompt word count for an agent.
 - **`set_validation_mode(session_id, mode) -> None`** — Set ordering enforcement mode (`"sequential"` or `"parallel"`).
@@ -16084,6 +16097,9 @@ completed = get_completed_agents(session_id="abc123", issue_number=42)
   "completions": {
     "42": {"planner": true, "test-master": true}
   },
+  "launches": {
+    "42": {"reviewer": true, "security-auditor": true}
+  },
   "prompt_baselines": {}
 }
 ```
@@ -16092,7 +16108,9 @@ completed = get_completed_agents(session_id="abc123", issue_number=42)
 
 - `tests/unit/lib/test_pipeline_completion_state.py` — unit tests
 
-**Version History**: v1.0.0 (2026-03-30) - Initial release for pipeline ordering state management (Issues #625, #629, #632)
+**Version History**:
+- v1.1.0 (2026-04-07) - Added `record_agent_launch()` and `get_launched_agents()` for parallel-mode defense-in-depth; `unified_pre_tool.py` now passes `launched_agents` to ordering gate (Issue #686)
+- v1.0.0 (2026-03-30) - Initial release for pipeline ordering state management (Issues #625, #629, #632)
 
 ---
 
