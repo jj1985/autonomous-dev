@@ -417,6 +417,8 @@ class TestConstants:
         """COMPRESSION_CRITICAL_AGENTS constant contains expected agents."""
         assert "security-auditor" in COMPRESSION_CRITICAL_AGENTS
         assert "reviewer" in COMPRESSION_CRITICAL_AGENTS
+        assert "researcher-local" in COMPRESSION_CRITICAL_AGENTS
+        assert "researcher" in COMPRESSION_CRITICAL_AGENTS
 
     def test_max_prompt_shrinkage_ratio(self):
         """MAX_PROMPT_SHRINKAGE_RATIO is 0.25 (25%)."""

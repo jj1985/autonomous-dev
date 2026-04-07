@@ -104,7 +104,7 @@ TIMESTAMP_WINDOW_SECONDS = 5
 PARALLEL_SERIALIZED_THRESHOLD = 30
 
 # Agents whose prompts are security-critical and must not be compressed
-COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer"}
+COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer", "researcher-local", "researcher"}
 
 # Maximum allowed prompt shrinkage ratio from baseline (issue 1) to later issues
 # e.g. 0.25 means if issue 3's prompt is < 25% of issue 1's prompt, flag it

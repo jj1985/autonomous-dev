@@ -135,7 +135,7 @@ class TestPruningAnalyzer:
     """
 
     # Directories to skip during file discovery
-    SKIP_DIRS = {"__pycache__", ".git", "archived", "node_modules", ".tox", ".venv", "venv"}
+    SKIP_DIRS = {"__pycache__", ".git", ".worktrees", "archived", "node_modules", ".tox", ".venv", "venv"}
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root.resolve()
@@ -310,6 +310,8 @@ class TestPruningAnalyzer:
             if not base_dir.is_dir():
                 continue
             for py_file in base_dir.rglob("*.py"):
+                if ".worktrees" in py_file.parts:
+                    continue
                 if py_file.name == "__init__.py":
                     continue
                 # Convert path to module name

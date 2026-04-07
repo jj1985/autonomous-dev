@@ -59,6 +59,31 @@ class TestReviewerAgent:
         """Reviewer must have HARD GATE."""
         assert "HARD GATE" in self.content
 
+    def test_minimum_file_read_requirement_section(self):
+        """Reviewer must have Minimum File Read Requirement HARD GATE (Issue #659)."""
+        assert "Minimum File Read Requirement" in self.content
+
+    def test_required_tool_actions_language(self):
+        """Reviewer must have REQUIRED TOOL ACTIONS section (Issue #659)."""
+        assert "REQUIRED TOOL ACTIONS" in self.content
+
+    def test_forbidden_zero_tool_uses(self):
+        """Reviewer FORBIDDEN to issue verdict with 0 tool uses (Issue #659)."""
+        assert "0 tool uses" in self.content
+
+    def test_minimum_tool_use_thresholds(self):
+        """Reviewer must define minimum tool use thresholds (Issue #659)."""
+        assert "Minimum tool use thresholds" in self.content
+        # Verify specific thresholds exist
+        assert "1-50 lines changed" in self.content
+        assert "51-200 lines changed" in self.content
+        assert "200+ lines changed" in self.content
+
+    def test_forbidden_ghost_review(self):
+        """Reviewer FORBIDDEN to issue APPROVE with 0 tool uses in main FORBIDDEN list (Issue #659)."""
+        # This checks the entry in the main FORBIDDEN list (not just the section-local one)
+        assert "MUST NOT issue any verdict (APPROVE or REQUEST_CHANGES) with 0 tool uses" in self.content
+
 
 class TestDocMasterAgent:
     """doc-master.md: haiku→sonnet, semantic guidance, GenAI gate."""

@@ -698,7 +698,7 @@ class TestSubagentTypePriority:
         # Mock pipeline as active and ordering gate to capture the target_agent
         captured = {}
 
-        def mock_check(target, completed, validation_mode=None):
+        def mock_check(target, completed, validation_mode=None, launched_agents=None):
             captured["target"] = target
             result = MagicMock()
             result.passed = True
@@ -734,7 +734,7 @@ class TestSubagentTypePriority:
         monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
         captured = {}
 
-        def mock_check(target, completed, validation_mode=None):
+        def mock_check(target, completed, validation_mode=None, launched_agents=None):
             captured["target"] = target
             result = MagicMock()
             result.passed = True
@@ -761,7 +761,7 @@ class TestSubagentTypePriority:
         """
         monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
 
-        def mock_check(target, completed, validation_mode=None):
+        def mock_check(target, completed, validation_mode=None, launched_agents=None):
             result = MagicMock()
             result.passed = False
             result.reason = "ORDERING VIOLATION: implementer requires planner to complete first"
@@ -787,7 +787,7 @@ class TestSubagentTypePriority:
         monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
         captured = {}
 
-        def mock_check(target, completed, validation_mode=None):
+        def mock_check(target, completed, validation_mode=None, launched_agents=None):
             captured["target"] = target
             result = MagicMock()
             result.passed = True
@@ -822,7 +822,7 @@ class TestSubagentTypePriority:
         monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
         captured = {}
 
-        def mock_check(target, completed, validation_mode=None):
+        def mock_check(target, completed, validation_mode=None, launched_agents=None):
             captured["target"] = target
             result = MagicMock()
             result.passed = True
@@ -840,4 +840,43 @@ class TestSubagentTypePriority:
         assert decision == "allow"
         assert captured["target"] == "test-master", (
             f"Expected text extraction fallback to find 'test-master', got '{captured['target']}'."
+        )
+
+    def test_launched_agents_kwarg_forwarded_to_ordering_gate(self, monkeypatch):
+        """Regression test for Issue #690: launched_agents kwarg must reach check_ordering_prerequisites.
+
+        Bug: After #686 added launched_agents=launched to the call site in
+        unified_pre_tool.py, mock stubs in this class lacked the parameter,
+        causing KeyError on 'target' (mock crashed before capturing) or
+        incorrect allow/deny decisions.
+
+        This test verifies the kwarg is actually forwarded by capturing it.
+        Without the fix, the mock would raise TypeError on the unexpected kwarg.
+        """
+        monkeypatch.setenv("PRE_TOOL_PIPELINE_ORDERING", "true")
+        captured = {}
+
+        def mock_check(target, completed, validation_mode=None, launched_agents=None):
+            captured["target"] = target
+            captured["launched_agents"] = launched_agents
+            result = MagicMock()
+            result.passed = True
+            result.reason = "OK"
+            return result
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch("pipeline_completion_state.get_completed_agents", return_value=set()), \
+             patch("pipeline_completion_state.get_launched_agents", return_value={"planner"}), \
+             patch("pipeline_completion_state.get_validation_mode", return_value="strict"), \
+             patch("agent_ordering_gate.check_ordering_prerequisites", side_effect=mock_check):
+            decision, reason = hook.validate_pipeline_ordering("Agent", {
+                "subagent_type": "implementer",
+                "prompt": "You are the implementer.",
+            })
+        assert decision == "allow"
+        assert captured["target"] == "implementer"
+        # The launched_agents kwarg should be forwarded from the hook
+        assert captured["launched_agents"] is not None, (
+            "launched_agents kwarg was not forwarded to check_ordering_prerequisites. "
+            "This is the regression from Issue #690."
         )

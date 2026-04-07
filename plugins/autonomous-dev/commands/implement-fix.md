@@ -159,6 +159,25 @@ If fixing a bug, at least one NEW test must be added that would FAIL without the
 
 **Progress**: Output step banner (STEP F4/4 — Review + Docs, Agents: reviewer (Sonnet), doc-master (Sonnet)). Output each agent completion. Then output Final Summary table.
 
+#### HARD GATE: Verbatim Implementer Output
+
+You MUST pass the FULL implementer output from STEP F3 to the reviewer and security-auditor agents — do NOT summarize, condense, or paraphrase. The implementer output contains file paths, diff context, and test results that the reviewer needs verbatim to perform a thorough review. Truncating or summarizing this output is the root cause of prompt word count violations.
+
+#### HARD GATE: Prompt Integrity Validation
+
+Before invoking the reviewer or security-auditor agent, validate the constructed prompt word count:
+
+1. Reviewer prompt MUST be >= 80 words
+2. Security-auditor prompt (if invoked) MUST be >= 80 words
+3. If below minimum, reconstruct prompt by including more context from the implementer output — add the full list of changed files, the complete test results, and the diff summary
+
+The library function `validate_prompt_word_count(agent_type, prompt)` from `plugins/autonomous-dev/lib/prompt_integrity.py` provides this validation. Call it and check `result.passed` before invoking each critical agent.
+
+**FORBIDDEN**:
+- Sending a reviewer or security-auditor prompt with fewer than 80 words
+- Summarizing or condensing the implementer output before passing it to the reviewer
+- Omitting file paths, test results, or diff context from the reviewer prompt
+
 Invoke TWO agents in PARALLEL:
 
 1. **Reviewer** (Sonnet): Review the fix for correctness, edge cases, and regressions.
@@ -166,9 +185,26 @@ Invoke TWO agents in PARALLEL:
 ```
 subagent_type: "reviewer"
 model: "sonnet"
-prompt: "Review this test fix for correctness and potential regressions.
-[paste implementer output]
-Focus on: correctness of fix, edge cases, potential regressions introduced."
+prompt: "FIX MODE REVIEW: You are reviewing a test fix for correctness, edge cases, and potential regressions. Your review must be thorough and must cover all changed files.
+
+**Review checklist — evaluate each item explicitly**:
+1. Read every changed file listed below and verify the fix is correct
+2. Check for edge cases that the fix may not handle
+3. Verify that no regressions were introduced by the changes
+4. Confirm that new regression tests exist and would fail without the fix
+5. Check that error handling is preserved and not weakened by the fix
+6. Verify test assertions are meaningful and not trivially passing
+
+**Implementer output (VERBATIM — do not skip any section)**:
+[paste FULL implementer output from STEP F3 here — do NOT summarize]
+
+**Changed files for review**:
+[list all files modified in STEP F3]
+
+**Test results after fix**:
+[paste final pytest output from STEP F3]
+
+Report BLOCKING findings (must fix before merge) and WARNING findings (improvements for later) separately."
 ```
 
 2. **Doc-master** (Sonnet): Update any affected documentation.
@@ -181,8 +217,33 @@ prompt: "Check if any documentation needs updating based on this fix.
 Only update docs if behavior changed. Skip if fix is purely internal."
 ```
 
-**Security-auditor**: SKIP unless changed files touch security-sensitive paths
+3. **Security-auditor** (Sonnet): SKIP unless changed files touch security-sensitive paths
 (auth/, security/, crypto/, permissions/, .env, secrets, tokens).
+
+When invoked:
+```
+subagent_type: "security-auditor"
+model: "sonnet"
+prompt: "FIX MODE SECURITY REVIEW: You are auditing a test fix for security implications. Review all changed files for security regressions.
+
+**Security audit checklist — evaluate each item explicitly**:
+1. Check that no authentication or authorization checks were weakened or removed
+2. Verify no secrets, tokens, or credentials were hardcoded or exposed
+3. Confirm input validation was not bypassed or weakened by the fix
+4. Check that error messages do not leak sensitive internal details
+5. Verify that security-sensitive file permissions were not changed
+
+**Implementer output (VERBATIM — do not skip any section)**:
+[paste FULL implementer output from STEP F3 here — do NOT summarize]
+
+**Changed files for security review**:
+[list all files modified in STEP F3 that touch security-sensitive paths]
+
+**Test results after fix**:
+[paste final pytest output from STEP F3]
+
+Report BLOCKING findings (must fix before merge) and WARNING findings (improvements for later) separately."
+```
 
 ---
 
