@@ -521,11 +521,31 @@ def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, s
         if not gate.passed:
             return ("deny", gate.reason)
 
+        # Issue #669: Log parallel mode warnings for observability
+        if gate.warning:
+            import logging
+
+            logger = logging.getLogger("unified_pre_tool.ordering")
+            logger.warning("%s", gate.warning)
+
         return ("allow", f"Ordering OK: {target_agent} prerequisites met")
 
     except Exception as e:
-        # Fail-open: ordering check errors must not block workflow
-        return ("allow", f"Pipeline ordering check error: {e}")
+        # Fail-open: ordering check errors must not block workflow.
+        # Issue #669: Log a warning when failing open for security-critical ordering pairs,
+        # since a crash in the ordering check could silently allow security-auditor
+        # before reviewer completes.
+        import logging
+
+        logger = logging.getLogger("unified_pre_tool.ordering")
+        logger.warning(
+            "Pipeline ordering check failed open for tool='%s': %s. "
+            "If this involves security-auditor, the ordering guarantee is NOT enforced. "
+            "Issue #669.",
+            tool_name,
+            e,
+        )
+        return ("allow", f"Pipeline ordering check error (fail-open): {e}")
 
 
 def _extract_subagent_type(task_description: str) -> str:

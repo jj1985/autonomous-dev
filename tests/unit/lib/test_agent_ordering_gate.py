@@ -114,13 +114,16 @@ class TestSequentialOrdering:
         )
         assert result.passed
 
-    def test_test_master_blocked_without_planner(self):
+    def test_test_master_passes_without_planner(self):
+        """test-master has no core prerequisites — TDD-first pairs are only
+        enforced after test-master has completed (Issue #636)."""
         completed = set()
         result = check_ordering_prerequisites(
             "test-master", completed, validation_mode="sequential"
         )
-        assert not result.passed
-        assert "planner" in result.missing_agents
+        # test-master is not in STEP_ORDER (no core prerequisites defined),
+        # so it passes as an unknown agent
+        assert result.passed
 
     def test_empty_completed_blocks_dependents(self):
         for agent in ["implementer", "reviewer", "security-auditor", "doc-master"]:
@@ -284,3 +287,131 @@ class TestBatchCompleteness:
     def test_light_mode_agents_subset_of_full(self):
         """Light mode agents should be a subset of full pipeline agents."""
         assert LIGHT_PIPELINE_AGENTS.issubset(FULL_PIPELINE_AGENTS)
+
+
+# ---------------------------------------------------------------------------
+# Issue #669: security-auditor ordering recurrence regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestIssue669SecurityAuditorOrdering:
+    """Regression tests for Issue #669: security-auditor ordering violation recurrence.
+
+    The bug: In batch sessions, security-auditor ran before reviewer completed.
+    This violated the pipeline spec (reviewer must complete before security-auditor).
+
+    Root cause: hooks failing to load in worktrees (#651) + fail-open exception handler.
+    Fix: defensive parallel-mode check + warning logging.
+    """
+
+    def test_sequential_mode_blocks_security_auditor_without_reviewer(self):
+        """Core regression: security-auditor MUST be blocked without reviewer in sequential mode."""
+        completed = {"planner", "implementer"}
+        result = check_ordering_prerequisites(
+            "security-auditor", completed, validation_mode="sequential"
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_sequential_mode_allows_security_auditor_with_reviewer(self):
+        """security-auditor allowed when reviewer has completed."""
+        completed = {"planner", "implementer", "reviewer"}
+        result = check_ordering_prerequisites(
+            "security-auditor", completed, validation_mode="sequential"
+        )
+        assert result.passed
+
+    def test_parallel_mode_blocks_when_reviewer_not_launched(self):
+        """Issue #669: parallel mode should block security-auditor if reviewer
+        hasn't even been launched (not just not completed)."""
+        completed = {"planner", "implementer"}
+        launched = {"planner", "implementer"}  # reviewer not launched
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_parallel_mode_allows_when_reviewer_launched(self):
+        """Parallel mode allows security-auditor when reviewer is launched
+        (running concurrently), even if reviewer hasn't completed yet."""
+        completed = {"planner", "implementer"}
+        launched = {"planner", "implementer", "reviewer"}  # reviewer launched
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert result.passed
+
+    def test_parallel_mode_warns_when_reviewer_not_completed(self):
+        """Parallel mode emits warning when reviewer launched but not completed."""
+        completed = {"planner", "implementer"}
+        launched = {"planner", "implementer", "reviewer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert result.passed
+        assert result.warning is not None
+        assert "PARALLEL MODE WARNING" in result.warning
+        assert "#669" in result.warning
+
+    def test_parallel_mode_no_warning_when_reviewer_completed(self):
+        """No warning when reviewer has completed in parallel mode."""
+        completed = {"planner", "implementer", "reviewer"}
+        launched = {"planner", "implementer", "reviewer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert result.passed
+        assert result.warning is None
+
+    def test_parallel_mode_without_launched_agents_allows(self):
+        """When launched_agents is not provided, parallel mode allows
+        (backward compatibility — no launched info available)."""
+        completed = {"planner", "implementer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+        )
+        assert result.passed
+
+    def test_batch_context_sequential_enforcement(self):
+        """Simulates batch context: PIPELINE_ISSUE_NUMBER set, sequential mode.
+        security-auditor should still be blocked without reviewer."""
+        # In batch mode, each issue tracks completed agents independently.
+        # The ordering gate is called per-issue with that issue's completed set.
+        completed_for_issue = {"planner", "implementer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed_for_issue,
+            validation_mode="sequential",
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_default_mode_is_sequential_blocks_security_auditor(self):
+        """Default validation_mode must be 'sequential', which blocks
+        security-auditor without reviewer. Issue #669."""
+        completed = {"planner", "implementer"}
+        result = check_ordering_prerequisites("security-auditor", completed)
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_gate_result_has_warning_field(self):
+        """GateResult dataclass includes optional warning field (Issue #669)."""
+        r = GateResult(passed=True, reason="ok")
+        assert r.warning is None
+        r2 = GateResult(passed=True, reason="ok", warning="test warning")
+        assert r2.warning == "test warning"

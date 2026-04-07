@@ -346,3 +346,74 @@ class TestTddFirstModeDependentPairs:
             )
             assert decision == "deny"
             assert "planner" in reason.lower()
+
+
+class TestIssue669RegressionHookLevel:
+    """Regression tests for Issue #669: security-auditor ordering violation.
+
+    These tests verify the hook-level enforcement in unified_pre_tool.py,
+    specifically that the fail-open exception handler includes logging
+    and that the ordering gate is correctly wired.
+    """
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_security_auditor_denied_in_batch_context(
+        self, mock_mode, mock_completed, monkeypatch
+    ):
+        """Issue #669: security-auditor must be denied when reviewer hasn't completed,
+        even with PIPELINE_ISSUE_NUMBER set (batch context)."""
+        monkeypatch.setenv("PIPELINE_ISSUE_NUMBER", "669")
+        mock_completed.return_value = {"planner", "implementer"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit security"}
+            )
+            assert decision == "deny"
+            assert "reviewer" in reason.lower()
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_security_auditor_allowed_after_reviewer_in_batch(
+        self, mock_mode, mock_completed, monkeypatch
+    ):
+        """Issue #669: security-auditor allowed when reviewer completed in batch context."""
+        monkeypatch.setenv("PIPELINE_ISSUE_NUMBER", "669")
+        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit security"}
+            )
+            assert decision == "allow"
+
+    def test_fail_open_includes_warning_text(self):
+        """Issue #669: fail-open error message should indicate it failed open."""
+        with patch.object(hook, "_is_pipeline_active", side_effect=RuntimeError("boom")):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"task_description": "run security-auditor"}
+            )
+            assert decision == "allow"
+            assert "fail-open" in reason.lower()
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_ordering_violation_reason_includes_mode(
+        self, mock_mode, mock_completed
+    ):
+        """Ordering violation reason should include the validation mode for debugging."""
+        mock_completed.return_value = {"planner", "implementer"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit"}
+            )
+            assert decision == "deny"
+            assert "sequential" in reason.lower()

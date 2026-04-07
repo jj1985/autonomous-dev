@@ -378,41 +378,35 @@ _parse_timestamp = parse_timestamp
 _seconds_between = seconds_between
 
 
-def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
-    """Validate that pipeline steps executed in correct order.
+def _validate_step_ordering_for_group(
+    agent_events: List[PipelineEvent],
+    all_events: List[PipelineEvent],
+) -> List[Finding]:
+    """Validate step ordering for a single group of agent events.
+
+    Internal helper used by validate_step_ordering to check ordering within
+    a single issue (batch mode) or the entire session (non-batch mode).
 
     Args:
-        events: List of PipelineEvent sorted by timestamp.
+        agent_events: Agent events filtered to a single group (by issue or all).
+        all_events: All events in the session (for parallel STEP 10 detection).
 
     Returns:
-        List of findings for ordering violations.
+        List of findings for ordering violations within this group.
     """
     findings: List[Finding] = []
 
-    # Filter to agent invocations with known step assignments
-    agent_events = [
-        e for e in events
-        if e.tool in AGENT_TOOL_NAMES and e.subagent_type in STEP_ORDER
-    ]
-
-    # Need at least 2 agents to check ordering
     if len(agent_events) < 2:
         return findings
-
-    # Check ordering: for each sequential pair, verify first completed before second
-    # NOTE: test-master absence is intentionally NOT checked here. In acceptance-first mode
-    # (the default), test-master is never invoked — it only runs in --tdd-first mode.
-    # The pipeline coordinator (implement.md STEP 7) is responsible for mode-specific agent
-    # inclusion. Post-hoc log validation must not second-guess mode selection. (#518)
 
     # Detect parallel STEP 10 mode upfront so we can skip intra-STEP-6 ordering
     # checks (Issue #615): reviewer/security-auditor/doc-master complete in
     # non-deterministic order when launched in parallel.
-    step6_are_parallel = _is_parallel_step10_launch(events)
+    step6_are_parallel = _is_parallel_step10_launch(all_events)
     # Set of STEP 6 pairs where ordering should not be flagged in parallel mode
     STEP6_PAIRS = frozenset({("reviewer", "security-auditor"), ("security-auditor", "reviewer")})
 
-    # Include TDD-first pairs if test-master was used in this session
+    # Include TDD-first pairs if test-master was used in this group
     all_pairs = list(SEQUENTIAL_REQUIRED)
     if any(e.subagent_type == "test-master" for e in agent_events):
         all_pairs.extend(TDD_FIRST_PAIRS)
@@ -445,6 +439,58 @@ def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
             ))
 
     return findings
+
+
+def validate_step_ordering(events: List[PipelineEvent]) -> List[Finding]:
+    """Validate that pipeline steps executed in correct order.
+
+    When batch events are present (batch_issue_number > 0), ordering is checked
+    independently within each issue group. This prevents false positives in
+    mixed-mode batches where --fix issues (no planner/researcher) run alongside
+    full-pipeline issues. (#680)
+
+    Args:
+        events: List of PipelineEvent sorted by timestamp.
+
+    Returns:
+        List of findings for ordering violations.
+    """
+    # Filter to agent invocations with known step assignments
+    agent_events = [
+        e for e in events
+        if e.tool in AGENT_TOOL_NAMES and e.subagent_type in STEP_ORDER
+    ]
+
+    # Need at least 2 agents to check ordering
+    if len(agent_events) < 2:
+        return []
+
+    # Check ordering: for each sequential pair, verify first completed before second
+    # NOTE: test-master absence is intentionally NOT checked here. In acceptance-first mode
+    # (the default), test-master is never invoked — it only runs in --tdd-first mode.
+    # The pipeline coordinator (implement.md STEP 7) is responsible for mode-specific agent
+    # inclusion. Post-hoc log validation must not second-guess mode selection. (#518)
+
+    # When batch events are present, group by batch_issue_number and check
+    # ordering within each group independently. This prevents false CRITICALs
+    # when --fix issues (implementer-only) run before full-pipeline issues. (#680)
+    batch_events = [e for e in agent_events if e.batch_issue_number > 0]
+    if batch_events:
+        # Group by batch_issue_number
+        issue_groups: dict[int, List[PipelineEvent]] = {}
+        for e in agent_events:
+            issue_num = e.batch_issue_number if e.batch_issue_number > 0 else 0
+            if issue_num not in issue_groups:
+                issue_groups[issue_num] = []
+            issue_groups[issue_num].append(e)
+
+        findings: List[Finding] = []
+        for group_events in issue_groups.values():
+            findings.extend(_validate_step_ordering_for_group(group_events, events))
+        return findings
+
+    # Non-batch mode: check all events as a single group
+    return _validate_step_ordering_for_group(agent_events, events)
 
 
 def _is_parallel_step10_launch(events: List[PipelineEvent]) -> bool:
@@ -571,9 +617,18 @@ def detect_context_dropping(
     # Filter to agent invocations only
     agent_events = [e for e in events if e.tool in AGENT_TOOL_NAMES and e.subagent_type]
 
+    # Detect whether this is a batch session — if so, skip cross-issue
+    # comparisons that would produce false positives (#681)
+    has_batch_events = any(e.batch_issue_number > 0 for e in agent_events)
+
     for i in range(1, len(agent_events)):
         prev = agent_events[i - 1]
         curr = agent_events[i]
+
+        # Skip cross-issue comparisons in batch mode (#681): reviewer result
+        # from issue N → researcher prompt from issue N+1 is not context dropping
+        if has_batch_events and prev.batch_issue_number != curr.batch_issue_number:
+            continue
 
         # Skip if word counts are missing/zero
         if prev.result_word_count == 0 or curr.prompt_word_count == 0:

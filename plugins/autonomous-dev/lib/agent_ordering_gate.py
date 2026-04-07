@@ -5,7 +5,7 @@ Agent Ordering Gate - Pure logic for pipeline agent ordering decisions.
 No I/O, no side effects. Receives state as input, returns gate decisions.
 Used by unified_pre_tool.py Layer 4 to enforce agent ordering at hook level.
 
-Issues: #625, #629, #632, #636
+Issues: #625, #629, #632, #636, #669
 """
 
 from dataclasses import dataclass, field
@@ -94,11 +94,13 @@ class GateResult:
         passed: Whether the gate check passed.
         reason: Human-readable explanation.
         missing_agents: List of agents that need to complete first.
+        warning: Optional warning message (e.g., parallel mode advisory). Issue #669.
     """
 
     passed: bool
     reason: str
     missing_agents: list[str] = field(default_factory=list)
+    warning: Optional[str] = None
 
 
 def check_ordering_prerequisites(
@@ -106,17 +108,23 @@ def check_ordering_prerequisites(
     completed_agents: set[str],
     *,
     validation_mode: str = "sequential",
+    launched_agents: Optional[set[str]] = None,
 ) -> GateResult:
     """Check if ordering prerequisites are met for a target agent.
 
     In sequential mode: all SEQUENTIAL_REQUIRED pairs are enforced.
-    In parallel mode: mode-dependent pairs (reviewer -> security-auditor) are relaxed.
+    In parallel mode: mode-dependent pairs (reviewer -> security-auditor) are relaxed,
+        but only if the prerequisite has at least been launched. If the prerequisite
+        hasn't been launched at all, the check still blocks. Issue #669.
     Unknown agents always pass through.
 
     Args:
         target_agent: The agent about to be invoked.
         completed_agents: Set of agents that have already completed.
         validation_mode: "sequential" or "parallel".
+        launched_agents: Set of agents that have been launched (started but not
+            necessarily completed). Used in parallel mode to distinguish "running
+            concurrently" from "skipped entirely". Issue #669.
 
     Returns:
         GateResult indicating whether the agent may proceed.
@@ -134,12 +142,39 @@ def check_ordering_prerequisites(
         if prereq not in completed_agents:
             missing.append(prereq)
 
-    # Check mode-dependent prerequisites (only in sequential mode)
+    # Check mode-dependent prerequisites
     if validation_mode == "sequential":
+        # Sequential mode: prerequisite must have completed
         seq_prereqs = SEQUENTIAL_ONLY_PREREQUISITES.get(target, set())
         for prereq in seq_prereqs:
             if prereq not in completed_agents:
                 missing.append(prereq)
+    elif validation_mode == "parallel":
+        # Parallel mode: prerequisite is relaxed (doesn't need to have completed),
+        # BUT if launched_agents is available, verify the prerequisite has at least
+        # been launched. This prevents security-auditor from running when reviewer
+        # hasn't even been started — parallel means "run concurrently", not "skip".
+        # Issue #669: 3rd recurrence of security-auditor ordering violation.
+        warning = None
+        seq_prereqs = SEQUENTIAL_ONLY_PREREQUISITES.get(target, set())
+        for prereq in seq_prereqs:
+            if launched_agents is not None and prereq not in launched_agents:
+                # Prerequisite hasn't been launched at all — block even in parallel mode
+                missing.append(prereq)
+            elif prereq not in completed_agents:
+                # Prerequisite launched but not completed — allowed in parallel mode,
+                # but emit a warning for observability
+                warning = (
+                    f"PARALLEL MODE WARNING: '{target}' running while prerequisite "
+                    f"'{prereq}' has not completed. This is allowed in parallel mode "
+                    f"but may indicate an ordering issue. Issue #669."
+                )
+
+        if not missing:
+            # Pass with optional warning
+            if warning and not core_prereqs - completed_agents:
+                # Only attach warning if core prereqs are met (otherwise will fail below)
+                pass  # warning will be attached to final result
 
     # Check TDD-first prerequisites (only when test-master has completed,
     # meaning TDD-first mode is active). Issue #636.
@@ -162,7 +197,24 @@ def check_ordering_prerequisites(
             missing_agents=sorted(missing),
         )
 
-    return GateResult(passed=True, reason=f"Prerequisites met for '{target}'")
+    # Build result with optional parallel mode warning
+    result_warning = None
+    if validation_mode == "parallel":
+        seq_prereqs = SEQUENTIAL_ONLY_PREREQUISITES.get(target, set())
+        for prereq in seq_prereqs:
+            if prereq not in completed_agents:
+                result_warning = (
+                    f"PARALLEL MODE WARNING: '{target}' running while prerequisite "
+                    f"'{prereq}' has not completed. This is allowed in parallel mode "
+                    f"but may indicate an ordering issue. Issue #669."
+                )
+                break
+
+    return GateResult(
+        passed=True,
+        reason=f"Prerequisites met for '{target}'",
+        warning=result_warning,
+    )
 
 
 def check_minimum_agent_count(
