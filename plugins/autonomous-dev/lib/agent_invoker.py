@@ -125,6 +125,12 @@ class AgentInvoker:
             'artifacts_required': ['manifest', 'architecture', 'implementation'],
             'description_template': 'Write E2E browser tests for: {request}',
             'mission': 'Write persistent E2E test files using Playwright MCP tools'
+        },
+        'mobile-tester': {
+            'progress_pct': 73,
+            'artifacts_required': ['manifest', 'architecture', 'implementation'],
+            'description_template': 'Write iOS/Android E2E tests for: {request}',
+            'mission': 'Run Appium MCP interactive tests and write persistent Maestro YAML regression files'
         }
     }
 

@@ -4,6 +4,7 @@
     "advise",
     "align",
     "audit",
+    "autoresearch",
     "create-issue",
     "health-check",
     "implement",
@@ -32,7 +33,8 @@
         "plugins/autonomous-dev/agents/security-auditor.md",
         "plugins/autonomous-dev/agents/test-coverage-auditor.md",
         "plugins/autonomous-dev/agents/test-master.md",
-        "plugins/autonomous-dev/agents/ui-tester.md"
+        "plugins/autonomous-dev/agents/ui-tester.md",
+        "plugins/autonomous-dev/agents/mobile-tester.md"
       ],
       "target": ".claude/agents"
     },
@@ -41,6 +43,7 @@
         "plugins/autonomous-dev/commands/advise.md",
         "plugins/autonomous-dev/commands/align.md",
         "plugins/autonomous-dev/commands/audit.md",
+        "plugins/autonomous-dev/commands/autoresearch.md",
         "plugins/autonomous-dev/commands/create-issue.md",
         "plugins/autonomous-dev/commands/health-check.md",
         "plugins/autonomous-dev/commands/implement-batch.md",
@@ -123,6 +126,7 @@
         "plugins/autonomous-dev/lib/alignment_fixer.py",
         "plugins/autonomous-dev/lib/alignment_gate.py",
         "plugins/autonomous-dev/lib/artifacts.py",
+        "plugins/autonomous-dev/lib/autoresearch_engine.py",
         "plugins/autonomous-dev/lib/auto_approval_consent.py",
         "plugins/autonomous-dev/lib/auto_approval_engine.py",
         "plugins/autonomous-dev/lib/auto_implement_git_integration.py",

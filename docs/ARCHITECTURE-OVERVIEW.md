@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 13 agents (18 archived), 17 skills, 21 active commands, 192 libraries, 27 active hooks (62 archived).
+**Component Counts**: 14 agents (18 archived), 17 skills, 22 active commands, 185 libraries, 27 active hooks (62 archived).
 
 ---
 
@@ -28,7 +28,7 @@ Specialized agents with skill integration for autonomous development. See [docs/
 
 ## Model Tier Strategy
 
-Agent model assignments optimized for cost-performance balance (13 active agents):
+Agent model assignments optimized for cost-performance balance (14 active agents):
 
 **Tier 1 (Haiku)** - Fast, cost-effective for pattern matching
 - researcher-local - Search codebase patterns
@@ -43,6 +43,7 @@ Agent model assignments optimized for cost-performance balance (13 active agents
 - continuous-improvement-analyst - Pipeline QA and gaming detection
 - retrospective-analyst - Intent evolution and session drift detection
 - ui-tester - E2E browser testing via Playwright MCP (optional, STEP 9.7)
+- mobile-tester - iOS/Android E2E testing via Appium MCP + Maestro (optional, STEP 9.8)
 
 **Tier 3 (Opus)** - Deep reasoning for complex synthesis
 - planner - Architecture planning
@@ -127,6 +128,9 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 7. **Implementation**: implementer makes tests pass
 7.5. **E2E UI Testing** (STEP 9.7, Issue #656, optional): ui-tester writes Playwright MCP browser tests
    - Only invoked when changed files include frontend patterns AND Playwright MCP is available
+   - Advisory only — PASS or SKIP, never blocks the pipeline
+7.6. **Mobile E2E Testing** (STEP 9.8, Issue #657, optional): mobile-tester runs Appium MCP + Maestro YAML + native build checks
+   - Only invoked when changed files include mobile patterns AND Appium MCP or Maestro CLI is available
    - Advisory only — PASS or SKIP, never blocks the pipeline
 8. **Validation** (implement.md STEP 10) — mode selected based on changeset risk:
    - **Parallel mode** (default): reviewer, security-auditor, and doc-master launched simultaneously in one message (low-risk changesets with no security-sensitive files)

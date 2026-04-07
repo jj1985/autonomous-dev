@@ -63,8 +63,8 @@ class TestValidatePromptWordCount:
     """Tests for prompt word count validation."""
 
     def test_validate_no_baseline(self) -> None:
-        """Passes if word count > 0 and no baseline provided."""
-        prompt = "This is a test prompt with several words in it for validation"
+        """Passes if word count > minimum and no baseline provided."""
+        prompt = " ".join(["word"] * (MIN_CRITICAL_AGENT_PROMPT_WORDS + 10))
         result = validate_prompt_word_count("implementer", prompt)
 
         assert result.passed is True
@@ -74,20 +74,20 @@ class TestValidatePromptWordCount:
         assert result.word_count == len(prompt.split())
 
     def test_validate_within_threshold(self) -> None:
-        """15% shrinkage with 20% threshold passes."""
-        # 85 words = 15% shrinkage from 100-word baseline
-        prompt = " ".join(["word"] * 85)
+        """10% shrinkage with 15% default threshold passes."""
+        # 90 words = 10% shrinkage from 100-word baseline
+        prompt = " ".join(["word"] * 90)
         result = validate_prompt_word_count("implementer", prompt, baseline_word_count=100)
 
         assert result.passed is True
         assert result.should_reload is False
-        assert result.shrinkage_pct == 15.0
+        assert result.shrinkage_pct == 10.0
 
     def test_validate_exceeds_threshold(self) -> None:
-        """25% shrinkage with 20% threshold fails, should_reload=True."""
-        # 75 words = 25% shrinkage from 100-word baseline
-        prompt = " ".join(["word"] * 75)
-        result = validate_prompt_word_count("implementer", prompt, baseline_word_count=100)
+        """25% shrinkage with 15% default threshold fails, should_reload=True."""
+        # 150 words = 25% shrinkage from 200-word baseline (above minimum of 80)
+        prompt = " ".join(["word"] * 150)
+        result = validate_prompt_word_count("implementer", prompt, baseline_word_count=200)
 
         assert result.passed is False
         assert result.should_reload is True
@@ -106,9 +106,9 @@ class TestValidatePromptWordCount:
         assert str(MIN_CRITICAL_AGENT_PROMPT_WORDS) in result.reason
 
     def test_validate_non_critical_agent_no_minimum(self) -> None:
-        """Non-critical agent (implementer) with 50 words passes (no minimum)."""
+        """Non-critical agent (e.g., 'test-helper') with 50 words passes (no minimum)."""
         prompt = " ".join(["word"] * 50)
-        result = validate_prompt_word_count("implementer", prompt)
+        result = validate_prompt_word_count("test-helper", prompt)
 
         assert result.passed is True
         assert result.should_reload is False
@@ -264,3 +264,70 @@ class TestPromptIntegrityResult:
         assert result.passed is True
         assert result.reason == "Prompt for reviewer OK (450 words)."
         assert result.should_reload is False
+
+
+class TestIssue696RegressionImplementerCompression:
+    """Regression tests for Issue #696: 41% implementer prompt compression undetected.
+
+    Bug: COMPRESSION_CRITICAL_AGENTS was missing implementer, planner, and doc-master,
+    so their prompts could shrink without triggering validation. max_shrinkage default
+    was 0.20 (20%), now tightened to 0.15 (15%).
+    """
+
+    def test_implementer_in_critical_agents(self) -> None:
+        """Regression: implementer was missing, allowing 41% shrinkage undetected."""
+        assert "implementer" in COMPRESSION_CRITICAL_AGENTS
+
+    def test_planner_in_critical_agents(self) -> None:
+        """Regression: planner was missing from critical agents."""
+        assert "planner" in COMPRESSION_CRITICAL_AGENTS
+
+    def test_doc_master_in_critical_agents(self) -> None:
+        """Regression: doc-master was missing from critical agents."""
+        assert "doc-master" in COMPRESSION_CRITICAL_AGENTS
+
+    def test_default_max_shrinkage_is_015(self) -> None:
+        """Regression: default was 0.20, now 0.15 to catch compression earlier."""
+        import inspect
+
+        sig = inspect.signature(validate_prompt_word_count)
+        default = sig.parameters["max_shrinkage"].default
+        assert default == 0.15, f"Expected default 0.15, got {default}"
+
+    def test_implementer_below_minimum_fails(self) -> None:
+        """Implementer with fewer than MIN_CRITICAL_AGENT_PROMPT_WORDS should fail."""
+        short_prompt = " ".join(["word"] * (MIN_CRITICAL_AGENT_PROMPT_WORDS - 1))
+        result = validate_prompt_word_count("implementer", short_prompt)
+        assert result.passed is False
+        assert result.should_reload is True
+        assert "implementer" in result.reason
+
+    def test_implementer_41pct_shrinkage_caught(self) -> None:
+        """The exact bug scenario: 41% shrinkage from 200-word baseline is caught."""
+        baseline = 200
+        shrunk_prompt = " ".join(["word"] * 118)  # ~41% shrinkage
+        result = validate_prompt_word_count("implementer", shrunk_prompt, baseline)
+        assert result.passed is False
+        assert result.should_reload is True
+        assert "shrank" in result.reason
+
+    @pytest.mark.parametrize("agent_type", ["planner", "doc-master"])
+    def test_planner_docmaster_below_minimum_fails(self, agent_type: str) -> None:
+        """Planner and doc-master below minimum word count should fail."""
+        short_prompt = " ".join(["word"] * (MIN_CRITICAL_AGENT_PROMPT_WORDS - 1))
+        result = validate_prompt_word_count(agent_type, short_prompt)
+        assert result.passed is False
+        assert result.should_reload is True
+        assert agent_type in result.reason
+
+    def test_pipeline_intent_validator_mirrors_critical_agents(self) -> None:
+        """Both modules must have identical COMPRESSION_CRITICAL_AGENTS."""
+        from pipeline_intent_validator import (
+            COMPRESSION_CRITICAL_AGENTS as VALIDATOR_AGENTS,
+        )
+
+        assert COMPRESSION_CRITICAL_AGENTS == VALIDATOR_AGENTS, (
+            f"Mismatch between prompt_integrity and pipeline_intent_validator.\n"
+            f"prompt_integrity: {COMPRESSION_CRITICAL_AGENTS}\n"
+            f"pipeline_intent_validator: {VALIDATOR_AGENTS}"
+        )

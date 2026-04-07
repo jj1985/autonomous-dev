@@ -88,7 +88,7 @@ The autonomous-dev plugin includes shared libraries organized into the following
 70. **retrospective_analyzer.py** - Session log analysis and drift detection for the `/retrospective` command. Reads JSONL activity logs from `.claude/logs/activity/`, groups events by session, and runs three drift detectors: `detect_repeated_corrections(summaries, *, min_threshold)` flags correction patterns (revert, wrong, stop, etc.) recurring across multiple sessions; `detect_config_drift(project_root, *, baseline_commits)` uses `git diff HEAD~N` to surface large changes to `PROJECT.md` and `CLAUDE.md`; `detect_memory_rot(memory_dir, summaries, *, decay_days)` flags date-stamped memory sections older than `decay_days` with no recent corroboration. `load_session_summaries(logs_dir, *, max_sessions)` returns `SessionSummary` dataclasses. `format_as_unified_diff(edit)` renders `ProposedEdit` objects as unified diffs. Resource limits: `MAX_SESSIONS=50`, `MAX_EVENTS_PER_SESSION=200`, `MAX_LOG_FILES=100`. Security: CWE-22 path validation, CWE-400 resource caps, CWE-116 untrusted log content. (v1.0.0, Issue #598)
 71. **batch_mode_detector.py** - Per-issue pipeline mode detection for `/implement --batch --issues`. Analyzes issue title, body, and labels to automatically select the appropriate pipeline variant (full/fix/light) for each issue. `PipelineMode` enum: `FULL`, `FIX`, `LIGHT`. `ModeDetection` dataclass: `mode`, `confidence` (0.0–1.0), `signals` (list of matched signal descriptions), `source` ("label"/"title"/"body"/"default"). `detect_issue_mode(title, body, labels)` applies priority: (1) label override — "bug" → FIX, "documentation" → LIGHT at confidence 1.0; (2) signal matching — `FIX_SIGNALS` / `LIGHT_SIGNALS` with title worth 2 pts, body worth 1 pt; (3) tie-break: fix wins over light; (4) default: FULL. `detect_batch_modes(issues)` accepts a list of dicts with "title", "body", "labels" keys (labels as list of strings or GitHub API dicts). `format_mode_summary_table(issue_numbers, titles, modes)` returns a formatted text table for display. (v1.0.0, Issue #600)
 72. **doc_verdict_validator.py** - Validates that doc-master output contains a properly formatted `DOC-DRIFT-VERDICT` line. `validate_doc_verdict(doc_master_output)` returns a `DocVerdictResult` dataclass with: `found` (bool), `verdict` ("PASS"/"FAIL"/""), `finding_count` (int, -1 if unparseable, 0 for PASS, N for FAIL(N)), `raw_line` (the matched verdict line), and `position_warning` (non-empty if verdict is not the final non-empty line). Strips ANSI escape codes before matching. When multiple verdict lines appear, uses the last one. `FAIL(0)` is treated as PASS. Used by the coordinator to detect missing verdicts before the pipeline completes. (v1.0.0, Issue #602)
-73. **prompt_integrity.py** - Real-time prevention of progressive prompt compression in batch processing. `validate_prompt_word_count(agent_type, prompt, baseline_word_count)` checks: (1) prompt must not be empty; (2) critical agents (security-auditor, reviewer) must have at least 80 words; (3) shrinkage vs baseline must be ≤ 20% (configurable via `max_shrinkage`). Returns `PromptIntegrityResult` with `passed`, `reason`, `shrinkage_pct`, and `should_reload` fields. `record_prompt_baseline(agent_type, issue_number, word_count)` persists word counts to `.claude/logs/prompt_baselines.json`. `get_prompt_baseline(agent_type)` retrieves the word count from the lowest-numbered (first) issue. `get_agent_prompt_template(agent_type)` reads the agent's `.md` source file for prompt reconstruction. `clear_prompt_baselines()` resets state at batch start. `COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer"}`. (v1.0.0, Issues #601, #603)
+73. **prompt_integrity.py** - Real-time prevention of progressive prompt compression in batch processing. `validate_prompt_word_count(agent_type, prompt, baseline_word_count)` checks: (1) prompt must not be empty; (2) critical agents must have at least 80 words; (3) shrinkage vs baseline must be ≤ 20% (configurable via `max_shrinkage`). Returns `PromptIntegrityResult` with `passed`, `reason`, `shrinkage_pct`, and `should_reload` fields. `record_prompt_baseline(agent_type, issue_number, word_count)` persists word counts to `.claude/logs/prompt_baselines.json`. `get_prompt_baseline(agent_type)` retrieves the word count from the lowest-numbered (first) issue. `get_agent_prompt_template(agent_type)` reads the agent's `.md` source file for prompt reconstruction. `clear_prompt_baselines()` resets state at batch start. `COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer", "researcher-local", "researcher", "implementer", "planner", "doc-master"}` — mirrors the same set in `pipeline_intent_validator.py`. (v1.0.0, Issues #601, #603, #696)
 74. **pipeline_timing_analyzer.py** - Automatic pipeline timing analysis for the continuous-improvement-analyst (check #11, Issue #621).
 75. **version_reader.py** - Lightweight plugin version + git SHA stamping for session logs and auto-filed issues (Issue #630).
 76. **test_pruning_analyzer.py** - AST-based test hygiene analyzer for `/sweep --tests`. Detects 5 categories of pruning candidates: dead imports, archived references, zero-assertion tests, duplicate coverage, and stale regression references. All output is informational — never auto-deletes. (v1.0.0, Issue #674)
@@ -15941,11 +15941,11 @@ print(plan.summary)      # "Frontend: 1 target(s), API: 1 target(s)"
 
 **Version History**: v1.0.0 (2026-03-28) - Initial release for runtime data aggregation (Issue #579, Component 1)
 
-## 176+2. python_write_detector.py (299 lines, v1.0.0 - Issue #589)
+## 176+2. python_write_detector.py (404 lines, v1.1.0 - Issues #589, #698)
 
 **Purpose**: Detect file-write operations in Python code snippets (e.g., `python3 -c` arguments, heredoc bodies) using AST-based extraction with regex fallback. Used by `unified_pre_tool.py` to close the Bash-wrapped write bypass gap — wrapping a `Path.write_text()` call in a Bash command would otherwise evade the infrastructure-file write guard.
 
-**GitHub Issue**: #589 — Python3 Path.write_text() bypass detection hardening
+**GitHub Issues**: #589 — Python3 Path.write_text() bypass detection hardening; #698 — os.rename/os.replace/Path.rename/Path.replace inline bypass detection
 
 ### Public API
 
@@ -15964,8 +15964,8 @@ is_suspicious = has_suspicious_exec("exec(user_input)")
 ### Functions
 
 - **`extract_write_targets(code: str) -> List[str]`** — Main entry point. Tries AST parsing first; falls back to regex on `SyntaxError`, `RecursionError`, `MemoryError`, `ValueError`, `TypeError`. Returns list of file paths that would be written to. May include `SUSPICIOUS_EXEC_SENTINEL` if `eval()`/`exec()` with dynamic (non-constant) arguments is detected. Truncates input to `MAX_SNIPPET_LENGTH = 10_000` characters before parsing. Pre-processes literal `\n`/`\t` escape sequences (common in shell `-c` strings) before AST parsing.
-- **`extract_write_targets_ast(code: str) -> List[str]`** — AST-only extraction. Raises `SyntaxError` on invalid Python. Detects: `Path(...).write_text/write_bytes` with any import alias; `open(path, 'w'/'a'/'wb'/'ab')`; `shutil.copy/copy2/move/copyfile` destination arguments; `eval()`/`exec()` with non-constant first argument.
-- **`extract_write_targets_regex(code: str) -> List[str]`** — Regex fallback. Less accurate but handles syntactically invalid snippets. Same detection categories as AST variant.
+- **`extract_write_targets_ast(code: str) -> List[str]`** — AST-only extraction. Raises `SyntaxError` on invalid Python. Detects: `Path(...).write_text/write_bytes` with any import alias; `open(path, 'w'/'a'/'wb'/'ab')`; `shutil.copy/copy2/move/copyfile` destination arguments; `os.rename(src, dst)`/`os.replace(src, dst)` with aliased `os` module and `from os import rename` style; `Path(...).rename(dst)`/`Path(...).replace(dst)` (destination is first argument); `eval()`/`exec()` with non-constant first argument.
+- **`extract_write_targets_regex(code: str) -> List[str]`** — Regex fallback. Less accurate but handles syntactically invalid snippets. Same detection categories as AST variant, except `import os as o; o.rename(...)` and `from os import rename` alias tracking require the AST path.
 - **`has_suspicious_exec(code: str) -> bool`** — Quick check for `eval()`/`exec()` with dynamic arguments.
 
 ### Constants
@@ -15982,6 +15982,10 @@ is_suspicious = has_suspicious_exec("exec(user_input)")
 | `open("f", "w")` / `open("f", "a")` | Yes | Yes |
 | `shutil.copy(src, "dst")` / `copy2` / `move` / `copyfile` | Yes | Yes |
 | `import shutil as s; s.copy(src, "dst")` | Yes (alias tracking) | No |
+| `os.rename(src, "dst")` / `os.replace(src, "dst")` | Yes | Yes |
+| `import os as o; o.rename(src, "dst")` | Yes (alias tracking) | Yes |
+| `from os import rename; rename(src, "dst")` | Yes (alias tracking) | No |
+| `Path("src").rename("dst")` / `Path("src").replace("dst")` | Yes | Yes |
 | `eval(var)` / `exec(var)` | Yes | Yes |
 | `exec("literal string")` | Not flagged (safe) | Not flagged |
 
@@ -15989,25 +15993,26 @@ is_suspicious = has_suspicious_exec("exec(user_input)")
 
 - `tests/unit/lib/test_python_write_detector.py` — unit tests
 
-**Version History**: v1.0.0 (2026-03-29) - Initial release for AST-based Python write detection in Bash bypass hardening (Issue #589)
+**Version History**: v1.0.0 (2026-03-29) - Initial release for AST-based Python write detection in Bash bypass hardening (Issue #589); v1.1.0 (2026-04-07) - Added detection of `os.rename`/`os.replace`/`Path.rename`/`Path.replace` inline bypass patterns (Issue #698)
 
-## 176+3. agent_ordering_gate.py (275 lines, v1.1.0 - Issues #625, #629, #632, #669)
+## 176+3. agent_ordering_gate.py (324 lines, v1.2.0 - Issues #625, #629, #632, #669, #697)
 
 **Purpose**: Pure-logic gate for pipeline agent ordering decisions. No I/O, no side effects. Receives state as input, returns gate decisions. Used by `unified_pre_tool.py` to enforce agent invocation order at hook level, preventing out-of-order Agent/Task tool calls during pipeline execution.
 
-**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #669 — Defense-in-depth for parallel mode: `launched_agents` parameter + `warning` field on `GateResult`
+**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #669 — Defense-in-depth for parallel mode: `launched_agents` parameter + `warning` field on `GateResult`; #697 — Mode-aware prerequisite filtering: `pipeline_mode` parameter skips prerequisites for agents not in the current mode's required set
 
 ### Public API
 
 ```python
 from agent_ordering_gate import check_ordering_prerequisites, check_minimum_agent_count, check_batch_agent_completeness, GateResult
 
-# Check if prerequisites are met before invoking a target agent
-result = check_ordering_prerequisites("implementer", {"planner", "test-master"})
+# Check if prerequisites are met before invoking a target agent (full mode, default)
+result = check_ordering_prerequisites("implementer", {"planner"})
 # result.passed == True (prerequisites met)
 
-result = check_ordering_prerequisites("implementer", {"planner"})
-# result.passed == False, result.missing_agents == ["test-master"]
+# Fix mode: planner is not part of the pipeline, so its prerequisite is skipped
+result = check_ordering_prerequisites("implementer", set(), pipeline_mode="fix")
+# result.passed == True (planner prerequisite skipped — not in fix pipeline)
 
 # Parallel mode: pass launched_agents to distinguish "running concurrently" from "skipped"
 result = check_ordering_prerequisites(
@@ -16019,9 +16024,10 @@ result = check_ordering_prerequisites(
 
 ### Functions
 
-- **`check_ordering_prerequisites(target_agent, completed_agents, *, validation_mode="sequential", launched_agents=None) -> GateResult`** — Check if ordering prerequisites are met for a target agent. In sequential mode, all `SEQUENTIAL_REQUIRED` pairs are enforced. In parallel mode, the `reviewer → security-auditor` constraint is relaxed — but only if the prerequisite has been launched; if it has not been launched at all the check still blocks (Issue #669). When the prerequisite is launched but not yet completed, a `warning` is attached to the result for observability. Unknown agents always pass through.
+- **`check_ordering_prerequisites(target_agent, completed_agents, *, validation_mode="sequential", launched_agents=None, pipeline_mode="full") -> GateResult`** — Check if ordering prerequisites are met for a target agent. In sequential mode, all `SEQUENTIAL_REQUIRED` pairs are enforced. In parallel mode, the `reviewer → security-auditor` constraint is relaxed — but only if the prerequisite has been launched; if it has not been launched at all the check still blocks (Issue #669). Prerequisites for agents not in the current `pipeline_mode`'s required set are skipped — e.g., in `--fix` mode, the `planner → implementer` prerequisite is skipped because planner is not part of the fix pipeline (Issue #697). When the prerequisite is launched but not yet completed, a `warning` is attached to the result for observability. Unknown agents always pass through.
+- **`get_required_agents(mode="full", *, research_skipped=False) -> Set[str]`** — Return the set of required agents for a given pipeline mode ("full", "light", "fix", or "tdd-first").
 - **`check_minimum_agent_count(completed_agents, *, required_agents) -> GateResult`** — Check that all required agents have completed (e.g., before git operations).
-- **`check_batch_agent_completeness(completed_agents, issue_number, *, mode="default") -> GateResult`** — Check if all required agents have completed for a batch issue. Supports `"default"` (full pipeline) and `"light"` modes.
+- **`check_batch_agent_completeness(completed_agents, issue_number, *, mode="default") -> GateResult`** — Check if all required agents have completed for a batch issue. Supports `"default"` (full pipeline), `"light"`, and `"fix"` modes.
 
 ### Dataclasses
 
@@ -16031,15 +16037,17 @@ result = check_ordering_prerequisites(
 
 - **`FULL_PIPELINE_AGENTS`** — Set of agents required for a complete pipeline run (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master)
 - **`LIGHT_PIPELINE_AGENTS`** — Reduced set for `--light` mode (planner, implementer, doc-master)
+- **`FIX_PIPELINE_AGENTS`** — Reduced set for `--fix` mode (implementer, reviewer, doc-master)
 - **`STEP_ORDER`** — Dict mapping agent name to step number (imported from `pipeline_intent_validator` with inline fallback)
 - **`SEQUENTIAL_REQUIRED`** — List of `(prerequisite, target)` pairs always enforced in sequential mode
 - **`MODE_DEPENDENT_PAIRS`** — Pairs relaxed in parallel mode (`reviewer → security-auditor`), subject to `launched_agents` check
 
 ### Testing
 
-- `tests/unit/lib/test_agent_ordering_gate.py` — unit tests (14 regression tests added in Issue #669)
+- `tests/unit/lib/test_agent_ordering_gate.py` — unit tests (8 regression tests added in Issue #697 via `TestPipelineModeFiltering` class; 14 regression tests added in Issue #669)
 
 **Version History**:
+- v1.2.0 (2026-04-07) - Mode-aware prerequisite filtering: `pipeline_mode` parameter skips prerequisites for agents not in the current mode's required set; `_get_pipeline_mode_from_state()` helper in `unified_pre_tool.py` reads mode from pipeline state file (Issue #697)
 - v1.1.0 (2026-04-07) - Defense-in-depth: `launched_agents` parameter blocks parallel mode bypass when prerequisite not launched; `GateResult.warning` field for observability; fail-open logging in `unified_pre_tool.py` (Issue #669)
 - v1.0.0 (2026-03-30) - Initial release for hook-level pipeline ordering enforcement (Issues #625, #629, #632)
 
@@ -16285,3 +16293,56 @@ print(report.format_table())
 - `tests/unit/test_test_issue_tracer.py` — unit tests for scanning, cross-reference, and false-positive filtering
 
 **Version History**: v1.0.0 (2026-04-06) - Initial release for `/sweep --tests` test pruning analysis (Issue #674)
+
+## 176+8. autoresearch_engine.py (v1.0.0 - Issue #654)
+
+**Purpose**: Autonomous experiment loop engine for the `/autoresearch` command. Provides target validation, metric execution, experiment history tracking, and stall detection for the hypothesis-test-measure loop.
+
+**Location**: `plugins/autonomous-dev/lib/autoresearch_engine.py`
+
+**Key Features**:
+- Target whitelist enforcement: only `agents/*.md` and `skills/*/SKILL.md` paths are allowed as optimization targets, preventing uncontrolled modifications to arbitrary files
+- Metric script execution: runs a Python script and parses `METRIC: <float>` from stdout/stderr; last matching line wins; raises `ValueError` when no line matches
+- Experiment history: append-only JSONL log (`.claude/logs/autoresearch/<target-name>.jsonl`) tracking hypothesis, before/after metrics, outcome, and delta per iteration; tolerates corrupt lines on read
+- Stall detection: `check_stall()` halts the loop when N consecutive iterations fail to improve the metric (default N=3)
+- Git integration: `create_experiment_branch()` creates `autoresearch/<target-name>-<timestamp>` branches; `commit_improvement()` stages and commits improvements; `revert_target()` restores the last committed state on failure
+- `dry_run` mode: skips all git operations (no branch, no commits) for safe local experimentation
+
+### Public API
+
+**`ExperimentConfig`** (dataclass)
+- `target` (Path): File to optimize
+- `metric_script` (Path): Benchmark script that emits `METRIC: <float>`
+- `iterations` (int): Max iterations (default 20)
+- `min_improvement` (float): Min delta to count as improvement (default 0.01)
+- `dry_run` (bool): Skip git operations (default False)
+- `experiment_branch` (str): Override branch name (auto-generated if empty)
+- `max_stall` (int): Max consecutive failures before halt (default 3)
+
+**Functions**
+- `validate_target(target, *, repo_root) -> Tuple[bool, str]` — check target is within repo and matches whitelist
+- `validate_metric(metric_script) -> Tuple[bool, str]` — check metric script exists and is a file
+- `run_metric(metric_script, *, timeout=300) -> Tuple[float, str]` — execute benchmark script, return (metric_value, raw_output)
+- `create_experiment_branch(target_name) -> str` — create and checkout `autoresearch/<name>-<timestamp>` branch
+- `revert_target(target) -> None` — `git checkout --` to discard uncommitted changes
+- `commit_improvement(target, *, message) -> str` — stage, commit, return SHA
+- `check_stall(history, *, max_consecutive=3) -> bool` — True when consecutive failures >= max_consecutive
+
+**`ExperimentHistory`** (class)
+- `__init__(path: Path)` — JSONL history file path
+- `append(*, hypothesis, metric_before, metric_after, outcome)` — append experiment result
+- `load_all() -> List[Dict]` — all valid entries, oldest first; corrupt lines skipped silently
+- `load_recent(n=10) -> List[Dict]` — up to N most recent entries, newest first
+- `consecutive_failures() -> int` — count of consecutive non-improved outcomes from end
+- `summary() -> Dict` — total/improved/reverted/error counts and best/worst deltas
+
+### Integration
+
+- Used exclusively by `plugins/autonomous-dev/commands/autoresearch.md` (`/autoresearch` command)
+- Allowed targets: `agents/*.md`, `skills/*/SKILL.md` (whitelist enforced by `validate_target()`)
+
+### Testing
+
+- Tests added as part of Issue #654 implementation
+
+**Version History**: v1.0.0 (2026-04-07) - Initial release for `/autoresearch` autonomous experiment loop (Issue #654)

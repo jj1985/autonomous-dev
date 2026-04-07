@@ -116,6 +116,7 @@ def check_ordering_prerequisites(
     *,
     validation_mode: str = "sequential",
     launched_agents: Optional[set[str]] = None,
+    pipeline_mode: str = "full",
 ) -> GateResult:
     """Check if ordering prerequisites are met for a target agent.
 
@@ -125,6 +126,11 @@ def check_ordering_prerequisites(
         hasn't been launched at all, the check still blocks. Issue #669.
     Unknown agents always pass through.
 
+    Prerequisites for agents not in the current pipeline_mode's required set are
+    skipped. For example, in --fix mode (implementer, reviewer, doc-master), the
+    planner->implementer prerequisite is skipped because planner is not part of
+    the fix pipeline. Issue #697.
+
     Args:
         target_agent: The agent about to be invoked.
         completed_agents: Set of agents that have already completed.
@@ -132,6 +138,9 @@ def check_ordering_prerequisites(
         launched_agents: Set of agents that have been launched (started but not
             necessarily completed). Used in parallel mode to distinguish "running
             concurrently" from "skipped entirely". Issue #669.
+        pipeline_mode: Pipeline mode — "full", "light", "fix", or "tdd-first".
+            Used to filter prerequisites to only those agents that are part of
+            the current mode's required set. Issue #697.
 
     Returns:
         GateResult indicating whether the agent may proceed.
@@ -142,10 +151,16 @@ def check_ordering_prerequisites(
     if target not in STEP_ORDER:
         return GateResult(passed=True, reason=f"Unknown agent '{target}' - no ordering constraints")
 
-    # Check core prerequisites (always enforced)
+    # Check core prerequisites (enforced only for agents in current pipeline mode).
+    # Issue #697: In --fix mode, planner is not part of the pipeline, so the
+    # planner->implementer prerequisite must be skipped.
     missing = []
+    mode_agents = get_required_agents(pipeline_mode)
     core_prereqs = CORE_PREREQUISITES.get(target, set())
     for prereq in core_prereqs:
+        if prereq not in mode_agents:
+            # Prerequisite agent is not part of this pipeline mode — skip it
+            continue
         if prereq not in completed_agents:
             missing.append(prereq)
 

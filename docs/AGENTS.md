@@ -14,9 +14,9 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-13 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+14 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, test-coverage-auditor, test-master, ui-tester
+**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, mobile-tester, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, test-coverage-auditor, test-master, ui-tester
 
 **Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
 
@@ -24,14 +24,15 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Model Tier Strategy (Issue #108, Updated #147)
 
-Agent model assignments optimized for cost-performance balance (13 active agents):
+Agent model assignments optimized for cost-performance balance (14 active agents):
 
-### Tier 1: Haiku (2 agents)
+### Tier 1: Haiku (3 agents)
 
 Fast, cost-effective for pattern matching:
 
 - **researcher-local**: Search codebase patterns
 - **test-coverage-auditor**: AST-based coverage analysis
+- **issue-creator**: GitHub issue creation
 
 ### Tier 2: Sonnet (8 agents)
 
@@ -41,18 +42,18 @@ Balanced reasoning for judgment tasks:
 - **reviewer**: Code quality gate
 - **doc-master**: Semantic documentation drift detection
 - **continuous-improvement-analyst**: Pipeline QA and gaming detection
-- **issue-creator**: GitHub issue creation
-- **planner**: Architecture planning
+- **security-auditor**: OWASP security scanning
 - **retrospective-analyst**: Intent evolution and session drift detection
 - **ui-tester**: E2E browser testing via Playwright MCP (optional, frontend only)
+- **mobile-tester**: iOS/Android E2E testing via Appium MCP + Maestro (optional, mobile only)
 
 ### Tier 3: Opus (3 agents)
 
 Deep reasoning for complex synthesis:
 
+- **planner**: Architecture planning
 - **implementer**: Code implementation
 - **test-master**: Quality Diamond test generation
-- **security-auditor**: OWASP security scanning
 
 ### Rationale
 
@@ -68,8 +69,8 @@ Deep reasoning for complex synthesis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Active Agents**: 13
-**Note**: 13 active agents, all under 3,000 token target
+**Total Active Agents**: 14
+**Note**: 14 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
@@ -90,7 +91,7 @@ Deep reasoning for complex synthesis:
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 13 active agents under 3,000 token target
+- All 14 active agents under 3,000 token target
 
 ---
 
@@ -230,6 +231,21 @@ These agents execute the main autonomous development workflow and provide specia
 **Security**: Hard gate restricts navigation to `localhost`, `127.0.0.1`, `0.0.0.0`, or user-provided domains. Page content is treated as adversarial (prompt injection risk). `browser_evaluate` limited to read-only diagnostics.
 **Timeout**: 60 seconds per test case. Time-based waits (sleep, setTimeout) forbidden — condition-based waits only.
 **Verdict**: `UI-TESTER-VERDICT: PASS` or `UI-TESTER-VERDICT: SKIP`. E2E testing is ADVISORY — the verdict never blocks the pipeline.
+
+### mobile-tester
+
+**Purpose**: iOS/Android E2E testing specialist — runs interactive tests via Appium MCP, writes persistent Maestro YAML flows in `.maestro/`, and validates native builds via xcodebuild/Gradle (Issue #657)
+**Model**: Sonnet (Tier 2 - balanced reasoning for test writing and device interaction)
+**Skills**: testing-guide, python-standards
+**Tools**: Read, Write, Edit, Bash, Grep, Glob, Appium MCP
+**Execution**: STEP 9.8 of /implement workflow — OPTIONAL; invoked only when (1) changed files include mobile patterns (`*.swift`, `*.kt`, `*.dart`, `ios/`, `android/`, `Podfile`, `build.gradle`, `pubspec.yaml`) AND (2) Appium MCP or Maestro CLI is available. Skipped silently otherwise.
+**Three-Layer Stack**:
+  1. **Appium MCP** (interactive): Real-time element interaction via `mcp__appium__find_element`, `mcp__appium__tap`, `mcp__appium__type`, `mcp__appium__screenshot`
+  2. **Maestro CLI** (regression): Persistent YAML flow files in `.maestro/test_<feature>.yaml` — runnable via `maestro test`
+  3. **xcodebuild/Gradle** (native): Build verification for `*.swift`, `*.kt`, `*.m`, `*.java` changes
+**Security**: Hard gate restricts execution to iOS Simulator and Android Emulator only. Physical production devices forbidden. All app content treated as adversarial. Screenshots saved only to designated directories.
+**Timeout**: 60 seconds per test case. Time-based waits (sleep, Thread.sleep) forbidden — element wait conditions only.
+**Verdict**: `MOBILE-TESTER-VERDICT: PASS` or `MOBILE-TESTER-VERDICT: SKIP`. Mobile testing is ADVISORY — the verdict never blocks the pipeline.
 
 ### data-curator
 

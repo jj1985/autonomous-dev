@@ -71,6 +71,7 @@ AGENT_SKILL_MAP: Dict[str, List[str]] = {
     "quality-validator": ["code-review", "python-standards"],
     "test-coverage-auditor": ["testing-guide"],
     "ui-tester": ["testing-guide", "python-standards"],
+    "mobile-tester": ["testing-guide", "python-standards"],
 }
 
 

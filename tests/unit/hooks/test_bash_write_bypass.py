@@ -253,6 +253,26 @@ class TestExtractBashFileWrites:
         result = hook._extract_bash_file_writes(cmd)
         assert "commands/test.md" in result
 
+    # --- Issue #698: os.rename/os.replace/Path.rename bypass detection ---
+
+    def test_python3_c_os_rename_detected(self):
+        """python3 -c with os.rename should detect destination (Issue #698)."""
+        cmd = """python3 -c "import os; os.rename('/tmp/staged.py', 'agents/foo.py')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.py" in result
+
+    def test_python3_c_os_replace_detected(self):
+        """python3 -c with os.replace should detect destination (Issue #698)."""
+        cmd = """python3 -c "import os; os.replace('/tmp/staged.py', 'hooks/bar.py')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "hooks/bar.py" in result
+
+    def test_python3_c_path_rename_detected(self):
+        """python3 -c with Path.rename should detect destination (Issue #698)."""
+        cmd = """python3 -c "from pathlib import Path; Path('/tmp/x').rename('lib/util.py')" """
+        result = hook._extract_bash_file_writes(cmd)
+        assert "lib/util.py" in result
+
 
 # ---------------------------------------------------------------------------
 # TestCheckBashInfraWrites — new bypass patterns
@@ -394,6 +414,29 @@ class TestCheckBashInfraWrites:
         cmd = """python3 -c "import shutil; shutil.copy('src', '/tmp/safe.txt')" """
         result = hook._check_bash_infra_writes(cmd)
         assert result is None
+
+    # --- Issue #698: os.rename/os.replace/Path.rename end-to-end block tests ---
+
+    def test_os_rename_to_protected_blocked(self):
+        """python3 -c with os.rename to protected path should be blocked (Issue #698)."""
+        cmd = """python3 -c "import os; os.rename('/tmp/staged.py', 'agents/foo.py')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None
+        assert "BLOCKED" in result[1]
+
+    def test_os_replace_to_protected_blocked(self):
+        """python3 -c with os.replace to protected path should be blocked (Issue #698)."""
+        cmd = """python3 -c "import os; os.replace('/tmp/staged.py', 'hooks/bar.py')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None
+        assert "BLOCKED" in result[1]
+
+    def test_path_rename_to_protected_blocked(self):
+        """python3 -c with Path.rename to protected path should be blocked (Issue #698)."""
+        cmd = """python3 -c "from pathlib import Path; Path('/tmp/x').rename('lib/util.py')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None
+        assert "BLOCKED" in result[1]
 
 
 # ---------------------------------------------------------------------------
