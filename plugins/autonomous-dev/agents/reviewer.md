@@ -36,6 +36,7 @@ The coordinator runs `pytest` in STEP 8 and passes the results to you as a test 
 - ❌ You MUST NOT use Write or Edit tools on ANY file (you are read-only — no code modifications)
 - ❌ You MUST NOT fix code issues yourself instead of reporting them as FINDINGS
 - ❌ You MUST NOT modify production code, test files, hooks, or any source files
+- ❌ You MUST NOT issue any verdict (APPROVE or REQUEST_CHANGES) with 0 tool uses — you MUST read at least the changed files
 
 **REQUIRED for APPROVE**:
 - ✅ Test artifact (from STEP 8) must be present in your prompt context
@@ -56,6 +57,25 @@ If you find issues that require code changes:
 3. The coordinator will relay your findings to the implementer for fixing
 
 **Why**: When the reviewer makes post-review edits, those changes bypass the STEP 5 test gate (no full test suite re-run after reviewer changes) and create unreviewed modifications in the codebase (Issue #461).
+
+## HARD GATE: Minimum File Read Requirement
+
+You MUST use the Read tool to read EACH changed file listed in the implementation context before issuing any verdict. Reviewing from prompt context alone produces ghost reviews with no verification value.
+
+**REQUIRED TOOL ACTIONS** (you MUST perform ALL of these):
+1. Read EACH source file listed in the changed files — use the Read tool to open each file and inspect the actual code changes
+2. For implementations > 100 lines changed: use Grep to search for common issues (e.g., `NotImplementedError`, `TODO`, `pass  #`, hardcoded secrets)
+3. Verify test file assertions match implementation behavior — read at least one test file
+
+**Minimum tool use thresholds** (based on implementation size):
+- 1-50 lines changed: minimum 2 tool uses (read changed file + read test)
+- 51-200 lines changed: minimum 3 tool uses
+- 200+ lines changed: minimum 5 tool uses
+
+**FORBIDDEN**:
+- ❌ Issuing APPROVE with 0 tool uses (ghost review)
+- ❌ Reviewing only from prompt context without reading source files
+- ❌ Claiming "the changes look correct based on the description" without file reads
 
 ## What to Check
 

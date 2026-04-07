@@ -229,6 +229,8 @@ class TestLifecycleManager:
 
         paths: List[str] = []
         for test_file in tests_dir.rglob("test_*.py"):
+            if ".worktrees" in test_file.parts:
+                continue
             try:
                 rel = str(test_file.relative_to(self.project_root))
                 paths.append(rel)

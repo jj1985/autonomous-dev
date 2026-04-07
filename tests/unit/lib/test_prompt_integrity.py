@@ -106,9 +106,9 @@ class TestValidatePromptWordCount:
         assert str(MIN_CRITICAL_AGENT_PROMPT_WORDS) in result.reason
 
     def test_validate_non_critical_agent_no_minimum(self) -> None:
-        """Non-critical agent (researcher) with 50 words passes (no minimum)."""
+        """Non-critical agent (implementer) with 50 words passes (no minimum)."""
         prompt = " ".join(["word"] * 50)
-        result = validate_prompt_word_count("researcher", prompt)
+        result = validate_prompt_word_count("implementer", prompt)
 
         assert result.passed is True
         assert result.should_reload is False
@@ -153,6 +153,33 @@ class TestValidatePromptWordCount:
         """Verify COMPRESSION_CRITICAL_AGENTS contains expected agents."""
         assert "security-auditor" in COMPRESSION_CRITICAL_AGENTS
         assert "reviewer" in COMPRESSION_CRITICAL_AGENTS
+
+    def test_researcher_agents_are_critical(self) -> None:
+        """Regression test for Issue #666: researcher-local and researcher must be
+        in COMPRESSION_CRITICAL_AGENTS so prompt compression is detected.
+
+        Without this, a 34% shrinkage in researcher-local goes undetected.
+        """
+        assert "researcher-local" in COMPRESSION_CRITICAL_AGENTS
+        assert "researcher" in COMPRESSION_CRITICAL_AGENTS
+
+    def test_researcher_local_minimum_word_count_enforced(self) -> None:
+        """Regression test for Issue #666: researcher-local with <80 words fails."""
+        prompt = " ".join(["word"] * 50)
+        result = validate_prompt_word_count("researcher-local", prompt)
+
+        assert result.passed is False
+        assert result.should_reload is True
+        assert "minimum" in result.reason
+
+    def test_researcher_minimum_word_count_enforced(self) -> None:
+        """Regression test for Issue #666: researcher with <80 words fails."""
+        prompt = " ".join(["word"] * 50)
+        result = validate_prompt_word_count("researcher", prompt)
+
+        assert result.passed is False
+        assert result.should_reload is True
+        assert "minimum" in result.reason
 
 
 class TestPromptBaselinePersistence:

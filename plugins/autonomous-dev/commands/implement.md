@@ -647,7 +647,11 @@ Run: /clear then /implement --resume $RUN_ID to complete validation.
 If STEP 11 did NOT trigger remediation (both validators passed on first try), use the original STEP 10 background result as normal (existing flow below).
 
 **Doc-Drift Collection Point** — Collect doc-master background result (in batch mode, see implement-batch.md STEP B3 for per-issue doc-drift verdict collection):
-1. Wait for doc-master to complete (it was launched in STEP 10 background)
+1. Wait for doc-master to complete (it was launched in STEP 10 background).
+   Use the Agent tool's return value — do NOT grep transcript files directly.
+   The return value contains the agent's full output text including DOC-DRIFT-VERDICT.
+   If you must parse a transcript file instead of the return value, wait at least 3 seconds
+   after the agent reports completion before reading the file (filesystem flush delay — Issue #682).
 2. Parse output for `DOC-DRIFT-VERDICT: PASS` or `DOC-DRIFT-VERDICT: FAIL`
 3. If **PASS**: proceed to STEP 13
 4. If **FAIL with unfixed findings**: BLOCK pipeline. Output:
@@ -657,7 +661,9 @@ If STEP 11 did NOT trigger remediation (both validators passed on first try), us
    Display each finding. User must address before proceeding.
 5. If doc-master made fixes: stage them with `git add`
 6. If doc-master returned empty output (has_output: false OR result_word_count: 0) OR no DOC-DRIFT-VERDICT found:
-   - **Retry once** with reduced context: obtain the CURRENT changed file list via `git diff --name-only HEAD~1 2>/dev/null || git diff --name-only --cached`, then re-invoke doc-master BLOCKING (not background) with ONLY this current file list and feature description (no implementer output, no reviewer output). Log: `[DOC-VERDICT-RETRY] Re-invoking doc-master with reduced context and current file list (N files)`
+   - Wait 3 seconds for filesystem flush (known race condition — Issue #682)
+   - Re-check the agent's return value for DOC-DRIFT-VERDICT
+   - If still missing: **Retry once** with reduced context: obtain the CURRENT changed file list via `git diff --name-only HEAD~1 2>/dev/null || git diff --name-only --cached`, then re-invoke doc-master BLOCKING (not background) with ONLY this current file list and feature description (no implementer output, no reviewer output). Log: `[DOC-VERDICT-RETRY] Re-invoking doc-master with reduced context and current file list (N files)`
    - If retry produces a DOC-DRIFT-VERDICT: use that verdict
    - If retry also fails or returns empty: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry — proceeding with warning`
 

@@ -163,9 +163,13 @@ For each feature in the list:
 
 After doc-master completes for each issue, parse its output for the `DOC-DRIFT-VERDICT`. This mirrors the single-issue verdict parsing in implement.md STEP 12.
 
+IMPORTANT: Use the Agent tool's return value text — do NOT grep transcript files directly.
+The return value contains the agent's full output including DOC-DRIFT-VERDICT.
+If the return value is empty, wait 3 seconds before retrying (filesystem flush delay — Issue #682).
+
 - If `DOC-DRIFT-VERDICT: PASS`: record `doc-drift-verdict: PASS` and proceed
 - If `DOC-DRIFT-VERDICT: FAIL`: **BLOCK** the per-issue pipeline. Do NOT advance to the next issue until doc-drift is resolved.
-- If doc-master returned empty output or no `DOC-DRIFT-VERDICT` found: **retry once** with reduced context (only changed file list + feature description). Log `[DOC-VERDICT-MISSING] Re-invoking doc-master with reduced context for issue #N`
+- If doc-master returned empty output or no `DOC-DRIFT-VERDICT` found: wait 3 seconds for filesystem flush (Issue #682), then **retry once** with reduced context (only changed file list + feature description). Log `[DOC-VERDICT-MISSING] Re-invoking doc-master with reduced context for issue #N`
   - If retry produces a verdict: use that verdict
   - If retry also fails: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry for issue #N — proceeding with warning` and record `doc-drift-verdict: MISSING`
 
@@ -546,7 +550,7 @@ Same as BATCH FILE MODE:
    **Per-issue agent verification is MANDATORY** — see STEP B3 point 4 HARD GATE. Every issue must pass the mode-appropriate agent verification (8 in default mode, 9 in `--tdd-first` mode) before the next issue starts.
    **Background agent drain is MANDATORY** — see STEP B3 point 5 HARD GATE. STEP 9 runs in foreground during batch. Max 2 concurrent background agents.
 
-   **Per-issue STEP 9 (Batch Mode CI)**: After each issue's pipeline completes (and passes the agent verification gate), invoke the continuous-improvement-analyst in **batch mode** — a fast, lightweight check (3-5 tool calls, <30 seconds). Pass the agent verification results as context:
+   **Per-issue STEP 9 (Batch Mode CI)**: After each issue's pipeline completes (and passes the agent verification gate), invoke the continuous-improvement-analyst in **batch mode** — a fast, lightweight check (3-5 REQUIRED tool calls, <30 seconds). Pass the agent verification results as context:
 
    ```
    subagent_type: "continuous-improvement-analyst"
@@ -557,7 +561,13 @@ Same as BATCH FILE MODE:
    Errors observed: [any errors from implementer/reviewer/security-auditor]
    Pipeline mode: [fix|full|light|tdd-first]
    Expected agents for this mode: [list from get_required_agents() — e.g., "implementer, reviewer, doc-master, continuous-improvement-analyst (4 agents)" for --fix]
-   Provide a short findings list only. Do NOT file issues — defer to post-batch."
+
+   REQUIRED TOOL ACTIONS (you MUST perform these — do not report from context alone):
+   1. Run: git diff HEAD -- tests/ | Check for @pytest.mark.skip additions, NotImplementedError, weakened assertions
+   2. Read: .claude/config/known_bypass_patterns.json | Verify no undocumented bypasses
+   3. Run: grep -r 'pytest.mark.skip' tests/ --include='*.py' -c | Report skip marker count
+
+   After performing ALL required tool actions above, provide a short findings list. Do NOT file issues — defer to post-batch."
    ```
 
    This replaces the previous heavy per-issue CI analysis. Full analysis happens once post-batch.

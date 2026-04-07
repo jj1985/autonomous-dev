@@ -319,6 +319,23 @@
         ]
       },
       "severity": "critical"
+    },
+    {
+      "id": "research_skip_entire_batch",
+      "name": "Research skipped for entire batch",
+      "description": "Both researcher-local and researcher agents skipped for all issues in a batch using pre-researched content exemption. While skipping research for a single issue with fresh /create-issue cache is valid, skipping for ALL issues suggests the exemption is being over-applied.",
+      "issue": "#671",
+      "hard_gate": "STEP 4 research agents in implement.md",
+      "detection": {
+        "type": "batch_pattern",
+        "indicators": [
+          "All issues in batch have researcher-local and researcher marked as skipped",
+          "Justification contains 'pre-researched' or 'issue body' for every issue",
+          "No issue in batch actually ran research agents"
+        ]
+      },
+      "severity": "warning",
+      "constraint": "Research skip is valid per-issue when /create-issue provided rich content. Flag as WARNING (not CRITICAL) when >50% of batch issues skip research."
     }
   ],
   "expected_end_states": {

@@ -16229,7 +16229,7 @@ print(report.format_table())
 
 - Used by `plugins/autonomous-dev/commands/sweep.md` (`/sweep --tests` mode)
 - Depends on `tier_registry.get_tier_for_path()` and `tier_registry.is_prunable()`
-- Skips `__pycache__`, `.git`, `archived`, `node_modules`, `.tox`, `.venv`, `venv` directories
+- Skips `__pycache__`, `.git`, `.worktrees`, `archived`, `node_modules`, `.tox`, `.venv`, `venv` directories
 
 ### Testing
 

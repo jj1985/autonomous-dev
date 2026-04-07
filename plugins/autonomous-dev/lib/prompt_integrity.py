@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # Critical agents that require minimum prompt word counts.
 # Mirrors COMPRESSION_CRITICAL_AGENTS in pipeline_intent_validator.py.
-COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer"}
+COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer", "researcher-local", "researcher"}
 
 # Minimum word count for critical agent prompts.
 # Matches MIN_CRITICAL_AGENT_PROMPT_WORDS in pipeline_intent_validator.py.

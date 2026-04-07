@@ -263,3 +263,29 @@ class TestCIAnalystPromptReferences:
             "continuous-improvement-analyst.md does not reference pipeline_intent_validator. "
             "The analyst should use this library for intent-level pipeline validation."
         )
+
+    def test_ci_analyst_hook_baseline_does_not_reference_stale_test_files(
+        self, ci_analyst_content: str
+    ):
+        """Regression test for #692: hook failure baseline must not reference renamed files.
+
+        The CIA agent had a stale baseline referencing 'unified_pre_tool: 6' after the
+        test file was renamed to test_native_tool_auto_approval and failures were fixed.
+        The baseline must only reference test files that actually have known failures.
+        """
+        # Must NOT reference the old/renamed test file
+        assert "unified_pre_tool: 6" not in ci_analyst_content, (
+            "#692: CIA agent still references stale 'unified_pre_tool: 6' baseline. "
+            "That test file was renamed to test_native_tool_auto_approval and its failures "
+            "were fixed. Update the baseline in continuous-improvement-analyst.md."
+        )
+        # Must NOT claim 14 total (the old sum of 8 + 6)
+        assert "14 total" not in ci_analyst_content, (
+            "#692: CIA agent still claims '14 total' pre-existing failures. "
+            "After fixing native_tool_auto_approval tests, only batch_permission_approver: 8 remain."
+        )
+        # Must reference batch_permission_approver (the actual remaining failures)
+        assert "batch_permission_approver: 8" in ci_analyst_content, (
+            "CIA agent baseline must reference 'batch_permission_approver: 8' as the known "
+            "pre-existing failures."
+        )

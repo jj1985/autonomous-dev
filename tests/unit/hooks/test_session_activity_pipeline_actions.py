@@ -94,7 +94,7 @@ class TestBypassPatternsConfig:
             )
 
     def test_all_detection_types_valid(self, patterns_config):
-        valid_types = {"log_pattern", "file_content", "congruence", "pipeline_completeness", "agent_io"}
+        valid_types = {"log_pattern", "file_content", "congruence", "pipeline_completeness", "agent_io", "batch_pattern"}
         for pattern in patterns_config["patterns"]:
             dtype = pattern["detection"]["type"]
             assert dtype in valid_types, f"Invalid detection type '{dtype}' for {pattern['id']}"
