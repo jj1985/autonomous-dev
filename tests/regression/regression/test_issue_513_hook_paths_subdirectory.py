@@ -7,8 +7,10 @@ Bug: Hook commands in settings template files used relative paths like:
 When Claude Code CWD is a subdirectory (e.g., a git worktree at .worktrees/batch-xxx/),
 these relative paths resolve incorrectly and hooks fail with "No such file or directory".
 
-Fix: All relative hook paths now use $(git rev-parse --show-toplevel)/... to dynamically
-resolve the repo root. Paths starting with ~/ are already absolute and left unchanged.
+Fix: All relative hook paths now use $(dirname "$(git rev-parse --path-format=absolute
+--git-common-dir)")/... to dynamically resolve the main repo root. This works in both
+normal repos and worktrees (Issue #651 follow-up). Paths starting with ~/ are already
+absolute and left unchanged.
 """
 
 import json
@@ -94,7 +96,7 @@ class TestIssue513HookPathsSubdirectory:
 
     @pytest.mark.parametrize("template_name", TEMPLATE_FILES)
     def test_git_rev_parse_paths_are_quoted(self, template_name: str) -> None:
-        """Paths using $(git rev-parse --show-toplevel) must be quoted to handle spaces."""
+        """Paths using git rev-parse must be quoted to handle spaces."""
         template_path = TEMPLATES_DIR / template_name
         if not template_path.exists():
             pytest.skip(f"Template {template_name} not found")
@@ -104,10 +106,10 @@ class TestIssue513HookPathsSubdirectory:
 
         unquoted = []
         for cmd in commands:
-            # If git rev-parse is used, the path should be in quotes
-            if "$(git rev-parse --show-toplevel)" in cmd:
-                # Check that the $(...) is inside quotes
-                if '"$(git rev-parse --show-toplevel)' not in cmd:
+            # If git rev-parse is used (either old or new pattern), the path should be in quotes
+            if "$(git rev-parse" in cmd:
+                # Check that the outer $(...) or $(dirname ...) is inside quotes
+                if '"$(git rev-parse' not in cmd and '"$(dirname' not in cmd:
                     unquoted.append(cmd)
 
         assert not unquoted, (

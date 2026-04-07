@@ -146,7 +146,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/unified_prompt_validator.py\"",
+            "command": "python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/unified_prompt_validator.py\"",
             "timeout": 5
           }
         ]
@@ -158,7 +158,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/plan_mode_exit_detector.py\"",
+            "command": "python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/plan_mode_exit_detector.py\"",
             "timeout": 3
           }
         ]
@@ -168,7 +168,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
+            "command": "python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
             "timeout": 5
           }
         ]
@@ -180,7 +180,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SANDBOX_ENABLED=false MCP_AUTO_APPROVE=true python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/unified_pre_tool.py\"",
+            "command": "SANDBOX_ENABLED=false MCP_AUTO_APPROVE=true python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/unified_pre_tool.py\"",
             "timeout": 5
           }
         ]
@@ -192,7 +192,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
+            "command": "python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/session_activity_logger.py\"",
             "timeout": 3
           }
         ]
@@ -227,7 +227,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh\"",
+            "command": "bash \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/pre_compact_batch_saver.sh\"",
             "timeout": 5
           }
         ]
@@ -239,7 +239,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/plugins/autonomous-dev/hooks/post_compact_enricher.sh\"",
+            "command": "bash \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/post_compact_enricher.sh\"",
             "timeout": 5
           }
         ]

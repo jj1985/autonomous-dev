@@ -2017,3 +2017,263 @@ class TestDetectCiaSkip:
         assert len(findings) == 1, "#667: agent_completion events should also trigger detection"
         assert findings[0].pattern_id == "single_pipeline_cia_skip"
 
+
+# ---------------------------------------------------------------------------
+# Regression: #680 — validate_step_ordering false CRITICAL in mixed-mode batches
+# ---------------------------------------------------------------------------
+class TestStepOrderingMixedBatch:
+    """Regression tests for Issue #680.
+
+    When a batch mixes --fix mode (implementer-only, no planner/researcher) with
+    full-pipeline issues, cross-issue comparisons must NOT produce false CRITICAL
+    ordering violations.
+    """
+
+    def test_mixed_mode_batch_no_false_critical(self):
+        """--fix issue runs implementer first, full issue runs planner later.
+
+        Without the fix, this produces a false CRITICAL:
+        'implementer ran before planner (expected planner first)'.
+        """
+        events = [
+            # Issue #100 (--fix mode): implementer only, runs first
+            _make_event(
+                subagent_type="implementer",
+                timestamp="2026-03-25T10:00:00+00:00",
+                batch_issue_number=100,
+            ),
+            # Issue #101 (full pipeline): planner runs after --fix issue
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:05:00+00:00",
+                batch_issue_number=101,
+            ),
+            _make_event(
+                subagent_type="implementer",
+                timestamp="2026-03-25T10:10:00+00:00",
+                batch_issue_number=101,
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) == 0, (
+            "#680: Mixed-mode batch should NOT produce false CRITICAL ordering violations"
+        )
+
+    def test_mixed_mode_batch_with_researcher_no_false_critical(self):
+        """--fix issue (no researcher) runs implementer, full issue runs researcher later."""
+        events = [
+            # Issue #200 (--fix mode): implementer only
+            _make_event(
+                subagent_type="implementer",
+                timestamp="2026-03-25T10:00:00+00:00",
+                batch_issue_number=200,
+            ),
+            # Issue #201 (full pipeline): researcher → planner → implementer
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:05:00+00:00",
+                batch_issue_number=201,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:10:00+00:00",
+                batch_issue_number=201,
+            ),
+            _make_event(
+                subagent_type="implementer",
+                timestamp="2026-03-25T10:15:00+00:00",
+                batch_issue_number=201,
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) == 0, (
+            "#680: Mixed-mode batch with researcher should NOT false-positive"
+        )
+
+    def test_within_issue_ordering_still_detected(self):
+        """Real ordering violation WITHIN a single batch issue is still caught."""
+        events = [
+            # Issue #300: implementer runs BEFORE planner (real violation)
+            _make_event(
+                subagent_type="implementer",
+                timestamp="2026-03-25T10:00:00+00:00",
+                batch_issue_number=300,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:05:00+00:00",
+                batch_issue_number=300,
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) >= 1, (
+            "#680: Within-issue ordering violations must still be detected"
+        )
+
+    def test_non_batch_ordering_still_works(self):
+        """Non-batch sessions (batch_issue_number=0) still check ordering normally."""
+        events = [
+            _make_event(
+                subagent_type="implementer",
+                timestamp="2026-03-25T10:00:00+00:00",
+                batch_issue_number=0,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:05:00+00:00",
+                batch_issue_number=0,
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) >= 1, (
+            "Non-batch ordering violations must still be detected"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regression: #681 — detect_context_dropping false positives in mixed-mode batches
+# ---------------------------------------------------------------------------
+class TestContextDroppingMixedBatch:
+    """Regression tests for Issue #681.
+
+    Cross-issue agent comparisons (reviewer result from issue N -> researcher
+    prompt from issue N+1) must NOT produce false context-dropping warnings.
+    """
+
+    def test_cross_issue_no_false_positive(self):
+        """Reviewer result from issue N, researcher prompt from issue N+1.
+
+        Without the fix, the small researcher prompt relative to the large
+        reviewer result triggers a false 'context dropping' warning.
+        """
+        events = [
+            # Issue #100: reviewer produces large result
+            _make_event(
+                subagent_type="reviewer",
+                timestamp="2026-03-25T10:00:00+00:00",
+                result_word_count=5000,
+                prompt_word_count=1000,
+                batch_issue_number=100,
+            ),
+            # Issue #101: researcher starts with small prompt (normal for new issue)
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:05:00+00:00",
+                prompt_word_count=200,
+                result_word_count=3000,
+                batch_issue_number=101,
+            ),
+        ]
+        findings = detect_context_dropping(events)
+        assert len(findings) == 0, (
+            "#681: Cross-issue comparisons should NOT trigger context dropping"
+        )
+
+    def test_within_issue_context_dropping_still_detected(self):
+        """Real context dropping WITHIN a single batch issue is still caught."""
+        events = [
+            # Issue #100: researcher produces large result
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:00:00+00:00",
+                result_word_count=5000,
+                prompt_word_count=1000,
+                batch_issue_number=100,
+            ),
+            # Issue #100: planner gets tiny prompt (real context drop)
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:05:00+00:00",
+                prompt_word_count=200,
+                result_word_count=3000,
+                batch_issue_number=100,
+            ),
+        ]
+        findings = detect_context_dropping(events)
+        assert len(findings) >= 1, (
+            "#681: Within-issue context dropping must still be detected"
+        )
+
+    def test_non_batch_context_dropping_still_works(self):
+        """Non-batch sessions still detect context dropping normally."""
+        events = [
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:00:00+00:00",
+                result_word_count=5000,
+                prompt_word_count=1000,
+                batch_issue_number=0,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:05:00+00:00",
+                prompt_word_count=200,
+                result_word_count=3000,
+                batch_issue_number=0,
+            ),
+        ]
+        findings = detect_context_dropping(events)
+        assert len(findings) >= 1, (
+            "Non-batch context dropping must still be detected"
+        )
+
+    def test_multiple_issues_only_within_issue_flagged(self):
+        """With 3 issues, only within-issue drops are flagged, not cross-issue."""
+        events = [
+            # Issue #100: normal
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:00:00+00:00",
+                result_word_count=5000,
+                prompt_word_count=1000,
+                batch_issue_number=100,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:01:00+00:00",
+                prompt_word_count=4000,
+                result_word_count=3000,
+                batch_issue_number=100,
+            ),
+            # Issue #101: has a real context drop within it
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:05:00+00:00",
+                result_word_count=8000,
+                prompt_word_count=1000,
+                batch_issue_number=101,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:06:00+00:00",
+                prompt_word_count=100,
+                result_word_count=2000,
+                batch_issue_number=101,
+            ),
+            # Issue #102: normal
+            _make_event(
+                subagent_type="researcher",
+                timestamp="2026-03-25T10:10:00+00:00",
+                result_word_count=4000,
+                prompt_word_count=1000,
+                batch_issue_number=102,
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp="2026-03-25T10:11:00+00:00",
+                prompt_word_count=3500,
+                result_word_count=2000,
+                batch_issue_number=102,
+            ),
+        ]
+        findings = detect_context_dropping(events)
+        # Only issue #101 should have a context drop (100/8000 = 1.25%)
+        assert len(findings) == 1, (
+            "#681: Only within-issue context drops should be flagged"
+        )
+        assert "planner" in findings[0].description
+
