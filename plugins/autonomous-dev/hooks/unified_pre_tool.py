@@ -6,11 +6,12 @@
 """
 Unified PreToolUse Hook - Consolidated Permission & Security Validation
 
-This hook consolidates four PreToolUse validators into a single dispatcher:
+This hook consolidates five PreToolUse validators into a single dispatcher:
 0. Sandbox Enforcer (sandbox_enforcer.py) - Command classification & sandboxing (Issue #171)
 1. MCP Security Validator (pre_tool_use.py) - Path traversal, injection, SSRF protection
 2. Agent Authorization (enforce_implementation_workflow.py) - Pipeline agent detection
 3. Batch Permission Approver (batch_permission_approver.py) - Permission batching
+5. Prompt Integrity (Issue #695) - Minimum word count for critical agents
 
 Native Tool Fast Path:
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) bypass all 4 validation layers
@@ -30,6 +31,7 @@ Layer Execution Order (short-circuit on deny):
 1. Layer 1 (MCP Security): Path traversal, injection, SSRF checks
 2. Layer 2 (Agent Auth): Pipeline agent detection
 3. Layer 3 (Batch Permission): Permission batching
+5. Layer 5 (Prompt Integrity): Minimum word count for critical agents (Issue #695)
 
 Environment Variables:
 - SANDBOX_ENABLED: Enable/disable sandbox layer (default: false for opt-in)
@@ -466,6 +468,59 @@ PROTECTED_INFRA_SEGMENTS = {
     '/lib/': {'.py'},
     '/skills/': {'.md'},
 }
+
+
+def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
+    """Validate agent prompt word count during active pipeline (Issue #695).
+
+    Layer 5: Blocks agent invocations where the prompt is below the minimum
+    word count for critical agents. This is deterministic enforcement — the
+    coordinator cannot bypass it by ignoring prompt-level instructions.
+
+    Args:
+        tool_name: Tool being invoked.
+        tool_input: Tool input parameters.
+
+    Returns:
+        Tuple of (decision, reason).
+    """
+    # Only check Agent/Task tool calls
+    if tool_name not in AGENT_TOOL_NAMES:
+        return ("allow", "Not an agent invocation")
+
+    # Only enforce during active pipeline
+    if not _is_pipeline_active():
+        return ("allow", "No active pipeline - prompt integrity check skipped")
+
+    # Extract agent type
+    agent_type = tool_input.get("subagent_type", "").strip().lower()
+    if not agent_type:
+        return ("allow", "Could not determine agent type")
+
+    # Only check critical agents
+    try:
+        from prompt_integrity import COMPRESSION_CRITICAL_AGENTS, MIN_CRITICAL_AGENT_PROMPT_WORDS
+    except ImportError:
+        return ("allow", "prompt_integrity module not available - skipping check")
+
+    if agent_type not in COMPRESSION_CRITICAL_AGENTS:
+        return ("allow", f"Agent '{agent_type}' is not compression-critical")
+
+    # Extract prompt and check word count
+    prompt = tool_input.get("prompt", "")
+    word_count = len(prompt.split())
+
+    if word_count < MIN_CRITICAL_AGENT_PROMPT_WORDS:
+        return (
+            "deny",
+            f"BLOCKED: Prompt for critical agent '{agent_type}' has only {word_count} words "
+            f"(minimum: {MIN_CRITICAL_AGENT_PROMPT_WORDS}). "
+            f"Reconstruct the prompt with full context — include the complete implementer "
+            f"output, list of changed files, and test results. "
+            f"Use get_agent_prompt_template('{agent_type}') to reload the agent's base prompt from disk."
+        )
+
+    return ("allow", f"Prompt integrity OK: {agent_type} has {word_count} words (>= {MIN_CRITICAL_AGENT_PROMPT_WORDS})")
 
 
 def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
@@ -2698,6 +2753,22 @@ def main():
                     output_decision(
                         "deny", ord_reason,
                         system_message="ORDERING: Wait for prerequisite agents to complete.",
+                    )
+                    sys.exit(0)
+
+            # Layer 5: Prompt integrity gate (Issue #695)
+            # Blocks critical agents with sub-minimum prompts during pipeline.
+            if tool_name in AGENT_TOOL_NAMES:
+                pi_decision, pi_reason = validate_prompt_integrity(tool_name, tool_input)
+                if pi_decision == "deny":
+                    _log_pretool_activity(tool_name, tool_input, "deny", pi_reason)
+                    output_decision(
+                        "deny", pi_reason,
+                        system_message=(
+                            "PROMPT INTEGRITY: Your prompt for this agent is too short. "
+                            "Include the full implementer output, changed files list, and test results. "
+                            "Re-read the agent source from disk if needed."
+                        ),
                     )
                     sys.exit(0)
 
