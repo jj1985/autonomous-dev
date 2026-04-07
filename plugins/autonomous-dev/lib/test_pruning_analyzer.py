@@ -665,8 +665,8 @@ class TestPruningAnalyzer:
                 continue
 
             try:
-                # Collect all tested function signatures per file
-                coverage_map: Dict[str, List[Tuple[int, str]]] = {}
+                # Collect all tested function signatures per test function
+                test_sigs: Dict[str, Tuple[int, set]] = {}
 
                 for node in ast.walk(tree):
                     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -674,29 +674,33 @@ class TestPruningAnalyzer:
                     if not node.name.startswith("test_"):
                         continue
 
-                    sigs = self._extract_call_signatures(node)
-                    for sig in sigs:
-                        if sig not in coverage_map:
-                            coverage_map[sig] = []
-                        coverage_map[sig].append((node.lineno, node.name))
+                    sigs = set(self._extract_call_signatures(node))
+                    if sigs:  # Only track tests with actual call signatures
+                        test_sigs[node.name] = (node.lineno, sigs)
 
-                # Flag duplicates (same signature called in multiple tests)
-                for sig, locations in coverage_map.items():
-                    if len(locations) > 1:
-                        for lineno, test_name in locations[1:]:
+                # Flag tests whose entire signature set is a subset of another test
+                for test_name, (lineno, sigs) in test_sigs.items():
+                    if not sigs:
+                        continue
+                    for other_name, (other_lineno, other_sigs) in test_sigs.items():
+                        if other_name == test_name:
+                            continue
+                        # Subset or equal — flag the later test (by line number)
+                        if sigs <= other_sigs and lineno > other_lineno:
                             findings.append(PruningFinding(
                                 file_path=self._relative_path(path),
                                 line=lineno,
                                 category=PruningCategory.DUPLICATE_COVERAGE,
                                 severity=Severity.LOW,
                                 description=(
-                                    f"Test '{test_name}' duplicates coverage "
-                                    f"of '{sig}' (first in "
-                                    f"'{locations[0][1]}')"
+                                    f"Test '{test_name}' coverage is a subset "
+                                    f"of '{other_name}' ({len(sigs)} of "
+                                    f"{len(other_sigs)} signatures)"
                                 ),
                                 suggestion="Consolidate or differentiate test cases",
                                 prunable=self._is_prunable(path),
                             ))
+                            break  # Only flag once per test
             except Exception as e:
                 logger.debug("Duplicate coverage scan failed for %s: %s", path, e)
 
@@ -726,6 +730,18 @@ class TestPruningAnalyzer:
                 "print", "len", "str", "int", "float", "list", "dict",
                 "set", "tuple", "isinstance", "type", "range", "enumerate",
                 "sorted", "reversed", "zip", "map", "filter",
+                # Test framework utilities — not coverage targets
+                "assert_called", "assert_called_once", "assert_called_with",
+                "assert_called_once_with", "assert_not_called", "assert_has_calls",
+                "assertEqual", "assertRaises", "assertTrue", "assertFalse",
+                "assertIn", "assertNotIn", "assertIsNone", "assertIsNotNone",
+                "patch", "Mock", "MagicMock", "PropertyMock",
+                "fixture", "mark", "raises", "warns", "skip", "parametrize",
+                "append", "extend", "update", "copy", "deepcopy",
+                "join", "format", "replace", "strip", "split",
+                "keys", "values", "items", "get", "pop",
+                "open", "close", "read", "write", "exists", "mkdir",
+                "Path", "dumps", "loads",
             ):
                 continue
 

@@ -81,7 +81,7 @@ Models predictably game evaluations. Detect these patterns:
       - If not found: `gh issue create --title "[TIMING] {agent}: {finding_type}" --label "auto-improvement" --body-file <temp>` (include `**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` in the body)
     - Circuit breaker: max 3 timing issues per run
     - 3-consecutive-violation minimum before filing (use `check_consecutive_violations()`)
-    - Print timing summary table to CLI output via `format_timing_report()`
+    - Print timing summary table to CLI output via `format_timing_report(timings, findings)` where `timings` is the raw list from `extract_agent_timings(events)` and `findings` is the list returned by `analyze_timings(timings, ...)`
     - Use `save_timing_entry()` to persist timings for adaptive threshold computation
 
 12. **Test Lifecycle Health** (severity: warning): If test health dashboard data is provided, flag these conditions:

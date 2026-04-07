@@ -16202,7 +16202,7 @@ markers = build_directory_markers()
 | Dead Imports | `DEAD_IMPORT` | HIGH | Import from a module not found in source |
 | Archived References | `ARCHIVED_REF` | MEDIUM | Import referencing an `archived/` path |
 | Zero-Assertion Tests | `ZERO_ASSERTION` | HIGH/MEDIUM | Test function with no meaningful assertions |
-| Duplicate Coverage | `DUPLICATE_COVERAGE` | LOW | Two test functions calling the same function with identical args |
+| Duplicate Coverage | `DUPLICATE_COVERAGE` | LOW | Test whose entire set of non-framework call signatures is a strict subset of another test's signatures (per-test subset granularity, not per-call matching; test framework utilities such as `Mock`, `patch`, `assert_called_*` are excluded from signatures) |
 | Stale Regressions | `STALE_REGRESSION` | LOW | Test name matches `TestIssueNNN` / `test_issue_NNN` pattern |
 
 ### Public API

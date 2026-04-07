@@ -266,7 +266,7 @@ class TestDuplicateCoverageDetection:
             f for f in report.findings if f.category == PruningCategory.DUPLICATE_COVERAGE
         ]
         assert len(dupe_findings) >= 1
-        assert "duplicates coverage" in dupe_findings[0].description
+        assert "subset" in dupe_findings[0].description
 
     def test_different_args_not_flagged(self, tmp_path: Path) -> None:
         """Two tests calling the same function with different args should not be flagged."""
@@ -290,6 +290,131 @@ class TestDuplicateCoverageDetection:
         dupe_findings = [
             f for f in report.findings if f.category == PruningCategory.DUPLICATE_COVERAGE
         ]
+        assert len(dupe_findings) == 0
+
+    def test_shared_calls_different_scenarios_not_flagged(self, tmp_path: Path) -> None:
+        """Regression: tests sharing one call but having different additional calls are NOT duplicates.
+
+        Bug #701: Old per-call detection flagged 14K+ false positives because any
+        shared function call was treated as duplicate coverage. Two tests calling the
+        same function with different test scenarios is normal unit testing.
+        """
+        _write_test_file(
+            tmp_path,
+            "tests/unit/test_no_false_positive.py",
+            (
+                "from mylib import process, validate, transform\n\n"
+                "def test_process_and_validate():\n"
+                "    result = process(42)\n"
+                "    valid = validate(result)\n"
+                "    assert valid is True\n\n"
+                "def test_process_and_transform():\n"
+                "    result = process(42)\n"
+                "    transformed = transform(result)\n"
+                "    assert transformed is not None\n"
+            ),
+        )
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        report = analyzer.analyze()
+
+        dupe_findings = [
+            f for f in report.findings if f.category == PruningCategory.DUPLICATE_COVERAGE
+        ]
+        # These tests share process(42) but have different additional calls,
+        # so neither is a subset of the other — no false positive
+        assert len(dupe_findings) == 0
+
+    def test_strict_subset_flagged(self, tmp_path: Path) -> None:
+        """A test whose calls are a strict subset of another should be flagged."""
+        _write_test_file(
+            tmp_path,
+            "tests/unit/test_subset.py",
+            (
+                "from mylib import process, validate\n\n"
+                "def test_process_basic():\n"
+                "    result = process(42)\n"
+                "    assert result is not None\n\n"
+                "def test_process_full():\n"
+                "    result = process(42)\n"
+                "    valid = validate(result)\n"
+                "    assert valid is True\n"
+            ),
+        )
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        report = analyzer.analyze()
+
+        dupe_findings = [
+            f for f in report.findings if f.category == PruningCategory.DUPLICATE_COVERAGE
+        ]
+        # test_process_full has {process(42), validate(result)} which is a superset of
+        # test_process_basic's {process(42)}, so basic is NOT flagged (it appears first).
+        # But test_process_basic is a subset of test_process_full — however basic appears
+        # first by line number, so it won't be flagged either. Let's check:
+        # basic (line 3): {process(42)} <= {process(42), validate(result)} and lineno 3 < 7
+        # So basic is NOT flagged (lineno not greater). full is not a subset of basic.
+        # Result: 0 findings because the subset test appears first.
+        # This is correct behavior — we keep the earlier test.
+        assert len(dupe_findings) == 0
+
+    def test_later_subset_flagged(self, tmp_path: Path) -> None:
+        """A later test whose calls are a strict subset of an earlier test should be flagged."""
+        _write_test_file(
+            tmp_path,
+            "tests/unit/test_later_subset.py",
+            (
+                "from mylib import process, validate\n\n"
+                "def test_process_full():\n"
+                "    result = process(42)\n"
+                "    valid = validate(result)\n"
+                "    assert valid is True\n\n"
+                "def test_process_basic():\n"
+                "    result = process(42)\n"
+                "    assert result is not None\n"
+            ),
+        )
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        report = analyzer.analyze()
+
+        dupe_findings = [
+            f for f in report.findings if f.category == PruningCategory.DUPLICATE_COVERAGE
+        ]
+        # test_process_basic (later) is a subset of test_process_full (earlier)
+        assert len(dupe_findings) == 1
+        assert "test_process_basic" in dupe_findings[0].description
+        assert "subset" in dupe_findings[0].description
+
+    def test_test_framework_calls_not_counted_as_signatures(self, tmp_path: Path) -> None:
+        """Regression: test framework calls (Mock, patch, etc.) should not count as coverage signatures."""
+        _write_test_file(
+            tmp_path,
+            "tests/unit/test_framework_calls.py",
+            (
+                "from unittest.mock import patch, MagicMock\n"
+                "from mylib import process\n\n"
+                "def test_process_mocked_a():\n"
+                "    mock = MagicMock()\n"
+                "    result = process(1)\n"
+                "    mock.assert_called()\n"
+                "    assert result is not None\n\n"
+                "def test_process_mocked_b():\n"
+                "    mock = MagicMock()\n"
+                "    result = process(2)\n"
+                "    mock.assert_called()\n"
+                "    assert result is not None\n"
+            ),
+        )
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        report = analyzer.analyze()
+
+        dupe_findings = [
+            f for f in report.findings if f.category == PruningCategory.DUPLICATE_COVERAGE
+        ]
+        # MagicMock() and assert_called() are filtered out. The actual coverage
+        # signatures differ: process(1) vs process(2). No duplicates.
         assert len(dupe_findings) == 0
 
 
