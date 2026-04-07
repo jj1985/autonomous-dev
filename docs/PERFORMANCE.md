@@ -205,7 +205,7 @@ metrics = analyze_performance_logs(Path("/path/to/custom.json"))
    - Investigation: Testing Opus downgrade feasibility
 
 3. **Other Agents**: Cost-benefit analysis pending
-   - Implementer: Sonnet (code generation requires quality)
+   - Implementer: Opus (code generation requires highest reasoning quality)
    - Test-Master: Sonnet (test design is complex)
    - Other agents: Candidate identification in progress
 

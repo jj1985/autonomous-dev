@@ -1,17 +1,23 @@
-"""Tests for Issue #687: Fix mode reviewer/security-auditor prompt minimum word count.
+"""Tests for Issue #687 and #693: Fix mode agent prompt minimum word count.
 
-Bug: In --fix mode, reviewer and security-auditor received prompts below the
+Bug (#687): In --fix mode, reviewer and security-auditor received prompts below the
 80-word minimum. The STEP F4 reviewer prompt template in implement-fix.md was
 too short (~20 words without implementer output). When the coordinator truncated
 or summarized implementer output, the final prompt fell below 80 words.
+
+Bug (#693): doc-master prompt template was ~20 words, producing verdicts under
+100 words in 6/9 invocations. Fix: expanded template to >= 80 words with
+REQUIRED STEPS (scan, semantic comparison, DOC-DRIFT-VERDICT).
 
 Validates:
 1. STEP F4 reviewer prompt template contains >= 80 words of template text
    (excluding placeholder markers like [paste ... here])
 2. STEP F4 security-auditor prompt template contains >= 80 words of template text
-3. Verbatim passing requirement is documented in STEP F4
-4. Prompt integrity gate instructions exist in STEP F4
-5. FORBIDDEN list covers summarization and minimum word count violations
+3. STEP F4 doc-master prompt template contains >= 80 words of template text
+4. Doc-master prompt requires DOC-DRIFT-VERDICT
+5. Verbatim passing requirement is documented in STEP F4
+6. Prompt integrity gate instructions exist in STEP F4
+7. FORBIDDEN list covers summarization and minimum word count violations
 """
 
 import re
@@ -168,4 +174,69 @@ class TestFixModePromptIntegrityGate:
         assert "checklist" in fix_content.lower() or "Review checklist" in fix_content, (
             "Reviewer prompt should include a structured review checklist "
             "to ensure thorough reviews and prevent prompt being too short."
+        )
+
+
+class TestFixModeDocMasterPromptMinimum:
+    """Regression test: Issue #693 — doc-master prompt template must have >= 80 words.
+
+    Bug: 6/9 doc-master invocations in --fix mode produced output below 100 words.
+    The template was ~20 words. Fix: expanded template to >= 80 words with
+    REQUIRED STEPS for scan, semantic comparison, and DOC-DRIFT-VERDICT.
+    """
+
+    @pytest.fixture
+    def fix_content(self) -> str:
+        """Read implement-fix.md content."""
+        assert FIX_CMD_PATH.exists(), f"implement-fix.md not found at {FIX_CMD_PATH}"
+        return FIX_CMD_PATH.read_text(encoding="utf-8")
+
+    def test_doc_master_prompt_template_meets_minimum(self, fix_content: str) -> None:
+        """Doc-master prompt template must contain >= 80 words excluding placeholders.
+
+        This is the regression test for Issue #693. Without the fix, the template
+        had only ~20 words of template text. With the fix, it has >= 80.
+        """
+        words = _extract_prompt_template_words(fix_content, "doc-master")
+        word_count = len(words)
+
+        assert word_count >= MIN_CRITICAL_AGENT_PROMPT_WORDS, (
+            f"Doc-master prompt template has only {word_count} words "
+            f"(minimum: {MIN_CRITICAL_AGENT_PROMPT_WORDS}). "
+            f"This was the root cause of Issue #693 — the template must be "
+            f"self-sufficient (>= 80 words) even without implementer output."
+        )
+
+    def test_doc_master_prompt_requires_doc_drift_verdict(self, fix_content: str) -> None:
+        """Doc-master prompt must require DOC-DRIFT-VERDICT as a mandatory output.
+
+        Issue #693 fix requires structured output with an explicit verdict
+        (DOCS-UPDATED, NO-UPDATE-NEEDED, or DOCS-DRIFT-FOUND).
+        """
+        words = _extract_prompt_template_words(fix_content, "doc-master")
+        template_text = " ".join(words).upper()
+
+        assert "DOC-DRIFT-VERDICT" in template_text or "DOCS-DRIFT" in template_text, (
+            "Doc-master prompt must require DOC-DRIFT-VERDICT as a mandatory step. "
+            "Without this, the agent produces vague, under-100-word responses (Issue #693)."
+        )
+
+    def test_doc_master_prompt_requires_scan_step(self, fix_content: str) -> None:
+        """Doc-master prompt must include a SCAN step for identifying affected docs."""
+        words = _extract_prompt_template_words(fix_content, "doc-master")
+        template_text = " ".join(words).lower()
+
+        assert "scan" in template_text, (
+            "Doc-master prompt must include a SCAN step to identify documentation "
+            "files affected by the fix (Issue #693 required step)."
+        )
+
+    def test_doc_master_prompt_requires_semantic_comparison(self, fix_content: str) -> None:
+        """Doc-master prompt must include a semantic comparison step."""
+        words = _extract_prompt_template_words(fix_content, "doc-master")
+        template_text = " ".join(words).lower()
+
+        assert "semantic comparison" in template_text or "semantic" in template_text, (
+            "Doc-master prompt must include a SEMANTIC COMPARISON step to compare "
+            "documented behavior vs actual behavior after fix (Issue #693 required step)."
         )
