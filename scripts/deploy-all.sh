@@ -372,6 +372,17 @@ print(len(d.get('hooks', {})))
     if [ -n "$found_stale" ]; then
         log_warn "stale hooks found:$found_stale"
     fi
+
+    # 10. CLAUDE.md size guard
+    if [ -f "$repo_path/CLAUDE.md" ]; then
+        local line_count
+        line_count=$(wc -l < "$repo_path/CLAUDE.md")
+        if [ "$line_count" -gt 200 ]; then
+            log_warn "CLAUDE.md size: $line_count lines (Anthropic best practice: keep under 200)"
+        else
+            log_ok "CLAUDE.md size: $line_count lines (<= 200)"
+        fi
+    fi
 }
 
 # --- Main ---

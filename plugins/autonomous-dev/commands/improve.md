@@ -65,6 +65,48 @@ Read autonomous-dev's source-of-truth documents to provide to the analyst:
    cat .claude/settings.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); hooks=d.get('hooks',{}); print(json.dumps({k: [h.get('command','') for h in v] if isinstance(v,list) else v for k,v in hooks.items()}))" 2>/dev/null || echo "{}"
    ```
 
+### STEP 2.5: Skill Effectiveness Report
+
+Check skill baselines for weak, low-quality, or stale skills:
+
+```bash
+python3 -c "
+import sys, json; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from skill_change_detector import get_weak_skills
+from pathlib import Path
+
+baselines_path = Path('tests/genai/skills/baselines/effectiveness.json')
+weak = get_weak_skills(baselines_path, min_delta=0.10, min_pass_rate=0.80, stale_days=30)
+
+if weak:
+    print('WEAK SKILLS DETECTED:')
+    for s in weak:
+        print(f\"  - {s['skill_name']}: {s['reason']} (delta={s['delta']:+.2f}, pass_rate={s['pass_rate_with']:.2f})\")
+else:
+    print('All skills within acceptable thresholds.')
+"
+```
+
+Pass the weak skill list to the CI analyst agent in STEP 3 so it can include skill health in its analysis. Skills flagged here are candidates for `/skill-eval --update` runs.
+
+### STEP 2.7: Test Health Report
+
+Run the TestLifecycleManager to generate a unified test health dashboard:
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from test_lifecycle_manager import TestLifecycleManager
+from pathlib import Path
+
+manager = TestLifecycleManager(Path('.'))
+report = manager.analyze()
+print(manager.format_dashboard(report))
+" 2>/dev/null || echo "Test health report unavailable"
+```
+
+Pass the dashboard output to the CI analyst agent in STEP 3 so it can include test lifecycle health in its analysis.
+
 ### STEP 3: Analyze with Continuous Improvement Agent
 
 Launch the `continuous-improvement-analyst` agent (Task tool, subagent_type: continuous-improvement-analyst) with:

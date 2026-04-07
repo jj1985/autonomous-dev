@@ -1,6 +1,15 @@
 ## [Unreleased]
 
 ### Added
+- **Skill effectiveness harness integrated into `/implement` and `/improve`** (Issue #643): New `skill_change_detector.py` library provides `detect_skill_changes()` (extracts modified skill names from `skills/*/SKILL.md` paths), `get_eval_status()` (checks eval prompts and baselines), `format_skill_eval_report()` (PASS/WARNING/BLOCK verdicts — delta < -0.10 blocks), and `get_weak_skills()` (surfaces skills below delta/pass-rate/freshness thresholds). `/implement` gains STEP 11.5 (Skill Effectiveness Gate): runs conditionally when skill files are modified; missing eval prompts or missing `OPENROUTER_API_KEY` produce advisory warnings only and never block the pipeline. `/improve` gains STEP 2.5 (Skill Effectiveness Report): surfaces weak, low-quality, or stale skills from baselines to the continuous-improvement-analyst for action. `docs/LIBRARIES.md` updated with entry 79 (`skill_change_detector.py`). Library count updated from 190 to 191 in `docs/ARCHITECTURE-OVERVIEW.md` and `README.md`.
+
+### Fixed
+- **Regression tests for `subagent_type` priority in ordering gate** (Issue #636): Added 6 regression tests to `tests/unit/hooks/test_native_tool_auto_approval.py` covering `subagent_type` priority ordering in the agent ordering gate — verifying that `subagent_type` takes precedence over inferred agent identity when both are present, that ordering violations are correctly detected across varied invocation contexts, and that the gate does not produce false positives when ordering is valid.
+
+### Added
+- **CLAUDE.md size guard hook** (Issue #661): New `validate_claude_md_size.py` PreCommit hook warns when CLAUDE.md exceeds 200 lines (Anthropic best practice). Non-blocking — always exits 0 so it never prevents commits. Registered in `settings.autonomous-dev.json` and `settings.local.json` templates; added to `install_manifest.json`. `deploy-all.sh` also checks CLAUDE.md line count during deployment. Unit tests in `tests/unit/hooks/test_claude_md_size_guard.py`; smoke regression in `tests/regression/smoke/test_claude_md_size_regression.py`.
+
+### Added
 - **Single-pipeline CIA skip detection** (Issue #667): New `detect_cia_skip()` function in `pipeline_intent_validator.py` detects non-batch pipeline runs where `continuous-improvement-analyst` was not invoked. Complements the existing `detect_batch_cia_skip()` (Issue #559) which handles batch runs. Skips sessions with no completed pipeline agents (not a real run) and sessions that appear to be batch runs (any event has `batch_issue_number > 0`). Emits `WARNING` finding with `pattern_id="single_pipeline_cia_skip"`. Integrated into `validate_pipeline_intent()`. New unit tests in `tests/unit/lib/test_pipeline_intent_validator.py`.
 
 ### Added

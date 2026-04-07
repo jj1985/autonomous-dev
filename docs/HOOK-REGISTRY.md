@@ -29,7 +29,7 @@ This registry provides a comprehensive view of:
 
 ### Unified Hooks
 
-The plugin uses 17 active hooks (files on disk in `plugins/autonomous-dev/hooks/`):
+The plugin uses 20 active hooks (files on disk in `plugins/autonomous-dev/hooks/`):
 
 | Hook File | Lifecycle/Trigger | Status | Purpose |
 |-----------|------------------|--------|---------|
@@ -49,6 +49,7 @@ The plugin uses 17 active hooks (files on disk in `plugins/autonomous-dev/hooks/
 | plan_mode_exit_detector | PostToolUse | Enabled | Detect ExitPlanMode calls and write marker to enforce /implement or /create-issue routing |
 | session_activity_logger | PostToolUse | Enabled | Structured JSONL activity logging for continuous improvement |
 | task_completed_handler | TaskCompleted | Enabled | Log task completion events to activity JSONL for pipeline observability |
+| validate_claude_md_size | PreCommit | Enabled | Warn when CLAUDE.md exceeds 200 lines (Anthropic best practice). Non-blocking — always exits 0. |
 | genai_utils | Utility | Library | GenAI utilities for OpenRouter API calls |
 | genai_prompts | Utility | Library | Prompt templates for GenAI validation |
 | setup | Utility | Command | Setup wizard for PROJECT.md creation |
@@ -116,6 +117,7 @@ Runs before git commit (can block with EXIT_BLOCK).
 | validate_commands | Enabled | - | Validate command files |
 | validate_command_file_ops | Enabled | - | Validate command file operations |
 | validate_command_frontmatter_flags | Enabled | - | Validate command frontmatter flags |
+| validate_claude_md_size | Enabled | - | Warn when CLAUDE.md exceeds 200 lines (Anthropic best practice). Non-blocking — always exits 0. (Issue #661) |
 
 ### SubagentStop Hooks
 
