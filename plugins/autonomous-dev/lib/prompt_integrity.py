@@ -41,7 +41,15 @@ logger = logging.getLogger(__name__)
 
 # Critical agents that require minimum prompt word counts.
 # Mirrors COMPRESSION_CRITICAL_AGENTS in pipeline_intent_validator.py.
-COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer", "researcher-local", "researcher"}
+COMPRESSION_CRITICAL_AGENTS = {
+    "security-auditor",
+    "reviewer",
+    "researcher-local",
+    "researcher",
+    "implementer",
+    "planner",
+    "doc-master",
+}
 
 # Minimum word count for critical agent prompts.
 # Matches MIN_CRITICAL_AGENT_PROMPT_WORDS in pipeline_intent_validator.py.
@@ -135,20 +143,20 @@ def validate_prompt_word_count(
     prompt: str,
     baseline_word_count: Optional[int] = None,
     *,
-    max_shrinkage: float = 0.20,
+    max_shrinkage: float = 0.15,
 ) -> PromptIntegrityResult:
     """Validate a constructed prompt against word count thresholds.
 
     Checks (in order):
     1. Prompt must not be empty.
     2. For critical agents, word count must be >= MIN_CRITICAL_AGENT_PROMPT_WORDS.
-    3. If baseline provided, shrinkage must be <= max_shrinkage (default 20%).
+    3. If baseline provided, shrinkage must be <= max_shrinkage (default 15%).
 
     Args:
         agent_type: Agent name for context.
         prompt: The constructed prompt text to validate.
         baseline_word_count: Word count from first issue (None if first issue).
-        max_shrinkage: Maximum allowed shrinkage ratio (0.20 = 20%).
+        max_shrinkage: Maximum allowed shrinkage ratio (0.15 = 15%).
 
     Returns:
         PromptIntegrityResult with validation outcome.

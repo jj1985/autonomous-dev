@@ -156,7 +156,7 @@ autonomous-dev is a **harness** — the software layer that wraps an AI model to
 The harness implements all 12 elements of the harness engineering framework:
 1. **State machine** — `pipeline_state.py` tracks 13 phases with advance/complete API
 2. **Validation loops** — STEP 8 HARD GATE loops until 0 test failures
-3. **Isolated sub-agents** — 13 specialists with fresh context, constrained tools
+3. **Isolated sub-agents** — 14 specialists with fresh context, constrained tools
 4. **Virtual file system** — Worktree isolation, `.claude/artifacts/` persistence
 5. **Human-in-the-loop** — Plan approval gate before implementation
 6. **Hook enforcement** — 25 hooks with JSON `{"decision": "block"}` hard gates

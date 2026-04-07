@@ -90,7 +90,7 @@ The solution is **deterministic rails**: a software layer that gates and validat
 |---|---------|----------------------------------|
 | 1 | **State Machine** | `pipeline_state.py` — 13-phase state machine with `Step` enum, `advance()`/`complete_step()` API, JSON-persisted state |
 | 2 | **Validation Loops** | STEP 8 HARD GATE — runs pytest, loops until 0 failures/0 errors. Anti-stubbing gate blocks `raise NotImplementedError()` shortcuts |
-| 3 | **Isolated Sub-Agents** | 12 specialist agents, each spawned with fresh context and constrained tools. Model selection per agent (Haiku/Sonnet/Opus) |
+| 3 | **Isolated Sub-Agents** | Specialist agents, each spawned with fresh context and constrained tools. Model selection per agent (Haiku/Sonnet/Opus) |
 | 4 | **Virtual File System** | Git worktree isolation for batch mode. `checkpoint.py` + `artifacts.py` persist outputs to `.claude/artifacts/` per phase |
 | 5 | **Human-in-the-Loop** | Plan mode (STEP 5) requires user approval before implementation. `pause_controller.py` for explicit gates |
 | 6 | **Hook Enforcement** | 27 hooks with JSON `{"decision": "block"}` hard gates — not prompt-level nudges. Research-confirmed: nudges produce unreliable compliance |
@@ -311,11 +311,11 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| Commands | 20 | Slash commands for workflows |
-| Agents | 12 | Specialized AI for each SDLC stage |
+| Commands | 22 | Slash commands for workflows |
+| Agents | 14 | Specialized AI for each SDLC stage |
 | Skills | 17 | Domain knowledge (progressive disclosure) |
 | Hooks | 25 | Automatic validation and enforcement |
-| Libraries | 191 | Python utilities |
+| Libraries | 185 | Python utilities |
 
 ---
 
@@ -331,7 +331,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 - [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) - Pipeline enforcement
 
 ### Reference
-- [Commands](plugins/autonomous-dev/commands/) - All 21 commands
+- [Commands](plugins/autonomous-dev/commands/) - All 22 commands
 - [Hooks](docs/HOOKS.md) - 27 active hooks
 - [Libraries](docs/LIBRARIES.md) - 191 Python utilities
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model

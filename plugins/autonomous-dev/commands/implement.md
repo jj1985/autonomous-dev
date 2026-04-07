@@ -481,9 +481,24 @@ If both conditions are met:
 - Parse output for `UI-TESTER-VERDICT: PASS` or `UI-TESTER-VERDICT: SKIP`
 - Either result allows proceeding — E2E testing is ADVISORY, never blocking
 
-If conditions are NOT met, skip this step silently and proceed to STEP 10.
+If conditions are NOT met, skip this step silently and proceed to STEP 9.8.
 
 **FORBIDDEN**: Blocking the pipeline based on ui-tester output. The ui-tester verdict is informational only.
+
+### STEP 9.8: Conditional Mobile Testing (mobile-tester)
+
+**This step is OPTIONAL.** Only invoke mobile-tester when BOTH conditions are met:
+1. Changed files include mobile patterns: `*.swift`, `*.kt`, `*.dart`, `ios/`, `android/`, `Podfile`, `build.gradle`, `pubspec.yaml`
+2. At least one of the following is available: Appium MCP tools (test by attempting `mcp__appium__get_session`) OR Maestro CLI (test by running `maestro --version`)
+
+If both conditions are met:
+- **Agent**(subagent_type="mobile-tester", model="sonnet") — Pass changed file list + target platform (ios/android/flutter, detected from changed file patterns)
+- Parse output for `MOBILE-TESTER-VERDICT: PASS` or `MOBILE-TESTER-VERDICT: SKIP`
+- Either result allows proceeding — mobile testing is ADVISORY, never blocking
+
+If conditions are NOT met, skip this step silently and proceed to STEP 10.
+
+**FORBIDDEN**: Blocking the pipeline based on mobile-tester output. The mobile-tester verdict is informational only.
 
 ### STEP 10: Validation — Reviewer, Security, and Docs (3 agents)
 

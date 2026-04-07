@@ -425,3 +425,102 @@ class TestIssue589PythonWriteDetectorBypasses:
         assert "agents/foo.md" in extracted, (
             "Issue #589: literal \\n in -c string must be handled for AST parsing"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests — Issue #698: os.rename/os.replace/Path.rename bypass
+# ---------------------------------------------------------------------------
+
+class TestIssue698OsRenameBypass:
+    """Regression tests for Issue #698.
+
+    These tests reproduce the bypass vectors where Python inline code used
+    os.rename(), os.replace(), or Path.rename() to move a file from /tmp
+    to a protected infrastructure path, bypassing write enforcement.
+
+    Before the fix, python_write_detector did not detect these operations,
+    so the destination path was never extracted and the write was not blocked.
+    """
+
+    def test_issue_698_os_rename_bypass(self):
+        """Issue #698: os.rename('/tmp/staged.py', 'agents/foo.py') bypassed detection.
+
+        Before the fix, os.rename was not scanned in python3 -c snippets.
+        """
+        cmd = """python3 -c "import os; os.rename('/tmp/staged.py', 'agents/foo.py')" """
+        # Verify detection at extraction layer
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.py" in extracted, (
+            "Issue #698: _extract_bash_file_writes must detect os.rename destination"
+        )
+        # Verify end-to-end blocking
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #698: os.rename to agents/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_698_path_rename_bypass(self):
+        """Issue #698: Path('/tmp/x').rename('hooks/evil.py') bypassed detection.
+
+        Before the fix, Path.rename was not scanned in python3 -c snippets.
+        """
+        cmd = """python3 -c "from pathlib import Path; Path('/tmp/x').rename('hooks/evil.py')" """
+        # Verify detection at extraction layer
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "hooks/evil.py" in extracted, (
+            "Issue #698: _extract_bash_file_writes must detect Path.rename destination"
+        )
+        # Verify end-to-end blocking
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #698: Path.rename to hooks/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_698_os_replace_bypass(self):
+        """Issue #698: os.replace('/tmp/staged.py', 'lib/util.py') bypassed detection.
+
+        os.replace is an atomic replacement — same concern as os.rename.
+        Before the fix, os.replace was not scanned.
+        """
+        cmd = """python3 -c "import os; os.replace('/tmp/staged.py', 'lib/util.py')" """
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "lib/util.py" in extracted, (
+            "Issue #698: _extract_bash_file_writes must detect os.replace destination"
+        )
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #698: os.replace to lib/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_698_os_alias_rename_bypass(self):
+        """Issue #698: 'import os as o; o.rename(src, dst)' aliased bypass.
+
+        An attacker could alias the os module to evade simple module-name checks.
+        Before the fix, aliased os module was not tracked.
+        """
+        cmd = """python3 -c "import os as o; o.rename('/tmp/x', 'agents/foo.py')" """
+        extracted = hook._extract_bash_file_writes(cmd)
+        assert "agents/foo.py" in extracted, (
+            "Issue #698: _extract_bash_file_writes must detect aliased os.rename destination"
+        )
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is not None, (
+            "Issue #698: aliased os.rename to agents/ must be blocked"
+        )
+        assert "BLOCKED" in result[1]
+
+    def test_issue_698_safe_os_rename_not_blocked(self):
+        """Issue #698 (precision): os.rename to non-protected path must NOT be blocked.
+
+        The fix must only block renames targeting infrastructure paths.
+        Renaming files within /tmp or other non-protected paths should remain allowed.
+        """
+        cmd = """python3 -c "import os; os.rename('/tmp/a.txt', '/tmp/b.txt')" """
+        result = hook._check_bash_infra_writes(cmd)
+        assert result is None, (
+            "Issue #698 (precision): os.rename to /tmp must NOT be blocked — "
+            "/tmp is not a protected infrastructure path"
+        )

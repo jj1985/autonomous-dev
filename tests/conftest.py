@@ -30,6 +30,57 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "plugins" / "autonomous-de
 
 
 # =============================================================================
+# COVERAGE THRESHOLD FOR PARTIAL RUNS (Issue #699)
+# =============================================================================
+
+def _is_partial_test_run(config) -> bool:
+    """Detect if pytest is running a subset of tests (not the full suite).
+
+    When running a single file like ``pytest tests/unit/hooks/test_foo.py``,
+    the global ``--cov-fail-under`` threshold from pytest.ini is unreachable
+    because only a tiny fraction of the source is exercised.  This helper
+    returns True when the invocation targets specific files, test nodes, or
+    marker/keyword filters — all of which indicate a partial run.
+    """
+    args = config.args  # CLI positional arguments (files / dirs / nodeids)
+
+    for arg in args:
+        # Specific .py file or nodeid (contains ::)
+        if arg.endswith(".py") or "::" in arg:
+            return True
+
+    # -k (keyword filter) or -m (marker filter) also produce partial runs
+    keyword_expr = config.getoption("-k", default="")
+    marker_expr = config.getoption("-m", default="")
+    if keyword_expr or marker_expr:
+        return True
+
+    return False
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config):
+    """Suppress --cov-fail-under for partial test runs.
+
+    Full suite runs (``pytest`` or ``pytest tests/``) keep the threshold
+    defined in pytest.ini so CI enforcement is preserved.
+
+    Uses trylast=True to ensure the pytest-cov plugin has already been
+    registered before we modify its options.
+    """
+    if _is_partial_test_run(config):
+        # The pytest-cov plugin stores its own copy of the options namespace
+        # (early_config.known_args_namespace), which is a *different* object
+        # from config.option.  We must set cov_fail_under on both to be safe.
+        if hasattr(config.option, "cov_fail_under"):
+            config.option.cov_fail_under = 0
+
+        cov_plugin = config.pluginmanager.getplugin("_cov")
+        if cov_plugin and hasattr(cov_plugin, "options"):
+            cov_plugin.options.cov_fail_under = 0
+
+
+# =============================================================================
 # PYTEST OPTIONS
 # =============================================================================
 

@@ -294,3 +294,119 @@ class TestRegexFallback:
         code = "open('file.txt', 'r')"
         result = extract_write_targets_regex(code)
         assert "file.txt" not in result
+
+
+# ---------------------------------------------------------------------------
+# os.rename / os.replace detection (Issue #698)
+# ---------------------------------------------------------------------------
+
+class TestOsRenameReplace:
+    """Tests for os.rename/os.replace destination detection (Issue #698)."""
+
+    def test_os_rename_detected(self):
+        """os.rename(src, dst) should detect dst as write target."""
+        code = "import os; os.rename('/tmp/staged.py', 'agents/foo.py')"
+        result = extract_write_targets(code)
+        assert "agents/foo.py" in result
+
+    def test_os_replace_detected(self):
+        """os.replace(src, dst) should detect dst as write target."""
+        code = "import os; os.replace('/tmp/staged.py', 'hooks/bar.py')"
+        result = extract_write_targets(code)
+        assert "hooks/bar.py" in result
+
+    def test_os_alias_rename_detected(self):
+        """import os as o; o.rename(src, dst) should detect dst."""
+        code = "import os as o; o.rename('/tmp/x', 'agents/evil.md')"
+        result = extract_write_targets(code)
+        assert "agents/evil.md" in result
+
+    def test_os_from_import_rename_detected(self):
+        """from os import rename; rename(src, dst) should detect dst."""
+        code = "from os import rename; rename('/tmp/x', 'lib/util.py')"
+        result = extract_write_targets(code)
+        assert "lib/util.py" in result
+
+    def test_os_rename_variable_dst_suspicious(self):
+        """os.rename(src, variable_dst) should set suspicious flag."""
+        code = "import os; os.rename('/tmp/x', dst_path)"
+        result = extract_write_targets(code)
+        assert SUSPICIOUS_EXEC_SENTINEL in result
+
+    def test_os_rename_safe_non_infra_path(self):
+        """os.rename to non-protected path should be detected (not necessarily blocked)."""
+        code = "import os; os.rename('a.txt', '/tmp/safe.txt')"
+        result = extract_write_targets(code)
+        assert "/tmp/safe.txt" in result
+
+    def test_os_rename_src_not_detected(self):
+        """Source (1st arg) of os.rename should NOT be detected as write target."""
+        code = "import os; os.rename('agents/foo.py', '/tmp/backup.py')"
+        result = extract_write_targets(code)
+        # Source 'agents/foo.py' is being read/moved FROM, not written to
+        assert "agents/foo.py" not in result
+        assert "/tmp/backup.py" in result
+
+
+class TestPathRename:
+    """Tests for Path(...).rename/Path(...).replace detection (Issue #698)."""
+
+    def test_path_rename_detected(self):
+        """Path('src').rename('dst') should detect dst as write target."""
+        code = "from pathlib import Path; Path('/tmp/staged.py').rename('agents/foo.py')"
+        result = extract_write_targets(code)
+        assert "agents/foo.py" in result
+
+    def test_path_replace_detected(self):
+        """Path('src').replace('dst') should detect dst as write target."""
+        code = "from pathlib import Path; Path('/tmp/x').replace('hooks/bar.py')"
+        result = extract_write_targets(code)
+        assert "hooks/bar.py" in result
+
+    def test_path_alias_rename_detected(self):
+        """P('src').rename('dst') with aliased Path should detect dst."""
+        code = "from pathlib import Path as P; P('/tmp/x').rename('agents/evil.md')"
+        result = extract_write_targets(code)
+        assert "agents/evil.md" in result
+
+    def test_path_rename_variable_dst_suspicious(self):
+        """Path('src').rename(variable_dst) should set suspicious flag."""
+        code = "from pathlib import Path; Path('/tmp/x').rename(dst_var)"
+        result = extract_write_targets(code)
+        assert SUSPICIOUS_EXEC_SENTINEL in result
+
+    def test_path_src_not_detected(self):
+        """Source (Path constructor arg) of Path.rename should NOT be write target."""
+        code = "from pathlib import Path; Path('agents/foo.py').rename('/tmp/backup.py')"
+        result = extract_write_targets(code)
+        # Source 'agents/foo.py' is being moved FROM, not written to
+        assert "agents/foo.py" not in result
+        assert "/tmp/backup.py" in result
+
+
+class TestOsRenameRegex:
+    """Tests for regex fallback covering os.rename/os.replace/Path.rename (Issue #698)."""
+
+    def test_regex_os_rename(self):
+        """Regex fallback detects os.rename destination."""
+        code = "os.rename('/tmp/staged.py', 'agents/foo.py')"
+        result = extract_write_targets_regex(code)
+        assert "agents/foo.py" in result
+
+    def test_regex_os_replace(self):
+        """Regex fallback detects os.replace destination."""
+        code = "os.replace('/tmp/staged.py', 'hooks/bar.py')"
+        result = extract_write_targets_regex(code)
+        assert "hooks/bar.py" in result
+
+    def test_regex_path_rename(self):
+        """Regex fallback detects Path(...).rename destination."""
+        code = "Path('/tmp/x').rename('lib/util.py')"
+        result = extract_write_targets_regex(code)
+        assert "lib/util.py" in result
+
+    def test_regex_path_replace(self):
+        """Regex fallback detects Path(...).replace destination."""
+        code = "Path('/tmp/x').replace('commands/test.md')"
+        result = extract_write_targets_regex(code)
+        assert "commands/test.md" in result

@@ -529,8 +529,17 @@ def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, s
         launched = get_launched_agents(session_id, issue_number=issue_number)
         mode = get_validation_mode(session_id)
 
+        # Issue #697: Read pipeline_mode from state file to filter prerequisites.
+        # In --fix mode, planner is not part of the pipeline, so the
+        # planner->implementer prerequisite must be skipped.
+        pipeline_mode = _get_pipeline_mode_from_state()
+
         gate = check_ordering_prerequisites(
-            target_agent, completed, validation_mode=mode, launched_agents=launched
+            target_agent,
+            completed,
+            validation_mode=mode,
+            launched_agents=launched,
+            pipeline_mode=pipeline_mode,
         )
         if not gate.passed:
             return ("deny", gate.reason)
@@ -817,6 +826,32 @@ def _is_issue_command_active() -> bool:
         return True
     except Exception:
         return False  # Fail-closed on any error
+
+
+def _get_pipeline_mode_from_state() -> str:
+    """Read pipeline mode from the state file.
+
+    Returns the mode field from the pipeline state file (e.g., "full", "fix", "light").
+    Falls back to "full" if the state file is missing, unreadable, or lacks a mode field.
+
+    Issue #697: Needed to filter ordering prerequisites by pipeline mode.
+    In --fix mode, planner is not part of the pipeline.
+
+    Returns:
+        Pipeline mode string, defaulting to "full".
+    """
+    pipeline_state_file = os.getenv("PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json")
+    try:
+        state_path = Path(pipeline_state_file)
+        if state_path.exists():
+            import json as _json
+
+            with open(state_path) as f:
+                state = _json.load(f)
+            return state.get("mode", "full")
+    except Exception:
+        pass
+    return "full"
 
 
 def _is_pipeline_active() -> bool:
@@ -1760,6 +1795,14 @@ def _extract_bash_file_writes(command: str) -> list:
             shutil_pattern = r'(?:\w+)\.(?:copy|copy2|move|copyfile)\s*\(\s*[\'"][^\'"]*[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)'
             for shutil_match in re.finditer(shutil_pattern, snippet):
                 file_paths.append(shutil_match.group(1))
+            # os.rename/os.replace fallback — Issue #698 (destination is 2nd arg)
+            os_rename_pattern = r'(?:\w+)\.(?:rename|replace)\s*\(\s*[\'"][^\'"]*[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]'
+            for os_rename_match in re.finditer(os_rename_pattern, snippet):
+                file_paths.append(os_rename_match.group(1))
+            # Path(...).rename/Path(...).replace fallback — Issue #698 (destination is 1st arg)
+            path_rename_pattern = r'(?:\w+)\s*\(\s*[\'"][^\'"]+[\'"]\s*\)\.(?:rename|replace)\s*\(\s*[\'"]([^\'"]+)[\'"]'
+            for path_rename_match in re.finditer(path_rename_pattern, snippet):
+                file_paths.append(path_rename_match.group(1))
 
     return file_paths
 
@@ -2265,6 +2308,14 @@ def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
             shutil_pattern = r'(?:\w+)\.(?:copy|copy2|move|copyfile)\s*\(\s*[\'"][^\'"]*[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)'
             for shutil_match in re.finditer(shutil_pattern, snippet):
                 target_paths.append(shutil_match.group(1))
+            # os.rename/os.replace fallback — Issue #698 (destination is 2nd arg)
+            os_rename_pattern = r'(?:\w+)\.(?:rename|replace)\s*\(\s*[\'"][^\'"]*[\'"]\s*,\s*[\'"]([^\'"]+)[\'"]'
+            for os_rename_match in re.finditer(os_rename_pattern, snippet):
+                target_paths.append(os_rename_match.group(1))
+            # Path(...).rename/Path(...).replace fallback — Issue #698 (destination is 1st arg)
+            path_rename_pattern = r'(?:\w+)\s*\(\s*[\'"][^\'"]+[\'"]\s*\)\.(?:rename|replace)\s*\(\s*[\'"]([^\'"]+)[\'"]'
+            for path_rename_match in re.finditer(path_rename_pattern, snippet):
+                target_paths.append(path_rename_match.group(1))
 
     # Check each target path against protected infrastructure
     for fp in target_paths:

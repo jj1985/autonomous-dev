@@ -35,21 +35,29 @@ class _WriteTargetVisitor(ast.NodeVisitor):
         self.targets: List[str] = []
         self._path_aliases: set[str] = {"Path"}  # Track Path class aliases
         self._shutil_aliases: set[str] = {"shutil"}  # Track shutil module aliases
+        self._os_aliases: set[str] = {"os"}  # Track os module aliases
+        self._os_rename_funcs: set[str] = set()  # Track 'from os import rename' style
         self._has_suspicious_exec: bool = False
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        """Track 'from pathlib import Path as P' style aliases."""
+        """Track 'from pathlib import Path as P' and 'from os import rename' style aliases."""
         if node.module and "pathlib" in node.module:
             for alias in (node.names or []):
                 if alias.name == "Path":
                     self._path_aliases.add(alias.asname or alias.name)
+        if node.module in ("os", "os.path"):
+            for alias in (node.names or []):
+                if alias.name in ("rename", "replace"):
+                    self._os_rename_funcs.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
-        """Track 'import shutil as s' style aliases."""
+        """Track 'import shutil as s' and 'import os as o' style aliases."""
         for alias in (node.names or []):
             if alias.name == "shutil":
                 self._shutil_aliases.add(alias.asname or alias.name)
+            if alias.name == "os":
+                self._os_aliases.add(alias.asname or alias.name)
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -57,6 +65,8 @@ class _WriteTargetVisitor(ast.NodeVisitor):
         self._check_path_write(node)
         self._check_open_write(node)
         self._check_shutil_write(node)
+        self._check_os_rename_replace(node)
+        self._check_path_rename(node)
         self._check_exec_eval(node)
         self.generic_visit(node)
 
@@ -114,6 +124,61 @@ class _WriteTargetVisitor(ast.NodeVisitor):
         dst = self._extract_string_arg(node, 1)
         if dst:
             self.targets.append(dst)
+
+    def _check_os_rename_replace(self, node: ast.Call) -> None:
+        """Detect os.rename(src, dst) and os.replace(src, dst) calls.
+
+        The DESTINATION is the second positional argument.
+        Supports aliased os module (import os as o → o.rename(...)).
+        Also supports 'from os import rename' style direct calls.
+        """
+        func = node.func
+
+        if isinstance(func, ast.Attribute):
+            # os.rename(...) / o.rename(...)
+            if func.attr not in ("rename", "replace"):
+                return
+            obj_name = self._get_node_name(func.value)
+            if obj_name not in self._os_aliases:
+                return
+        elif isinstance(func, ast.Name):
+            # from os import rename → rename(...)
+            if func.id not in self._os_rename_funcs:
+                return
+        else:
+            return
+
+        # Destination is the second positional argument
+        dst = self._extract_string_arg(node, 1)
+        if dst:
+            self.targets.append(dst)
+        elif len(node.args) > 1:
+            # Non-constant destination → suspicious
+            self._has_suspicious_exec = True
+
+    def _check_path_rename(self, node: ast.Call) -> None:
+        """Detect Path('x').rename('y') and Path('x').replace('y') calls.
+
+        The DESTINATION is the first argument of the rename/replace call.
+        The source is the Path constructor argument (ignored).
+        """
+        func = node.func
+        if not isinstance(func, ast.Attribute):
+            return
+        if func.attr not in ("rename", "replace"):
+            return
+
+        # The value should be a Call to Path (or alias)
+        value = func.value
+        if isinstance(value, ast.Call):
+            call_name = self._get_call_name(value)
+            if call_name in self._path_aliases:
+                dst = self._extract_string_arg(node, 0)
+                if dst:
+                    self.targets.append(dst)
+                elif node.args:
+                    # Non-constant destination → suspicious
+                    self._has_suspicious_exec = True
 
     def _check_exec_eval(self, node: ast.Call) -> None:
         """Detect eval()/exec() with non-constant arguments."""
@@ -217,6 +282,18 @@ _REGEX_SHUTIL_WRITE = re.compile(
     re.VERBOSE,
 )
 
+# Patterns for os.rename(src, dst) / os.replace(src, dst) — destination is 2nd arg
+_REGEX_OS_RENAME = re.compile(
+    r"""(?:\w+)\.(?:rename|replace)\s*\(\s*['"][^'"]*['"]\s*,\s*['"]([^'"]+)['"]""",
+    re.VERBOSE,
+)
+
+# Patterns for Path('src').rename('dst') / Path('src').replace('dst') — destination is 1st arg of rename/replace
+_REGEX_PATH_RENAME = re.compile(
+    r"""(?:\w+)\s*\(\s*['"][^'"]+['"]\s*\)\.(?:rename|replace)\s*\(\s*['"]([^'"]+)['"]""",
+    re.VERBOSE,
+)
+
 # Patterns for eval/exec with non-string arguments
 _REGEX_SUSPICIOUS_EXEC = re.compile(
     r"""\b(?:eval|exec)\s*\(\s*(?!['"])""",
@@ -249,6 +326,14 @@ def extract_write_targets_regex(code: str) -> List[str]:
 
     # shutil operations
     for match in _REGEX_SHUTIL_WRITE.finditer(code):
+        targets.append(match.group(1))
+
+    # os.rename / os.replace — destination is 2nd arg
+    for match in _REGEX_OS_RENAME.finditer(code):
+        targets.append(match.group(1))
+
+    # Path(...).rename / Path(...).replace — destination is 1st arg of rename/replace
+    for match in _REGEX_PATH_RENAME.finditer(code):
         targets.append(match.group(1))
 
     # Suspicious exec/eval

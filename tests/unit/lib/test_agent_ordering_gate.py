@@ -557,3 +557,83 @@ class TestIssue669SecurityAuditorOrdering:
         assert r.warning is None
         r2 = GateResult(passed=True, reason="ok", warning="test warning")
         assert r2.warning == "test warning"
+
+
+# ---------------------------------------------------------------------------
+# Issue #697 — pipeline_mode filtering of prerequisites
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineModeFiltering:
+    """Tests that ordering prerequisites respect pipeline_mode.
+
+    In --fix mode, planner is not part of the pipeline, so the
+    planner→implementer prerequisite must be skipped. Issue #697.
+    """
+
+    def test_fix_mode_implementer_not_blocked_by_planner(self):
+        """In --fix mode, implementer should NOT require planner (planner never runs)."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="fix"
+        )
+        assert result.passed, f"Implementer should pass in fix mode but got: {result.reason}"
+
+    def test_fix_mode_reviewer_still_blocked_by_implementer(self):
+        """In --fix mode, reviewer should still require implementer."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "reviewer", completed, pipeline_mode="fix"
+        )
+        assert not result.passed
+        assert "implementer" in result.missing_agents
+
+    def test_fix_mode_reviewer_allowed_with_implementer(self):
+        """In --fix mode, reviewer passes when implementer is done."""
+        completed = {"implementer"}
+        result = check_ordering_prerequisites(
+            "reviewer", completed, pipeline_mode="fix"
+        )
+        assert result.passed
+
+    def test_full_mode_implementer_still_blocked_by_planner(self):
+        """In full mode, the original planner→implementer constraint is preserved."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="full"
+        )
+        assert not result.passed
+        assert "planner" in result.missing_agents
+
+    def test_light_mode_implementer_blocked_by_planner(self):
+        """In --light mode, planner IS part of the pipeline, so constraint is enforced."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="light"
+        )
+        assert not result.passed
+        assert "planner" in result.missing_agents
+
+    def test_light_mode_implementer_allowed_with_planner(self):
+        """In --light mode, implementer passes when planner is done."""
+        completed = {"planner"}
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="light"
+        )
+        assert result.passed
+
+    def test_default_pipeline_mode_is_full(self):
+        """Default pipeline_mode should be 'full', preserving backward compatibility."""
+        completed = set()
+        result = check_ordering_prerequisites("implementer", completed)
+        assert not result.passed
+        assert "planner" in result.missing_agents
+
+    def test_fix_mode_doc_master_blocked_by_implementer(self):
+        """In --fix mode, doc-master still requires implementer."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "doc-master", completed, pipeline_mode="fix"
+        )
+        assert not result.passed
+        assert "implementer" in result.missing_agents
