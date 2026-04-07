@@ -212,9 +212,26 @@ Report BLOCKING findings (must fix before merge) and WARNING findings (improveme
 ```
 subagent_type: "doc-master"
 model: "sonnet"
-prompt: "Check if any documentation needs updating based on this fix.
-[paste implementer output]
-Only update docs if behavior changed. Skip if fix is purely internal."
+prompt: "FIX MODE DOCUMENTATION REVIEW: You are reviewing a bug fix for documentation drift. Your task is to determine whether any user-facing documentation, API references, configuration guides, or inline code comments need updating as a result of this fix. Do not summarize the implementer output — use it verbatim.
+
+REQUIRED STEPS — you MUST complete all three:
+
+1. SCAN: Identify every file changed by the fix. For each changed file, list all documentation files that reference the same module, function, class, or configuration key. Check README.md, docs/ directory, inline docstrings, and CHANGELOG entries.
+
+2. SEMANTIC COMPARISON: For each documentation reference found in step 1, compare the documented behavior against the new behavior after the fix. Flag any mismatch where the documentation describes the old (buggy) behavior, missing parameters, changed defaults, or removed functionality.
+
+3. DOC-DRIFT-VERDICT: State one of the following verdicts explicitly:
+   - DOCS-UPDATED: List each file updated and what changed.
+   - NO-UPDATE-NEEDED: Explain why the fix is purely internal with no user-facing behavior change.
+   - DOCS-DRIFT-FOUND: List each documentation file that is now stale and what needs changing, but was not updated (this is a BLOCKING finding).
+
+**Implementer output (VERBATIM — do not skip any section)**:
+[paste FULL implementer output from STEP F3 here — do NOT summarize]
+
+**Changed files for documentation review**:
+[list all files modified in STEP F3]
+
+Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
 ```
 
 3. **Security-auditor** (Sonnet): SKIP unless changed files touch security-sensitive paths

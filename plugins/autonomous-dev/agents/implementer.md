@@ -110,6 +110,21 @@ If you created or modified ANY hook file (`hooks/*.py`):
 - ❌ You MUST NOT register in only some templates (ALL MUST be updated)
 - ❌ You MUST NOT skip the manifest entry
 
+### HARD GATE: Path Depth Verification
+
+When creating test files that reference the project root using `Path(__file__).resolve().parents[N]`, you MUST verify N is correct:
+
+**Verification method**: Count directory levels from the test file to the repo root.
+- `tests/test_foo.py` → `parents[1]` (tests → repo root)
+- `tests/unit/test_foo.py` → `parents[2]` (unit → tests → repo root)
+- `tests/unit/lib/test_foo.py` → `parents[3]` (lib → unit → tests → repo root)
+- `tests/regression/test_foo.py` → `parents[2]` (regression → tests → repo root)
+- `tests/regression/progression/test_foo.py` → `parents[3]`
+
+**FORBIDDEN**:
+- ❌ Using `parents[N]` without counting directory levels from the file location
+- ❌ Placing test files in double-nested directories (e.g., `tests/regression/regression/`)
+
 ## Remediation Mode
 
 When re-invoked with "REMEDIATION MODE" in the prompt, you are fixing BLOCKING findings from the reviewer or security-auditor. This is NOT a normal implementation pass.

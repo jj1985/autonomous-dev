@@ -155,6 +155,47 @@ class TestPlannerAgent:
         assert "HARD GATE" in self.content
 
 
+class TestImplementerAgent:
+    """implementer.md: HARD GATEs for skips, stubs, hooks, and path depth."""
+
+    def setup_method(self):
+        self.content = (AGENTS_DIR / "implementer.md").read_text()
+
+    def test_hard_gate_path_depth_verification_exists(self):
+        """Implementer must have Path Depth Verification HARD GATE (Issue #694)."""
+        assert "HARD GATE: Path Depth Verification" in self.content
+
+    def test_path_depth_verification_method(self):
+        """Path depth section must include verification method with examples."""
+        assert "parents[1]" in self.content
+        assert "parents[2]" in self.content
+        assert "parents[3]" in self.content
+
+    def test_path_depth_forbidden_list(self):
+        """Path depth section must forbid using parents[N] without counting."""
+        assert "without counting directory levels" in self.content
+
+    def test_path_depth_double_nested_forbidden(self):
+        """Path depth section must forbid double-nested directories (Issue #694)."""
+        assert "double-nested directories" in self.content
+
+    def test_hard_gate_no_new_skips(self):
+        """Implementer must have No New Skips HARD GATE."""
+        assert "HARD GATE: No New Skips" in self.content
+
+    def test_hard_gate_regression_test_for_bug_fixes(self):
+        """Implementer must have Regression Test for Bug Fixes HARD GATE."""
+        assert "HARD GATE: Regression Test for Bug Fixes" in self.content
+
+    def test_hard_gate_hook_registration(self):
+        """Implementer must have Hook Registration Verification HARD GATE."""
+        assert "HARD GATE: Hook Registration Verification" in self.content
+
+    def test_forbidden_list_exists(self):
+        """Implementer must have FORBIDDEN behaviors."""
+        assert "FORBIDDEN" in self.content
+
+
 class TestResearcherLocalAgent:
     """researcher-local.md: HARD GATE on empty results."""
 

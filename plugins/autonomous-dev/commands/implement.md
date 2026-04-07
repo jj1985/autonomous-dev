@@ -351,9 +351,16 @@ If research came from the issue body (ISSUE_RESEARCH_HIT), prefix the research c
 
 ### STEP 6: Generate Acceptance Tests (default mode only)
 
-**Progress**: Output step banner (STEP 6/15 — Acceptance Tests). Output completion after.
+**Progress**: Output step banner (STEP 6/15 — Acceptance Tests). Output completion after. **Output the STEP 6 banner even when skipping** — the banner followed by the skip reason provides an audit trail.
 
-Skip if `--tdd-first`. Check `tests/genai/conftest.py` exists (if not, fall back to TDD-first). Generate `tests/genai/test_acceptance_{slug}.py` with one `genai.judge()` test per acceptance criterion from planner output.
+**Skip Logic**: Skip if `--tdd-first`. Check `tests/genai/conftest.py` exists (if not, fall back to TDD-first). Generate `tests/genai/test_acceptance_{slug}.py` with one `genai.judge()` test per acceptance criterion from planner output.
+
+**Required Skip/Execute Logging** — The coordinator MUST output exactly one of the following after the step banner:
+```
+STEP 6: SKIPPED (--tdd-first mode — test-master handles tests in STEP 7)
+STEP 6: SKIPPED (tests/genai/conftest.py not found — falling back to TDD-first)
+STEP 6: EXECUTED (N acceptance tests generated from M criteria)
+```
 
 **Test Placement Classification Rule** — Before writing any acceptance test, classify it by what it actually does:
 
@@ -380,6 +387,11 @@ criteria = [
 save_criteria_registry(criteria, Path(".claude/local"))
 ```
 This registry is consumed by `step5_quality_gate.run_quality_gate()` to report acceptance coverage (N/M criteria) in the STEP 8 test gate output.
+
+**FORBIDDEN**:
+- ❌ Silently skipping STEP 6 without outputting a skip reason
+- ❌ Proceeding from STEP 5 to STEP 8 without either executing or explicitly skipping STEP 6
+- ❌ Skipping STEP 6 when tests/genai/conftest.py exists and mode is not --tdd-first
 
 ### STEP 7: Test-Master (--tdd-first only)
 
