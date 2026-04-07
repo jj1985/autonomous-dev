@@ -1,6 +1,9 @@
 ## [Unreleased]
 
 ### Added
+- **`covers_index.py` library for doc-master optimization** (Issue #713): New `covers_index.py` library pre-computes the source-path to doc-file mapping that doc-master previously rebuilt on every invocation by scanning all 23+ `docs/*.md` files for `covers:` YAML frontmatter. `build_covers_index(docs_dir)` scans once and returns a dict; `get_affected_docs(changed_files, index)` queries it using exact, prefix (`/`), and glob (`*`) matching. `save_covers_index()` and `load_covers_index()` handle JSON persistence with metadata keys. `scripts/build_covers_index.py` is the CLI to regenerate `docs/covers_index.json`. 24 unit tests in `tests/unit/lib/test_covers_index.py`. `docs/LIBRARIES.md` gains entry 81 for this library.
+
+### Added
 - **Token-per-step tracking for pipeline efficiency analysis** (Issue #704): `session_activity_logger.py` now extracts `total_tokens`, `tool_uses`, and `agent_duration_ms` from `<usage>` blocks in Agent/Task tool result text. `PipelineEvent` in `pipeline_intent_validator.py` gains `total_tokens: int` and `tool_uses: int` fields populated from these log entries. `AgentTiming` in `pipeline_timing_analyzer.py` gains matching `total_tokens` and `tool_uses` fields; `format_timing_report()` conditionally adds `Tokens` and `Tok/Word` columns when token data is present. A new `TOKEN_EFFICIENCY` finding type is emitted when `tokens_per_word > 500`, recommending a smaller model tier. `continuous-improvement-analyst` gains check #13 (Token Efficiency Analysis): flags per-invocation token budget overruns (`total_tokens > 100000`) and high tokens-per-word ratios, with find-or-create+comment dedup and a 2-issue circuit breaker per run. `docs/AGENTS.md`, `docs/HOOKS.md`, and `docs/LIBRARIES.md` updated to reflect the new fields and check.
 
 ### Fixed

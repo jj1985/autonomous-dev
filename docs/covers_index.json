@@ -1,0 +1,122 @@
+{
+  "_generated": "2026-04-07T22:45:49.792694+00:00",
+  "_doc_count": 23,
+  ".claude/PROJECT.md": [
+    "docs/MAINTAINING-PHILOSOPHY.md"
+  ],
+  ".github/workflows/": [
+    "docs/GITHUB-ACTIONS.md"
+  ],
+  "plugins/autonomous-dev/agents/": [
+    "docs/AGENTS.md",
+    "docs/ARCHITECTURE-OVERVIEW.md"
+  ],
+  "plugins/autonomous-dev/agents/implementer.md": [
+    "docs/PERFORMANCE.md",
+    "docs/WORKFLOW-DISCIPLINE.md"
+  ],
+  "plugins/autonomous-dev/agents/planner.md": [
+    "docs/PERFORMANCE.md"
+  ],
+  "plugins/autonomous-dev/agents/researcher.md": [
+    "docs/PERFORMANCE.md"
+  ],
+  "plugins/autonomous-dev/commands/": [
+    "docs/ARCHITECTURE-OVERVIEW.md",
+    "docs/MAINTAINING-PHILOSOPHY.md"
+  ],
+  "plugins/autonomous-dev/commands/implement-batch.md": [
+    "docs/BATCH-PROCESSING.md"
+  ],
+  "plugins/autonomous-dev/commands/implement.md": [
+    "docs/BATCH-PROCESSING.md",
+    "docs/WORKFLOW-DISCIPLINE.md"
+  ],
+  "plugins/autonomous-dev/commands/mem-search.md": [
+    "docs/CLAUDE-MEM-INTEGRATION.md"
+  ],
+  "plugins/autonomous-dev/config/auto_approve_policy.json": [
+    "docs/TOOL-AUTO-APPROVAL.md"
+  ],
+  "plugins/autonomous-dev/config/component_classifications.json": [
+    "docs/HARNESS-EVOLUTION.md"
+  ],
+  "plugins/autonomous-dev/config/hook-metadata.schema.json": [
+    "docs/HOOK-SIDECAR-SCHEMA.md"
+  ],
+  "plugins/autonomous-dev/hooks/": [
+    "docs/ADR-001-agent-hooks.md",
+    "docs/ARCHITECTURE-OVERVIEW.md",
+    "docs/HOOK-REGISTRY.md",
+    "docs/HOOKS.md",
+    "docs/MAINTAINING-PHILOSOPHY.md"
+  ],
+  "plugins/autonomous-dev/hooks/*.hook.json": [
+    "docs/HOOK-SIDECAR-SCHEMA.md"
+  ],
+  "plugins/autonomous-dev/hooks/auto_format.py": [
+    "docs/ACCOUNTABILITY-HOOKS.md"
+  ],
+  "plugins/autonomous-dev/hooks/security_scan.py": [
+    "docs/ACCOUNTABILITY-HOOKS.md"
+  ],
+  "plugins/autonomous-dev/hooks/unified_pre_tool.py": [
+    "docs/MCP-ARCHITECTURE.md",
+    "docs/MCP-SECURITY.md",
+    "docs/SANDBOXING.md",
+    "docs/TOOL-AUTO-APPROVAL.md"
+  ],
+  "plugins/autonomous-dev/hooks/validate_project_alignment.py": [
+    "docs/ACCOUNTABILITY-HOOKS.md"
+  ],
+  "plugins/autonomous-dev/lib/": [
+    "docs/ARCHITECTURE-OVERVIEW.md",
+    "docs/LIBRARIES.md"
+  ],
+  "plugins/autonomous-dev/lib/auto_implement_git_integration.py": [
+    "docs/GIT-AUTOMATION.md"
+  ],
+  "plugins/autonomous-dev/lib/batch_retry_manager.py": [
+    "docs/BATCH-PROCESSING.md"
+  ],
+  "plugins/autonomous-dev/lib/batch_state_manager.py": [
+    "docs/BATCH-PROCESSING.md"
+  ],
+  "plugins/autonomous-dev/lib/github_issue_closer.py": [
+    "docs/GIT-AUTOMATION.md"
+  ],
+  "plugins/autonomous-dev/lib/hook_exit_codes.py": [
+    "docs/ADR-001-agent-hooks.md",
+    "docs/HOOKS.md"
+  ],
+  "plugins/autonomous-dev/lib/sandbox_enforcer.py": [
+    "docs/SANDBOXING.md"
+  ],
+  "plugins/autonomous-dev/lib/security_utils.py": [
+    "docs/SECURITY.md"
+  ],
+  "plugins/autonomous-dev/lib/session_state_manager.py": [
+    "docs/CONTEXT-MANAGEMENT.md"
+  ],
+  "plugins/autonomous-dev/lib/session_tracker.py": [
+    "docs/CONTEXT-MANAGEMENT.md"
+  ],
+  "plugins/autonomous-dev/lib/test_coverage_analyzer.py": [
+    "docs/TESTING-STRATEGY.md"
+  ],
+  "plugins/autonomous-dev/lib/test_runner.py": [
+    "docs/TESTING-STRATEGY.md"
+  ],
+  "plugins/autonomous-dev/lib/worktree_manager.py": [
+    "docs/BATCH-PROCESSING.md"
+  ],
+  "plugins/autonomous-dev/skills/": [
+    "docs/ARCHITECTURE-OVERVIEW.md"
+  ],
+  "plugins/autonomous-dev/skills/testing-guide/": [
+    "docs/TESTING-STRATEGY.md"
+  ],
+  "scripts/generate_hook_config.py": [
+    "docs/HOOK-SIDECAR-SCHEMA.md"
+  ]
+}

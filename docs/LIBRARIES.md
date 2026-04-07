@@ -99,6 +99,8 @@ The autonomous-dev plugin includes shared libraries organized into the following
 
 80. **skill_change_detector.py** - Detect which skills were modified in a changeset and check evaluation readiness. `detect_skill_changes(file_paths)` extracts skill names from paths matching `skills/*/SKILL.md`. `get_eval_status(skill_name, *, repo_root)` checks for eval prompts (`tests/genai/skills/eval_prompts/{name}.json`) and baseline data (`tests/genai/skills/baselines/effectiveness.json`), returning `{skill_name, has_eval_prompts, baseline, evaluable}`. `format_skill_eval_report(results)` formats per-skill results with PASS/WARNING/BLOCK verdicts (delta < -0.10 triggers BLOCK). `get_weak_skills(baselines_path, *, min_delta, min_pass_rate, stale_days)` identifies skills with weak delta, low pass rate, or stale baselines — used by `/improve` STEP 2.5 to surface skill health. Used by STEP 11.5 (Skill Effectiveness Gate) in `/implement` and by `/improve`. (v1.0.0, Issue #643)
 
+81. **covers_index.py** - Pre-computed source-path to doc-file mapping for doc-master optimization. `build_covers_index(docs_dir)` scans all `*.md` files for `covers:` YAML frontmatter and returns a dict mapping each source path (or pattern) to the sorted list of doc files that cover it. `get_affected_docs(changed_files, index)` matches changed paths against index keys using exact match, prefix match (keys ending in `/`), and glob match (keys containing `*`), returning a deduplicated sorted list of affected doc paths. `save_covers_index(index, output_path)` writes the index as formatted JSON with `_generated` and `_doc_count` metadata keys. `load_covers_index(index_path)` reads the JSON and strips metadata keys. Eliminates doc-master's per-invocation 23-file scan; the index is pre-built by `scripts/build_covers_index.py` and stored at `docs/covers_index.json`. (v1.0.0, Issue #713)
+
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
 22. **agent_tracker.py** (see section 24)
@@ -16346,3 +16348,36 @@ print(report.format_table())
 - Tests added as part of Issue #654 implementation
 
 **Version History**: v1.0.0 (2026-04-07) - Initial release for `/autoresearch` autonomous experiment loop (Issue #654)
+
+## 176+9. covers_index.py (v1.0.0 - Issue #713)
+
+**Purpose**: Pre-computed source-path to doc-file mapping for doc-master optimization. Parses `covers:` YAML frontmatter from all `docs/*.md` files once (at index build time) and stores the result as `docs/covers_index.json`, eliminating the per-invocation 23-file scan that previously ran on every doc-master call.
+
+**Location**: `plugins/autonomous-dev/lib/covers_index.py`
+
+**Key Features**:
+- Frontmatter extraction: reads YAML between `---` delimiters, returns the `covers:` list as strings; gracefully handles missing frontmatter, YAML parse errors, and encoding errors
+- Three matching modes in `get_affected_docs()`: exact match, prefix match (index key ends with `/`), and glob match (index key contains `*`, matched with `fnmatch`)
+- Metadata preservation: `save_covers_index()` writes `_generated` (ISO timestamp) and `_doc_count` alongside the index; `load_covers_index()` strips metadata keys (prefix `_`) on read so callers receive a clean dict
+- Deterministic output: doc lists within each index key are sorted; index keys are sorted when serialized
+- CLI companion: `scripts/build_covers_index.py` regenerates `docs/covers_index.json` and prints a summary line (`N source paths, M doc mappings`)
+
+### Public API
+
+**Functions**:
+- `build_covers_index(docs_dir: Path) -> dict[str, list[str]]` — scan all `*.md` files in docs_dir, return source-path → doc-file mapping
+- `get_affected_docs(changed_files: list[str], index: dict[str, list[str]]) -> list[str]` — return deduplicated sorted list of doc files affected by the given changed paths
+- `save_covers_index(index: dict[str, list[str]], output_path: Path) -> None` — write index + metadata as formatted JSON
+- `load_covers_index(index_path: Path) -> dict[str, list[str]]` — load and return index without metadata keys; raises `FileNotFoundError` or `json.JSONDecodeError` on failure
+
+### Integration
+
+- Consumed by `doc-master` agent (`agents/doc-master.md`) to replace the per-invocation bash frontmatter scan
+- Pre-built by `scripts/build_covers_index.py`; generated output stored at `docs/covers_index.json`
+- Dependency: `pyyaml` (already required by several other lib modules)
+
+### Testing
+
+- `tests/unit/lib/test_covers_index.py` — 24 tests covering build, query (exact/prefix/glob), save/load round-trip, metadata stripping, and error handling
+
+**Version History**: v1.0.0 (2026-04-08) - Initial release for doc-master covers index optimization (Issue #713)
