@@ -9,7 +9,7 @@ Issues: #625, #629, #632, #636, #669
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Set
 
 # Import canonical ordering from pipeline_intent_validator if available.
 # Fall back to inline constants if import fails (e.g., running outside plugin).
@@ -57,6 +57,13 @@ FULL_PIPELINE_AGENTS = {
 LIGHT_PIPELINE_AGENTS = {
     "planner",
     "implementer",
+    "doc-master",
+}
+
+# Fix mode requires only the core fix agents
+FIX_PIPELINE_AGENTS = {
+    "implementer",
+    "reviewer",
     "doc-master",
 }
 
@@ -170,12 +177,6 @@ def check_ordering_prerequisites(
                     f"but may indicate an ordering issue. Issue #669."
                 )
 
-        if not missing:
-            # Pass with optional warning
-            if warning and not core_prereqs - completed_agents:
-                # Only attach warning if core prereqs are met (otherwise will fail below)
-                pass  # warning will be attached to final result
-
     # Check TDD-first prerequisites (only when test-master has completed,
     # meaning TDD-first mode is active). Issue #636.
     if "test-master" in completed_agents:
@@ -215,6 +216,37 @@ def check_ordering_prerequisites(
         reason=f"Prerequisites met for '{target}'",
         warning=result_warning,
     )
+
+
+def get_required_agents(
+    mode: str = "full",
+    *,
+    research_skipped: bool = False,
+) -> Set[str]:
+    """Return the set of required agents for a given pipeline mode.
+
+    Args:
+        mode: Pipeline mode — "full", "light", "fix", or "tdd-first".
+        research_skipped: If True and mode is "full", excludes researcher-local
+            and researcher (they are legitimately skipped when issue body
+            contains pre-researched content).
+
+    Returns:
+        A new set of required agent names (copy, not reference).
+    """
+    if mode == "fix":
+        return set(FIX_PIPELINE_AGENTS)
+    elif mode == "light":
+        return set(LIGHT_PIPELINE_AGENTS)
+    elif mode == "tdd-first":
+        return set(FULL_PIPELINE_AGENTS) | {"test-master"}
+    else:
+        # full mode (default)
+        agents = set(FULL_PIPELINE_AGENTS)
+        if research_skipped:
+            agents.discard("researcher-local")
+            agents.discard("researcher")
+        return agents
 
 
 def check_minimum_agent_count(
@@ -259,6 +291,8 @@ def check_batch_agent_completeness(
     """
     if mode == "light":
         required = LIGHT_PIPELINE_AGENTS
+    elif mode == "fix":
+        required = FIX_PIPELINE_AGENTS
     else:
         required = FULL_PIPELINE_AGENTS
 

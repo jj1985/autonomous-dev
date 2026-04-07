@@ -27,7 +27,14 @@ Issues filed to: `akaszubski/autonomous-dev`, labeled `auto-improvement`
 
 ### Pipeline Integrity (Checks 1-3)
 
-1. **Pipeline Completeness**: Did all required agents run? (researcher-local, researcher, planner, test-master, implementer, reviewer, security-auditor, doc-master). Missing agent → `[INCOMPLETE]`. Note: test-master is only required in `--tdd-first` mode; default acceptance-first mode uses 7 agents (no test-master).
+1. **Pipeline Completeness**: Did all required agents run for the given pipeline mode? Missing agent → `[INCOMPLETE]`. When evaluating pipeline completeness, check the MODE first (provided in the prompt context), then compare against the correct agent set. Do NOT flag agents as missing if they are not required for the current mode.
+
+   Pipeline mode agent requirements:
+   - **full** (default): researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst (8 agents)
+   - **full + research-skip**: planner, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst (6 agents — researcher-local and researcher legitimately skipped when issue body contains pre-researched content)
+   - **--tdd-first**: researcher-local, researcher, planner, test-master, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst (9 agents)
+   - **--fix**: implementer, reviewer, doc-master, continuous-improvement-analyst (4 agents). security-auditor optional (only if security-sensitive files changed)
+   - **--light**: planner, implementer, doc-master, continuous-improvement-analyst (4 agents)
 2. **Gate integrity**: Were HARD GATEs respected? (test gate passed before STEP 6, no `NotImplementedError` stubs)
 3. **Step ordering**: Did steps execute in correct sequence? STEP 2 before 3, STEP 5 before 6. Out-of-order → `[ORDERING]`
 
@@ -105,7 +112,7 @@ Includes Intent-Level Pipeline Validation via `pipeline_intent_validator` (step 
 
 3. **Short agent output word count**: Agents returning structured verdicts (PASS/FAIL, APPROVE/REQUEST_CHANGES) have low word counts (30-100 words). This is correct behavior. Only flag as `[GHOST]` when duration <10s AND result_word_count <50 AND the agent did zero tool uses.
 
-4. **test-master absent in default mode**: test-master only runs in `--tdd-first` mode. Default acceptance-first mode uses 7 agents, not 8. Do NOT flag test-master as missing unless `--tdd-first` was specified.
+4. **test-master absent in default mode**: test-master only runs in `--tdd-first` mode. Default acceptance-first mode uses 8 agents (including continuous-improvement-analyst), not 9. Do NOT flag test-master as missing unless `--tdd-first` was specified.
 
 5. **Implementer duration varies greatly with feature complexity**: Only flag implementer as SLOW when duration >8min AND word output is low (words_per_second < 1.0). Large implementations producing substantial output are expected to take longer.
 
