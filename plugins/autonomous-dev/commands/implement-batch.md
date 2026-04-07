@@ -186,6 +186,8 @@ Issue #N agent verification:
    **Required agents** (mode-conditional):
    - **Default mode** (acceptance-first): 8 agents — researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst
    - **TDD-first mode** (`--tdd-first`): 9 agents — add test-master
+   - **Fix mode** (`--fix`): 4 agents — implementer, reviewer, doc-master, continuous-improvement-analyst
+   - **Light mode** (`--light`): 4 agents — planner, implementer, doc-master, continuous-improvement-analyst
 
    **Verification method**: Count the Task tool invocations with distinct `subagent_type` values for the current issue. The coordinator MUST enumerate which agents actually ran.
 
@@ -201,7 +203,7 @@ Issue #N agent verification:
      security-auditor: ✓/✗
      doc-master:       ✓/✗
      continuous-improvement-analyst: ✓/✗
-   Result: 8/8 PASS (default) | 9/9 PASS (--tdd-first) | X/N FAIL — missing: [list]
+   Result: 8/8 PASS (default) | 9/9 PASS (--tdd-first) | 4/4 PASS (--fix) | 4/4 PASS (--light) | X/N FAIL — missing: [list]
    ```
 
    **If any agent is MISSING**: BLOCK. Do NOT advance to the next issue. Complete the missing agents for this issue first. Then re-verify.
@@ -553,6 +555,8 @@ Same as BATCH FILE MODE:
    Agents that ran for Issue #N: [list from verification step with ✓/✗]
    Agent timings: [list agent name + duration + tool use count if available]
    Errors observed: [any errors from implementer/reviewer/security-auditor]
+   Pipeline mode: [fix|full|light|tdd-first]
+   Expected agents for this mode: [list from get_required_agents() — e.g., "implementer, reviewer, doc-master, continuous-improvement-analyst (4 agents)" for --fix]
    Provide a short findings list only. Do NOT file issues — defer to post-batch."
    ```
 

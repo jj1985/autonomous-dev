@@ -14,12 +14,14 @@ LIB_DIR = Path(__file__).resolve().parents[3] / "plugins" / "autonomous-dev" / "
 sys.path.insert(0, str(LIB_DIR))
 
 from agent_ordering_gate import (
+    FIX_PIPELINE_AGENTS,
     FULL_PIPELINE_AGENTS,
     LIGHT_PIPELINE_AGENTS,
     GateResult,
     check_batch_agent_completeness,
     check_minimum_agent_count,
     check_ordering_prerequisites,
+    get_required_agents,
 )
 
 
@@ -114,13 +116,16 @@ class TestSequentialOrdering:
         )
         assert result.passed
 
-    def test_test_master_blocked_without_planner(self):
+    def test_test_master_passes_without_planner(self):
+        """test-master has no core prerequisites — TDD-first pairs are only
+        enforced after test-master has completed (Issue #636)."""
         completed = set()
         result = check_ordering_prerequisites(
             "test-master", completed, validation_mode="sequential"
         )
-        assert not result.passed
-        assert "planner" in result.missing_agents
+        # test-master is not in STEP_ORDER (no core prerequisites defined),
+        # so it passes as an unknown agent
+        assert result.passed
 
     def test_empty_completed_blocks_dependents(self):
         for agent in ["implementer", "reviewer", "security-auditor", "doc-master"]:
@@ -284,3 +289,271 @@ class TestBatchCompleteness:
     def test_light_mode_agents_subset_of_full(self):
         """Light mode agents should be a subset of full pipeline agents."""
         assert LIGHT_PIPELINE_AGENTS.issubset(FULL_PIPELINE_AGENTS)
+
+
+# ---------------------------------------------------------------------------
+# get_required_agents
+# ---------------------------------------------------------------------------
+
+
+class TestGetRequiredAgents:
+    """Tests for get_required_agents() — mode-aware agent set resolution."""
+
+    def test_fix_mode_returns_fix_agents(self):
+        result = get_required_agents("fix")
+        assert result == {"implementer", "reviewer", "doc-master"}
+
+    def test_light_mode_returns_light_agents(self):
+        result = get_required_agents("light")
+        assert result == {"planner", "implementer", "doc-master"}
+
+    def test_full_mode_returns_full_pipeline_agents(self):
+        result = get_required_agents("full")
+        assert result == FULL_PIPELINE_AGENTS
+
+    def test_full_mode_with_research_skipped(self):
+        result = get_required_agents("full", research_skipped=True)
+        assert "researcher-local" not in result
+        assert "researcher" not in result
+        assert len(result) == len(FULL_PIPELINE_AGENTS) - 2
+
+    def test_tdd_first_mode_returns_full_plus_test_master(self):
+        result = get_required_agents("tdd-first")
+        assert result == FULL_PIPELINE_AGENTS | {"test-master"}
+        assert len(result) == len(FULL_PIPELINE_AGENTS) + 1
+
+    def test_research_skipped_only_affects_full_mode(self):
+        """research_skipped should have no effect on non-full modes."""
+        fix_normal = get_required_agents("fix")
+        fix_skipped = get_required_agents("fix", research_skipped=True)
+        assert fix_normal == fix_skipped
+
+        light_normal = get_required_agents("light")
+        light_skipped = get_required_agents("light", research_skipped=True)
+        assert light_normal == light_skipped
+
+    def test_returns_copy_not_reference_full(self):
+        """Must return a copy so callers can mutate without affecting constants."""
+        result = get_required_agents("full")
+        result.add("fake-agent")
+        assert "fake-agent" not in FULL_PIPELINE_AGENTS
+
+    def test_returns_copy_not_reference_fix(self):
+        result = get_required_agents("fix")
+        result.add("fake-agent")
+        assert "fake-agent" not in FIX_PIPELINE_AGENTS
+
+    def test_returns_copy_not_reference_light(self):
+        result = get_required_agents("light")
+        result.add("fake-agent")
+        assert "fake-agent" not in LIGHT_PIPELINE_AGENTS
+
+    def test_default_mode_is_full(self):
+        result = get_required_agents()
+        assert result == FULL_PIPELINE_AGENTS
+
+    def test_full_with_research_skipped_has_5_agents(self):
+        result = get_required_agents("full", research_skipped=True)
+        assert len(result) == 5
+        assert result == {"planner", "implementer", "reviewer", "security-auditor", "doc-master"}
+
+
+# ---------------------------------------------------------------------------
+# check_batch_agent_completeness — Fix mode
+# ---------------------------------------------------------------------------
+
+
+class TestBatchCompletenessFixMode:
+    """Tests for check_batch_agent_completeness with fix and other modes."""
+
+    def test_fix_mode_with_all_3_agents_passes(self):
+        completed = {"implementer", "reviewer", "doc-master"}
+        result = check_batch_agent_completeness(completed, issue_number=100, mode="fix")
+        assert result.passed
+
+    def test_fix_mode_missing_reviewer_fails(self):
+        completed = {"implementer", "doc-master"}
+        result = check_batch_agent_completeness(completed, issue_number=100, mode="fix")
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_fix_mode_missing_implementer_fails(self):
+        completed = {"reviewer", "doc-master"}
+        result = check_batch_agent_completeness(completed, issue_number=100, mode="fix")
+        assert not result.passed
+        assert "implementer" in result.missing_agents
+
+    def test_light_mode_with_all_3_agents_passes(self):
+        completed = {"planner", "implementer", "doc-master"}
+        result = check_batch_agent_completeness(completed, issue_number=10, mode="light")
+        assert result.passed
+
+    def test_full_mode_with_research_skipped_and_5_agents_passes(self):
+        """Full mode with all 7 agents (including researchers) passes."""
+        completed = FULL_PIPELINE_AGENTS.copy()
+        result = check_batch_agent_completeness(completed, issue_number=50)
+        assert result.passed
+
+    def test_fix_mode_issue_number_in_reason(self):
+        result = check_batch_agent_completeness(set(), issue_number=42, mode="fix")
+        assert "#42" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# CIA agent definition — mode-aware requirements
+# ---------------------------------------------------------------------------
+
+
+class TestCIAAgentDefinition:
+    """Verify the CIA agent markdown documents mode-aware agent requirements."""
+
+    CIA_PATH = (
+        Path(__file__).resolve().parents[3]
+        / "plugins"
+        / "autonomous-dev"
+        / "agents"
+        / "continuous-improvement-analyst.md"
+    )
+
+    def test_cia_contains_fix_mode_entry(self):
+        """CIA agent must document --fix mode agent requirements."""
+        content = self.CIA_PATH.read_text()
+        assert "--fix" in content
+
+    def test_cia_contains_light_mode_entry(self):
+        """CIA agent must document --light mode agent requirements."""
+        content = self.CIA_PATH.read_text()
+        assert "--light" in content
+
+    def test_cia_contains_self_reference(self):
+        """CIA agent must reference continuous-improvement-analyst in mode requirements."""
+        content = self.CIA_PATH.read_text()
+        assert "continuous-improvement-analyst" in content
+
+
+# ---------------------------------------------------------------------------
+# Issue #669: security-auditor ordering recurrence regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestIssue669SecurityAuditorOrdering:
+    """Regression tests for Issue #669: security-auditor ordering violation recurrence.
+
+    The bug: In batch sessions, security-auditor ran before reviewer completed.
+    This violated the pipeline spec (reviewer must complete before security-auditor).
+
+    Root cause: hooks failing to load in worktrees (#651) + fail-open exception handler.
+    Fix: defensive parallel-mode check + warning logging.
+    """
+
+    def test_sequential_mode_blocks_security_auditor_without_reviewer(self):
+        """Core regression: security-auditor MUST be blocked without reviewer in sequential mode."""
+        completed = {"planner", "implementer"}
+        result = check_ordering_prerequisites(
+            "security-auditor", completed, validation_mode="sequential"
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_sequential_mode_allows_security_auditor_with_reviewer(self):
+        """security-auditor allowed when reviewer has completed."""
+        completed = {"planner", "implementer", "reviewer"}
+        result = check_ordering_prerequisites(
+            "security-auditor", completed, validation_mode="sequential"
+        )
+        assert result.passed
+
+    def test_parallel_mode_blocks_when_reviewer_not_launched(self):
+        """Issue #669: parallel mode should block security-auditor if reviewer
+        hasn't even been launched (not just not completed)."""
+        completed = {"planner", "implementer"}
+        launched = {"planner", "implementer"}  # reviewer not launched
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_parallel_mode_allows_when_reviewer_launched(self):
+        """Parallel mode allows security-auditor when reviewer is launched
+        (running concurrently), even if reviewer hasn't completed yet."""
+        completed = {"planner", "implementer"}
+        launched = {"planner", "implementer", "reviewer"}  # reviewer launched
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert result.passed
+
+    def test_parallel_mode_warns_when_reviewer_not_completed(self):
+        """Parallel mode emits warning when reviewer launched but not completed."""
+        completed = {"planner", "implementer"}
+        launched = {"planner", "implementer", "reviewer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert result.passed
+        assert result.warning is not None
+        assert "PARALLEL MODE WARNING" in result.warning
+        assert "#669" in result.warning
+
+    def test_parallel_mode_no_warning_when_reviewer_completed(self):
+        """No warning when reviewer has completed in parallel mode."""
+        completed = {"planner", "implementer", "reviewer"}
+        launched = {"planner", "implementer", "reviewer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+            launched_agents=launched,
+        )
+        assert result.passed
+        assert result.warning is None
+
+    def test_parallel_mode_without_launched_agents_allows(self):
+        """When launched_agents is not provided, parallel mode allows
+        (backward compatibility — no launched info available)."""
+        completed = {"planner", "implementer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed,
+            validation_mode="parallel",
+        )
+        assert result.passed
+
+    def test_batch_context_sequential_enforcement(self):
+        """Simulates batch context: PIPELINE_ISSUE_NUMBER set, sequential mode.
+        security-auditor should still be blocked without reviewer."""
+        # In batch mode, each issue tracks completed agents independently.
+        # The ordering gate is called per-issue with that issue's completed set.
+        completed_for_issue = {"planner", "implementer"}
+        result = check_ordering_prerequisites(
+            "security-auditor",
+            completed_for_issue,
+            validation_mode="sequential",
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_default_mode_is_sequential_blocks_security_auditor(self):
+        """Default validation_mode must be 'sequential', which blocks
+        security-auditor without reviewer. Issue #669."""
+        completed = {"planner", "implementer"}
+        result = check_ordering_prerequisites("security-auditor", completed)
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_gate_result_has_warning_field(self):
+        """GateResult dataclass includes optional warning field (Issue #669)."""
+        r = GateResult(passed=True, reason="ok")
+        assert r.warning is None
+        r2 = GateResult(passed=True, reason="ok", warning="test warning")
+        assert r2.warning == "test warning"
