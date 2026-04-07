@@ -159,13 +159,21 @@ class TestIsPipelineActive:
         os.unlink(f.name)
 
     def test_stale_state_file(self, monkeypatch):
-        """Pipeline state file > 2 hours old should not activate."""
+        """Pipeline state file with mtime > 30 min old should not activate.
+
+        Issue #636 changed _is_pipeline_active() to use file mtime (30-min TTL)
+        instead of session_start JSON field. Set mtime to 31+ minutes ago.
+        """
         monkeypatch.delenv("CLAUDE_AGENT_NAME", raising=False)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             old_time = datetime.now() - timedelta(hours=3)
             state = {"session_start": old_time.isoformat()}
             json.dump(state, f)
             f.flush()
+            # Set file mtime to 31 minutes ago so mtime-based staleness check triggers
+            import time
+            stale_time = time.time() - (31 * 60)
+            os.utime(f.name, (stale_time, stale_time))
             monkeypatch.setenv("PIPELINE_STATE_FILE", f.name)
             assert hook._is_pipeline_active() is False
         os.unlink(f.name)

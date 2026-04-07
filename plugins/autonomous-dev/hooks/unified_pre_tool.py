@@ -508,16 +508,30 @@ def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, s
             return ("allow", "Could not determine target agent - allowing")
 
         # Import completion state and ordering gate
-        from pipeline_completion_state import get_completed_agents, get_validation_mode
+        from pipeline_completion_state import (
+            get_completed_agents,
+            get_launched_agents,
+            get_validation_mode,
+            record_agent_launch,
+        )
         from agent_ordering_gate import check_ordering_prerequisites
 
         session_id = _session_id or os.getenv("CLAUDE_SESSION_ID", "unknown")
         issue_number = int(os.getenv("PIPELINE_ISSUE_NUMBER", "0"))
 
+        # Issue #686: Record agent launch BEFORE checking prerequisites.
+        # This tracks that PreToolUse fired for this agent, enabling the
+        # parallel-mode defense-in-depth guard to distinguish "running
+        # concurrently" from "skipped entirely".
+        record_agent_launch(session_id, target_agent, issue_number=issue_number)
+
         completed = get_completed_agents(session_id, issue_number=issue_number)
+        launched = get_launched_agents(session_id, issue_number=issue_number)
         mode = get_validation_mode(session_id)
 
-        gate = check_ordering_prerequisites(target_agent, completed, validation_mode=mode)
+        gate = check_ordering_prerequisites(
+            target_agent, completed, validation_mode=mode, launched_agents=launched
+        )
         if not gate.passed:
             return ("deny", gate.reason)
 

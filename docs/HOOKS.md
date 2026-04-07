@@ -91,12 +91,14 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - **Layer 3 (Batch Approver)**: User consent caching, audit logging (merged into unified_pre_tool.py per Issue #348)
 - **Layer 4 (Extensions)**: Project/user-specific checks from `.claude/hooks/extensions/*.py` and `~/.claude/hooks/extensions/*.py` — survives `/sync` and `/install` (see Extension Points section)
 
-**Pipeline Ordering Gate** (Issues #625, #629, #632 — native Agent/Task tools only):
+**Pipeline Ordering Gate** (Issues #625, #629, #632, #686 — native Agent/Task tools only):
 - Enforces agent invocation order during active pipeline sessions
-- Reads completion state from `pipeline_completion_state.py` (written by `unified_session_tracker.py`)
+- Records agent launch in `pipeline_completion_state.py` before checking prerequisites (Issue #686)
+- Reads completion and launch state from `pipeline_completion_state.py` (completions written by `unified_session_tracker.py`)
 - Delegates ordering logic to `agent_ordering_gate.py` (pure logic, no I/O)
 - Blocks out-of-order agent calls (e.g., implementer before planner/test-master)
 - Supports sequential mode (default) and parallel mode (`set_validation_mode()`)
+- In parallel mode, distinguishes "running concurrently" (launched, not yet complete — allowed with warning) from "skipped entirely" (never launched — blocked)
 - Controlled by env var `PRE_TOOL_PIPELINE_ORDERING` (default: `true`)
 - Fails open — ordering check errors never block workflow
 
