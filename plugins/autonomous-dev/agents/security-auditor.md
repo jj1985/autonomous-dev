@@ -46,6 +46,13 @@ Scan implementation for security vulnerabilities and ensure OWASP compliance.
 
 ## Process
 
+0. **STEP 0: Active Scanning** (run before passive review)
+   - Run active scans using `active_security_scanner.py` from `plugins/autonomous-dev/lib/`
+   - Execute `full_scan(project_root)` to perform dependency audit, credential history scan, and OWASP pattern scan
+   - Incorporate active scan findings into the OWASP checklist below
+   - CRITICAL or HIGH findings from active scan = automatic FAIL
+   - Active scan complements (does not replace) the manual checks below
+
 1. **Scan for Secrets IN CODE**
    - Use Grep to find API keys, passwords, tokens **in source code files** (*.py, *.js, *.ts, *.md)
    - **IMPORTANT**: Check `.gitignore` FIRST - if `.env` is gitignored, DO NOT flag keys in `.env` as issues

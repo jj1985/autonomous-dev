@@ -44,23 +44,30 @@ if not is_running_under_uv():
         sys.path.insert(0, str(lib_path))
 
 
-SECRET_PATTERNS = [
-    # API keys
-    (r"sk-[a-zA-Z0-9]{20,}", "Anthropic API key"),
-    (r"sk-proj-[a-zA-Z0-9]{20,}", "OpenAI API key"),
-    (r"xoxb-[a-zA-Z0-9-]{40,}", "Slack bot token"),
-    (r"ghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
-    (r"gho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
-    # AWS keys
-    (r"AKIA[0-9A-Z]{16}", "AWS access key ID"),
-    (r"(?i)aws_secret_access_key.*[=:].*[a-zA-Z0-9/+=]{40}", "AWS secret key"),
-    # Generic patterns
-    (r'(?i)(api[_-]?key|apikey).*[=:].*["\'][a-zA-Z0-9]{20,}["\']', "Generic API key"),
-    (r'(?i)(secret|password|passwd|pwd).*[=:].*["\'][^"\']{8,}["\']', "Generic secret"),
-    (r'(?i)token.*[=:].*["\'][a-zA-Z0-9]{20,}["\']', "Generic token"),
-    # Database URLs with credentials
-    (r"(?i)(mongodb|mysql|postgres)://[^:]+:[^@]+@", "Database URL with credentials"),
-]
+# Import SECRET_PATTERNS from shared module (single source of truth — Issue #710)
+try:
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'lib'))
+    from secret_patterns import SECRET_PATTERNS
+except ImportError:
+    # Fallback inline patterns if shared module unavailable
+    SECRET_PATTERNS = [
+        # API keys
+        (r"sk-[a-zA-Z0-9]{20,}", "Anthropic API key"),
+        (r"sk-proj-[a-zA-Z0-9]{20,}", "OpenAI API key"),
+        (r"xoxb-[a-zA-Z0-9-]{40,}", "Slack bot token"),
+        (r"ghp_[a-zA-Z0-9]{36,}", "GitHub personal access token"),
+        (r"gho_[a-zA-Z0-9]{36,}", "GitHub OAuth token"),
+        # AWS keys
+        (r"AKIA[0-9A-Z]{16}", "AWS access key ID"),
+        (r"(?i)aws_secret_access_key.*[=:].*[a-zA-Z0-9/+=]{40}", "AWS secret key"),
+        # Generic patterns
+        (r'(?i)(api[_-]?key|apikey).*[=:].*["\'][a-zA-Z0-9]{20,}["\']', "Generic API key"),
+        (r'(?i)(secret|password|passwd|pwd).*[=:].*["\'][^"\']{8,}["\']', "Generic secret"),
+        (r'(?i)token.*[=:].*["\'][a-zA-Z0-9]{20,}["\']', "Generic token"),
+        # Database URLs with credentials
+        (r"(?i)(mongodb|mysql|postgres)://[^:]+:[^@]+@", "Database URL with credentials"),
+    ]
 
 # File patterns to ignore
 IGNORE_PATTERNS = [

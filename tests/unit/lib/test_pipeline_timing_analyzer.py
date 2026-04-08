@@ -36,11 +36,14 @@ from pipeline_timing_analyzer import (
     WASTEFUL_MIN_DURATION,
     WASTEFUL_WPS_THRESHOLD,
     analyze_timings,
+    check_budget_violation,
     check_consecutive_violations,
     compute_adaptive_thresholds,
     extract_agent_timings,
+    format_budget_warning,
     format_issue_body,
     format_timing_report,
+    load_time_budgets,
     load_timing_history,
     save_timing_entry,
     _sanitize_markdown,
@@ -617,3 +620,123 @@ class TestTokenEfficiencyFinding:
         findings = analyze_timings(timings)
         token_findings = [f for f in findings if f.finding_type == "TOKEN_EFFICIENCY"]
         assert len(token_findings) == 0
+
+
+# ---------------------------------------------------------------------------
+# TestTimeBudgets — per-agent time budget functions (Issue #705)
+# ---------------------------------------------------------------------------
+
+
+class TestTimeBudgets:
+    """Tests for load_time_budgets, check_budget_violation, format_budget_warning."""
+
+    def test_load_time_budgets_from_config(self, tmp_path: Path) -> None:
+        """load_time_budgets loads from a JSON config file when it exists."""
+        config = {
+            "implementer": {"budget_seconds": 600, "warning_pct": 0.75},
+            "planner": {"budget_seconds": 200, "warning_pct": 0.9},
+        }
+        config_path = tmp_path / "budgets.json"
+        config_path.write_text(__import__("json").dumps(config))
+
+        result = load_time_budgets(config_path)
+
+        # Loaded agents from file
+        assert "implementer" in result
+        assert result["implementer"]["budget_seconds"] == 600.0
+        assert result["implementer"]["warning_pct"] == 0.75
+        assert "planner" in result
+        assert result["planner"]["budget_seconds"] == 200.0
+
+    def test_load_time_budgets_fallback_to_static(self, tmp_path: Path) -> None:
+        """load_time_budgets returns STATIC_THRESHOLDS when config file is missing."""
+        nonexistent = tmp_path / "no_such_file.json"
+        result = load_time_budgets(nonexistent)
+
+        assert isinstance(result, dict)
+        assert len(result) > 0
+        # Every STATIC_THRESHOLDS key should be in the fallback
+        for agent_type in STATIC_THRESHOLDS:
+            assert agent_type in result, f"Missing fallback entry for {agent_type}"
+
+    def test_load_time_budgets_invalid_json(self, tmp_path: Path) -> None:
+        """load_time_budgets falls back to static on invalid JSON."""
+        bad_config = tmp_path / "bad.json"
+        bad_config.write_text("{ this is not valid json }")
+
+        result = load_time_budgets(bad_config)
+
+        # Must still return the static fallback
+        assert isinstance(result, dict)
+        assert len(result) > 0
+
+    def test_check_budget_no_violation(self) -> None:
+        """check_budget_violation returns None when duration is well within budget."""
+        budgets = {"implementer": {"budget_seconds": 480.0, "warning_pct": 0.8}}
+        # 50% of budget — no violation
+        result = check_budget_violation("implementer", 240.0, budgets)
+        assert result is None
+
+    def test_check_budget_warning_level(self) -> None:
+        """check_budget_violation returns warning when >= warning_pct of budget."""
+        budgets = {"implementer": {"budget_seconds": 480.0, "warning_pct": 0.8}}
+        # 85% of budget — should be "warning"
+        result = check_budget_violation("implementer", 408.0, budgets)
+        assert result is not None
+        assert result["level"] == "warning"
+        assert result["agent_type"] == "implementer"
+        assert abs(result["pct_used"] - 408.0 / 480.0) < 0.001
+
+    def test_check_budget_exceeded_level(self) -> None:
+        """check_budget_violation returns exceeded when duration > budget_seconds."""
+        budgets = {"implementer": {"budget_seconds": 480.0, "warning_pct": 0.8}}
+        # 110% of budget — should be "exceeded"
+        result = check_budget_violation("implementer", 528.0, budgets)
+        assert result is not None
+        assert result["level"] == "exceeded"
+        assert result["budget"] == 480.0
+        assert result["duration"] == 528.0
+
+    def test_check_budget_unknown_agent(self) -> None:
+        """check_budget_violation returns None for unknown agent types."""
+        budgets: dict = {}
+        result = check_budget_violation("unknown-agent", 9999.0, budgets)
+        assert result is None
+
+    def test_check_budget_zero_duration(self) -> None:
+        """check_budget_violation returns None when duration <= 0."""
+        budgets = {"implementer": {"budget_seconds": 480.0, "warning_pct": 0.8}}
+        assert check_budget_violation("implementer", 0.0, budgets) is None
+        assert check_budget_violation("implementer", -1.0, budgets) is None
+
+    def test_format_budget_warning_exceeded(self) -> None:
+        """format_budget_warning produces a non-empty string for exceeded violations."""
+        violation = {
+            "level": "exceeded",
+            "agent_type": "implementer",
+            "duration": 520.0,
+            "budget": 480.0,
+            "pct_used": 520.0 / 480.0,
+        }
+        msg = format_budget_warning(violation)
+        assert isinstance(msg, str)
+        assert len(msg) > 0
+        assert "BUDGET-EXCEEDED" in msg or "exceeded" in msg.lower()
+        assert "implementer" in msg
+        assert "REQUIRED NEXT ACTION" in msg
+
+    def test_format_budget_warning_soft(self) -> None:
+        """format_budget_warning produces a non-empty string for warning-level violations."""
+        violation = {
+            "level": "warning",
+            "agent_type": "planner",
+            "duration": 150.0,
+            "budget": 180.0,
+            "pct_used": 150.0 / 180.0,
+        }
+        msg = format_budget_warning(violation)
+        assert isinstance(msg, str)
+        assert len(msg) > 0
+        assert "BUDGET-WARNING" in msg or "warning" in msg.lower()
+        assert "planner" in msg
+        assert "REQUIRED NEXT ACTION" in msg
