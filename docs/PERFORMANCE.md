@@ -199,15 +199,15 @@ metrics = analyze_performance_logs(Path("/path/to/custom.json"))
    - Analysis: Web search doesn't need Sonnet, no downgrade needed
    - Test results: Baseline comparisons completed
 
-2. **Planner Agent**: Analyzing Sonnet requirements
-   - Current: Sonnet
-   - Analysis: Architecture design may benefit from Sonnet's advanced reasoning
-   - Investigation: Testing Opus downgrade feasibility
+2. **Planner Agent**: Upgraded to Opus
+   - Current: Opus (Tier 3 — architecture planning requires deep reasoning)
+   - Analysis: Architecture design complexity justifies Opus over Sonnet
+   - Resolution: Assigned Opus as part of model tier strategy (Issue #108)
 
-3. **Other Agents**: Cost-benefit analysis pending
+3. **Other Agents**: Final assignments
    - Implementer: Opus (code generation requires highest reasoning quality)
-   - Test-Master: Sonnet (test design is complex)
-   - Other agents: Candidate identification in progress
+   - Test-Master: Opus (Quality Diamond test generation requires deep reasoning)
+   - Other agents: Sonnet for judgment tasks, Haiku for pattern matching
 
 **Framework**:
 - Performance impact analysis infrastructure

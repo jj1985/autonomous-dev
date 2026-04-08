@@ -523,7 +523,7 @@ Validation mode: sequential (security-sensitive files detected: [list of matched
 
 Invoke reviewer, security-auditor, and doc-master in a SINGLE message (all three parallel). Pass STEP 8 test results to the reviewer along with the implementer output (see VERBATIM PASSING requirement below).
 
-**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
+**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. If the implementer output contains an Evidence Manifest section, it MUST be included in the passed content. When truncating long output, preserve the Evidence Manifest in addition to the file change list and test results. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
 - **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
 - **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list with complete diffs. Output: PASS/FAIL (OWASP Top 10).
@@ -566,7 +566,7 @@ Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — 
 
 **STEP 10a: Reviewer (MUST complete before 10b)**
 
-**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
+**VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. If the implementer output contains an Evidence Manifest section, it MUST be included in the passed content. When truncating long output, preserve the Evidence Manifest in addition to the file change list and test results. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
 **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
 
@@ -576,7 +576,7 @@ Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — 
 
 **STEP 10b: Security Auditor (ONLY after reviewer returns)**
 
-**VERBATIM PASSING REQUIRED**: Pass the FULL file list with complete diffs from STEP 8 to the security-auditor. Do NOT summarize or condense the file changes.
+**VERBATIM PASSING REQUIRED**: Pass the FULL file list with complete diffs from STEP 8 to the security-auditor. Do NOT summarize or condense the file changes. Always include the marker '[TRUNCATED: N chars removed]' at the truncation point so downstream agents know content was cut.
 
 **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list with complete diffs. Output: PASS/FAIL (OWASP Top 10). Starts ONLY AFTER reviewer in STEP 10a has returned its verdict.
 

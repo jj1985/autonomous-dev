@@ -63,6 +63,8 @@ Deep reasoning for complex synthesis:
 
 **Performance Impact**: Optimized tier assignments reduce costs by 40-60% while maintaining quality.
 
+**Behavioral Compensation**: Each tier has specific prompt compensation blocks addressing known behavioral tendencies. See [docs/model-behavior-notes.md](model-behavior-notes.md) for details.
+
 ---
 
 ## Token Budget Audit (Issue #175)
@@ -166,7 +168,7 @@ These agents execute the main autonomous development workflow and provide specia
 ### planner
 
 **Purpose**: Architecture planning and design
-**Model**: Sonnet (Tier 2 - balanced reasoning for complex planning)
+**Model**: Opus (Tier 3 - deep reasoning for complex planning)
 **Skills**: architecture-patterns, api-design, database-design, testing-guide
 **Execution**: Step 2 of /implement workflow (after merging research findings from Step 1.1)
 
@@ -184,7 +186,7 @@ These agents execute the main autonomous development workflow and provide specia
 ### implementer
 
 **Purpose**: Code implementation (makes tests pass)
-**Model**: Sonnet (Tier 2 - balanced reasoning for code implementation)
+**Model**: Opus (Tier 3 - deep reasoning for code implementation)
 **Skills**: python-standards, observability
 **Execution**: Step 4 of /implement workflow
 **Research Context**: Receives implementation_guidance from researcher-local and researcher-web (Issue #130)
@@ -195,7 +197,9 @@ These agents execute the main autonomous development workflow and provide specia
 **Remediation Mode**: Re-invoked by the STEP 6.5 Remediation Gate when the reviewer or security-auditor return BLOCKING findings. In this mode the implementer fixes only the cited BLOCKING findings (verbatim from the gate), runs pytest to confirm 0 failures, and reports what changed. WARNING findings are out of scope during remediation.
 **Output Self-Validation** (Issue #707): After tests pass, the implementer MUST run a semantic validation: smoke test with realistic input, output format check, boundary check for numeric/string values, and error path check with invalid input. FORBIDDEN: declaring completion without smoke test, accepting empty/placeholder outputs, skipping validation because tests pass.
 **Error Recovery with Retry Budget** (Issue #708): Max 2 retries per approach — if the same error appears twice, the implementer MUST pivot to a different strategy (simplify, alternative library, decompose, or escalate). FORBIDDEN: retrying the same approach after 2 failures, silent error loops, giving up without trying 2+ approaches.
+**Mini-Replan on Blocking Signals** (Issue #730): When a tool execution returns a recoverable error (ModuleNotFoundError, FileNotFoundError, ImportError, AttributeError, command not found), the implementer MUST perform a mini-replan cycle (max 2) instead of retrying blindly. Each cycle: classify error → determine corrective action → apply fix → re-run. Mini-replan cycles are separate from the retry budget. After 2 failed mini-replan cycles, escalate to the coordinator. Supported by `blocking_signal_classifier.py` library. FORBIDDEN: retrying the same command without a corrective action, ignoring recoverable error signals, exceeding 2 mini-replan cycles.
 **Pre-Execution Tool Documentation Research** (Issue #706): Before using an unfamiliar CLI tool, the implementer MUST read its `--help` output. Known-safe tools (git, python, pytest, pip, npm, etc.) are exempt. Graceful fallback if help unavailable.
+**Evidence Manifest Output** (Issue #727): After all tests pass, the implementer MUST output a structured Markdown table listing every file created or modified, its state (CREATED/MODIFIED/DELETED), and a verifiable signal (e.g., "contains class Foo", "contains 6 test functions"). Required in full pipeline mode; recommended in --fix and --light modes. FORBIDDEN: declaring "implementation complete" without an evidence manifest in full pipeline mode.
 
 ### reviewer
 
@@ -205,6 +209,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Execution**: STEP 10 of /implement workflow — in parallel mode (default, low-risk changesets), runs simultaneously with security-auditor and doc-master in a single Agent call; in sequential mode (security-sensitive files detected), runs first (STEP 10a) before security-auditor (STEP 10b), ensuring the STEP 11 Remediation Gate has the full reviewer verdict before security-auditor begins. In both modes, the reviewer consumes STEP 8 test results passed in context — it does NOT re-run pytest
 **Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
 **Minimum File Read Requirement** (Issue #659): Reviewer MUST use the Read tool to read EACH changed file before issuing any verdict. Ghost reviews (reviewing only from prompt context) produce no verification value. Minimum tool use thresholds: 1-50 lines changed → 2 tool uses; 51-200 lines changed → 3 tool uses; 200+ lines changed → 5 tool uses. FORBIDDEN: issuing any verdict (APPROVE or REQUEST_CHANGES) with 0 tool uses.
+**Evidence Manifest Verification** (Issue #727): Before issuing any verdict, reviewer MUST locate the `## Evidence Manifest` table in the implementer's output and verify each entry using Read/Grep/Glob tools: file exists (Tier 1 blocking), file is non-empty (Tier 1 blocking), verification signal matches (Tier 2 blocking). Missing or empty manifest → BLOCKING finding, REQUEST_CHANGES. Required in full pipeline mode; recommended in --fix and --light modes.
 **Test Deletion Detection** (Issue #711): Reviewer MUST flag when behavioral tests are deleted or replaced with weaker structural absence-checks. Flags: test file deletions or >50% line reduction; deleted tests referencing issue numbers (regression tests); behavioral tests replaced with structural absence-checks (e.g., `assert "X" not in source_code`). Absence checks verify that code text lacks a string — they do NOT verify the code works correctly. FORBIDDEN: APPROVE when issue-traced tests are deleted without a behavioral replacement, or when test count drops >20% without flagging as a finding.
 **FINDINGS Format**: Each finding uses a structured `FINDING-{N}` schema with mandatory `file:line` reference, severity (`BLOCKING` or `WARNING`), category, issue description, detail, and suggested fix. BLOCKING findings trigger the STEP 6.5 Remediation Gate; WARNING findings are advisory only.
 **Verdict**: `APPROVE` (all findings WARNING or none) or `REQUEST_CHANGES` (any BLOCKING finding present). STEP 6.5 parses this verdict to determine whether to enter the remediation loop.
