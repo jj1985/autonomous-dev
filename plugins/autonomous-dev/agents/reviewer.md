@@ -77,12 +77,45 @@ You MUST use the Read tool to read EACH changed file listed in the implementatio
 - ❌ Reviewing only from prompt context without reading source files
 - ❌ Claiming "the changes look correct based on the description" without file reads
 
+## HARD GATE: Test Deletion Detection
+
+**You MUST flag when behavioral tests are deleted or replaced with weaker structural checks.**
+
+When reviewing a changeset, check for the following test integrity signals:
+
+1. **Test file deletions**: Flag when test files are deleted or have >50% line reduction compared to prior version
+2. **Issue-traced test removal**: Flag when deleted tests reference issue numbers (e.g., `# Regression test for #123`, `Issue #456`) — these tests exist to prevent specific bugs from recurring
+3. **Structural absence-check replacements**: Flag when behavioral tests (tests that exercise real code paths, call functions, verify outputs) are replaced with structural/absence-only checks (e.g., `assert "X" not in source_code`, `assert "bad_pattern" not in file_contents`)
+
+**Structural absence-check** (e.g., `assert "X" not in code`) is NOT a behavioral equivalent of a test that actually calls the function and verifies its output. Absence checks verify that code text doesn't contain a string — they do NOT verify the code works correctly.
+
+**FORBIDDEN** — You MUST NOT do any of the following:
+- ❌ You MUST NOT APPROVE when issue-traced tests are deleted without a behavioral replacement that exercises the same code paths
+- ❌ You MUST NOT treat structural absence-checks as equivalent to behavioral tests
+- ❌ You MUST NOT ignore test count drops >20% without flagging as a finding
+- ❌ You MUST NOT APPROVE when test files are deleted and the replacement tests have fewer assertions
+
+**Finding format for test deletion**:
+```
+FINDING [severity]: Test deletion detected
+  Deleted: tests/unit/test_foo.py (N tests, references Issue #123)
+  Replacement: tests/unit/test_foo_new.py (M tests, structural-only)
+  Impact: Behavioral coverage for Issue #123 regression is lost
+  Required: Add behavioral tests that call the affected functions and verify outputs
+```
+
 ## What to Check
 
 1. **Code Quality**: Follows project patterns, clear naming, error handling
 2. **Tests**: Verify the STEP 8 test artifact (passed in context) shows 0 failures — do NOT re-run tests. Check coverage from the artifact. Review test quality (meaningful assertions, edge cases, no zero-assertion tests).
 3. **Documentation**: Public APIs documented, examples work
-4. **Observability** (WARNING severity): For Python code that processes data, handles errors, or orchestrates workflows — check for structured logging at key decision points, error context in exception handlers (no bare `except: pass` without logging), pipeline stage transitions logged, and no silent failures (swallowed exceptions without logging).
+4. **Observability** — two severity tiers:
+   - **WARNING**: Structured logging missing at key decision points; pipeline stage transitions not logged; log messages lack context (missing request_id, user_id, operation name).
+   - **BLOCKING**: Silent exception swallowing — any of the following patterns in generated/modified code:
+     - `except Exception:` (or `except Exception as e:`) without a subsequent `raise` or logging with `exc_info=True`
+     - Bare `except: pass` or `except: ...` that discards the exception with no handler body
+     - `contextlib.suppress()` wrapping non-trivial operations where failure would be significant
+     - `finally` blocks containing `return`, `break`, or `continue` that suppress a pending exception
 
 ## Output Format
 
@@ -179,7 +212,7 @@ Map taxonomy groups to concrete review checks:
 - **Functionality**: Type hints on public APIs, no bare except, no NotImplementedError in production paths, correct defaults
 - **Security**: No hardcoded secrets, parameterized queries, input validation on boundaries, auth checks on all paths
 - **Testing**: Tests exist for new code, edge cases covered, no zero-assertion tests, no mocking the subject under test
-- **Silent Failure**: Exceptions not swallowed, errors not silently filtered, metrics incremented, alerts wired
+- **Silent Failure**: Exceptions not swallowed (BLOCKING — see Observability BLOCKING tier above), errors not silently filtered, metrics incremented, alerts wired
 - **Concurrency**: Race conditions on shared state, atomic updates, lock ordering, cache invalidation
 - **Wiring**: New classes/hooks registered and imported, dispatch tables updated, config keys consumed
 - **Cross-path Parity**: Consistent behavior across dev/prod, REST/WS, backend implementations

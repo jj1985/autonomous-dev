@@ -41,6 +41,12 @@ Research existing patterns, best practices, and security considerations before i
    - WebFetch official documentation and authoritative sources
    - Focus on recent (2024-2026) standards
 
+1b. **Tool Documentation Gathering** (when implementation involves CLI tools)
+   - Identify CLI tools mentioned in the implementation plan
+   - For each non-standard tool, run `tool --help` via Bash and capture key flags/options
+   - Include tool documentation summary in research output under `"tool_documentation"` key
+   - Skip for standard tools: git, python, pytest, pip, npm, node, bash, docker, gh
+
 2. **Analysis**
    - Synthesize findings from web sources
    - Identify recommended approach with source URLs
@@ -78,6 +84,13 @@ Research existing patterns, best practices, and security considerations before i
     {
       "practice": "Specific recommendation",
       "source": "Official docs URL"
+    }
+  ],
+  "tool_documentation": [
+    {
+      "tool": "tool-name",
+      "key_flags": ["--flag1: description", "--flag2: description"],
+      "source": "--help output"
     }
   ]
 }

@@ -1724,6 +1724,57 @@ def _detect_gh_issue_create(command: str) -> "Optional[str]":
         return None  # Fail-open on any error
 
 
+def _check_batch_cia_completions(session_id: str) -> "Optional[str]":
+    """Check if all batch issues have CIA completion.
+
+    Loads verify_batch_cia_completions from pipeline_completion_state and
+    returns a block reason string if any issues are missing CIA, or None
+    if all passed (or on any error — fail-open).
+
+    Args:
+        session_id: The pipeline session identifier.
+
+    Returns:
+        Block reason string if CIA missing for any issue, None otherwise.
+
+    Issues: #712
+    """
+    try:
+        hook_dir = Path(__file__).resolve().parent
+        lib_candidates = [
+            hook_dir.parent / "lib" / "pipeline_completion_state.py",
+            hook_dir.parents[2] / "lib" / "pipeline_completion_state.py",
+        ]
+        mod = None
+        for lib_path in lib_candidates:
+            if lib_path.exists():
+                spec = importlib.util.spec_from_file_location(
+                    "pipeline_completion_state", str(lib_path)
+                )
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                break
+
+        if mod is None or not hasattr(mod, "verify_batch_cia_completions"):
+            return None  # Fail-open
+
+        all_passed, with_cia, missing_cia = mod.verify_batch_cia_completions(session_id)
+        if all_passed:
+            return None
+
+        missing_str = ", ".join(f"#{n}" for n in missing_cia)
+        return (
+            f"BLOCKED: Batch CIA gate — issues missing continuous-improvement-analyst: "
+            f"{missing_str}. All batch issues MUST have CIA completion before git commit. "
+            f"REQUIRED NEXT ACTION: Run the continuous-improvement-analyst agent for "
+            f"the missing issues before committing. "
+            f"Set SKIP_BATCH_CIA_GATE=1 to bypass. (Issue #712)"
+        )
+    except Exception:
+        return None  # Fail-open
+
+
 def _detect_settings_json_write(command: str) -> "Optional[str]":
     """Detect Bash commands that write to settings.json or settings.local.json.
 
@@ -2712,6 +2763,29 @@ def main():
                                 sys.exit(0)
                     except Exception:
                         pass  # Don't block on check failure
+
+                    # Issue #712: Batch CIA completion gate
+                    # Block git commit in batch worktrees when issues are missing CIA
+                    if "git commit" in command or "git -c" in command and "commit" in command:
+                        try:
+                            cwd = os.getcwd()
+                            if ".worktrees/batch-" in cwd:
+                                if os.environ.get("SKIP_BATCH_CIA_GATE", "").strip().lower() not in ("1", "true", "yes"):
+                                    _batch_cia_session_id = os.environ.get("CLAUDE_SESSION_ID", _session_id)
+                                    _batch_cia_result = _check_batch_cia_completions(_batch_cia_session_id)
+                                    if _batch_cia_result is not None:
+                                        _log_pretool_activity(tool_name, tool_input, "deny", _batch_cia_result)
+                                        output_decision(
+                                            "deny", _batch_cia_result,
+                                            system_message=(
+                                                "BLOCKED: Batch CIA gate — some issues are missing "
+                                                "continuous-improvement-analyst completion. "
+                                                "Run CIA for all issues before committing."
+                                            ),
+                                        )
+                                        sys.exit(0)
+                        except Exception:
+                            pass  # Fail-open: don't block on errors
 
             # Issue #528: Block coordinator code writes when /implement explicitly active
             # This is CRITICAL for external repo coverage — native tools bypass all

@@ -312,9 +312,45 @@ This skill uses progressive disclosure to prevent context bloat:
 - Logging sensitive data (passwords, tokens, API keys) at any level
 - Using `print()` for production logging (MUST use structured logging)
 - Swallowing exceptions silently without logging
+- `except Exception:` (or `except Exception as e:`) without a subsequent `raise` or `logging.exception()`/`logger.error(..., exc_info=True)`
+- Bare `except: pass` — discards exception with zero handling
+- `except Exception: pass` — syntactically explicit but semantically identical to bare `except: pass`
+- `contextlib.suppress()` wrapping error-critical operations without inline justification comment
+- `finally` blocks that contain `return`, `break`, or `continue` — these suppress any pending exception from the `try` body
 
-**REQUIRED**:
-- All errors MUST be logged with context (what failed, input summary, stack trace)
-- Log levels MUST be used correctly: DEBUG for dev, INFO for operations, WARNING for recoverable issues, ERROR for failures
-- Performance-critical paths MUST have timing instrumentation
-- All external calls MUST log duration and status
+**REQUIRED** (compliant exception handling MUST use at least one of):
+- **Re-raise**: After logging, call `raise` (bare) or `raise NewError(...) from original_exc` to propagate the exception
+- **Log with `exc_info`**: `logger.error("Operation failed", exc_info=True)` or `logging.exception("Operation failed")` — preserves full stack trace without suppressing
+- **`contextlib.suppress()` with justification**: Acceptable ONLY for genuinely non-critical cleanup operations; MUST include an inline comment explaining why suppression is safe
+
+```python
+# COMPLIANT: re-raise after logging
+try:
+    process(data)
+except ValueError as exc:
+    logger.error("Invalid data: %s", exc, exc_info=True)
+    raise
+
+# COMPLIANT: log with exc_info (caller gets full stack trace in logs)
+try:
+    send_metric(value)
+except ExternalServiceError:
+    logger.exception("Metric send failed — continuing without metric")
+
+# COMPLIANT: contextlib.suppress with justification
+with contextlib.suppress(FileNotFoundError):
+    # Optional cache file; absence is expected on first run
+    cache_path.unlink()
+
+# NON-COMPLIANT: silent swallow
+try:
+    critical_operation()
+except Exception:
+    pass  # FORBIDDEN
+
+# NON-COMPLIANT: log without exc_info and without re-raise
+try:
+    critical_operation()
+except Exception as e:
+    logger.error("Failed: %s", e)  # FORBIDDEN — no stack trace, exception swallowed
+```

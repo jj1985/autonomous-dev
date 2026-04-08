@@ -368,6 +368,13 @@ After ALL features in batch are processed, YOU (the coordinator) MUST finalize:
    - ❌ Deleting the worktree before the post-batch CIA has read the session log
    - ❌ Proceeding to merge without verifying doc-master's file modifications are staged
 
+   **HOOK ENFORCEMENT: Batch CIA Gate** (Issue #712):
+   The `unified_pre_tool.py` hook deterministically blocks `git commit` in batch worktrees
+   (CWD contains `.worktrees/batch-`) when any issue is missing CIA completion. This is a
+   hook-level hard gate — the coordinator cannot bypass it. If the gate fires, run the
+   continuous-improvement-analyst for all missing issues before retrying the commit.
+   Escape hatch: `SKIP_BATCH_CIA_GATE=1` (environment variable).
+
 1. **Commit all changes** in the worktree:
    ```bash
    cd $WORKTREE_PATH && git add -A && git commit -m "feat: batch implementation

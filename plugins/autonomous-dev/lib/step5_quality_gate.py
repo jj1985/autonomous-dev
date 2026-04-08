@@ -413,8 +413,13 @@ def run_quality_gate(*, full_tests: bool = False) -> dict:
         test_result.skipped
     )
 
+    # Check test count regression against baseline
+    test_count_passed, test_count_message = coverage_baseline.check_test_count_regression(
+        test_result.test_count
+    )
+
     overall_passed = (
-        test_result.passed and coverage_result.passed and skip_passed
+        test_result.passed and coverage_result.passed and skip_passed and test_count_passed
     )
 
     # Compute tier distribution by globbing test directories
@@ -452,7 +457,7 @@ def run_quality_gate(*, full_tests: bool = False) -> dict:
         except Exception:
             pass  # Non-critical, skip on error
 
-    summary_parts = [test_result.message, coverage_result.message, skip_message]
+    summary_parts = [test_result.message, coverage_result.message, skip_message, test_count_message]
     if acceptance_coverage and acceptance_coverage["total"] > 0:
         acc_str = f"Acceptance: {acceptance_coverage['covered']}/{acceptance_coverage['total']} criteria"
         summary_parts.append(acc_str)
@@ -477,6 +482,7 @@ def run_quality_gate(*, full_tests: bool = False) -> dict:
         "test_result": asdict(test_result),
         "coverage_result": asdict(coverage_result),
         "skip_regression": {"passed": skip_passed, "message": skip_message},
+        "test_count_regression": {"passed": test_count_passed, "message": test_count_message},
         "tier_distribution": tier_distribution,
         "acceptance_coverage": acceptance_coverage,
         "summary": " | ".join(summary_parts),
