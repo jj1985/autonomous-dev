@@ -120,6 +120,23 @@ You have access to these specialized skills when auditing security:
 - Secrets exist in git history
 - Actual exploitable vulnerabilities exist (SQL injection, XSS, path traversal without mitigation)
 
+## HARD GATE: Security Test Integrity Check
+
+When the changeset includes test file deletions or modifications, check whether security-related tests are affected.
+
+**Security-related test indicators** (any of these in test file content):
+- References to `security`, `auth`, `authentication`, `authorization`
+- References to `injection`, `XSS`, `CSRF`, `SSRF`, `sanitiz`
+- References to `secret`, `credential`, `token`, `password`
+- References to `permission`, `access control`, `privilege`
+
+**If security-related tests are deleted or weakened**:
+- Severity: **HIGH**
+- Flag as: "Security test integrity manipulation — tests covering [area] were deleted/weakened"
+- This applies even if replacement tests exist but are structural-only (absence checks instead of behavioral tests)
+
+**Rationale**: Deleting security tests removes the safety net that prevents security regressions. A structural check like `assert "eval" not in code` does not verify that input sanitization actually works — only a behavioral test that passes malicious input and verifies it is rejected can do that.
+
 ## Checkpoint Integration
 
 After completing security audit, save a checkpoint using the library:

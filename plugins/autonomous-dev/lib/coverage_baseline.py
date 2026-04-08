@@ -92,6 +92,59 @@ def check_skip_regression(
     )
 
 
+def check_test_count_regression(
+    current_test_count: int,
+    *,
+    tolerance_pct: float = 10.0,
+    tolerance_abs: int = 20,
+    baseline_path: Optional[Path] = None,
+) -> Tuple[bool, str]:
+    """Check if test count has dropped significantly from baseline.
+
+    Blocks if the test count drops by more than min(tolerance_pct%, tolerance_abs)
+    from the stored baseline. This detects test deletion gaming where behavioral
+    tests are removed and replaced with fewer structural checks.
+
+    Args:
+        current_test_count: Current number of tests in the suite.
+        tolerance_pct: Maximum allowed percentage drop (default 10%).
+        tolerance_abs: Maximum allowed absolute drop (default 20 tests).
+        baseline_path: Path to baseline JSON. Uses default if None.
+
+    Returns:
+        Tuple of (passed, message). passed=False if test count dropped beyond tolerance.
+    """
+    baseline = load_baseline(baseline_path)
+    if not baseline or "total_tests" not in baseline:
+        return (True, "No baseline — test count established")
+
+    baseline_count = baseline["total_tests"]
+
+    # Division by zero guard: if baseline is 0, any count is fine
+    if baseline_count == 0:
+        return (True, f"Test count OK: {current_test_count} (baseline was 0)")
+
+    # Calculate allowed drop as min(percentage-based, absolute)
+    pct_drop_allowed = baseline_count * (tolerance_pct / 100.0)
+    abs_drop_allowed = float(tolerance_abs)
+    max_drop = min(pct_drop_allowed, abs_drop_allowed)
+
+    actual_drop = baseline_count - current_test_count
+
+    if actual_drop > max_drop:
+        drop_pct = (actual_drop / baseline_count) * 100
+        return (
+            False,
+            f"Test count regression: {current_test_count} < {baseline_count} "
+            f"(dropped {actual_drop} tests, {drop_pct:.1f}%). "
+            f"Max allowed drop: {max_drop:.0f} tests.",
+        )
+    return (
+        True,
+        f"Test count OK: {current_test_count} (baseline: {baseline_count})",
+    )
+
+
 def check_skip_rate(skipped: int, total: int) -> Tuple[str, str]:
     """Check skip rate. Returns (level, message). Level is 'ok', 'warn', or 'block'."""
     if total == 0:

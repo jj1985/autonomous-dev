@@ -415,11 +415,12 @@ For EACH failure, you MUST choose one:
 
 **HARD GATE: No New Skips** — Adding `@pytest.mark.skip` is FORBIDDEN. 0 new skips allowed. Skip count is tracked across sessions via `coverage_baseline.check_skip_regression()`. If the current skip count exceeds the baseline, the quality gate BLOCKS.
 
-**FORBIDDEN** — You MUST NOT do any of the following (coverage/skip violations):
+**FORBIDDEN** — You MUST NOT do any of the following (coverage/skip/test count violations):
 - ❌ You MUST NOT add `@pytest.mark.skip` to any test (0 new skips, enforced by baseline comparison)
 - ❌ You MUST NOT let coverage drop more than 0.5% below baseline (enforced by `coverage_baseline.check_coverage_regression()`)
 - ❌ You MUST NOT declare coverage loss "acceptable" or "minor"
 - ❌ You MUST NOT proceed to STEP 10 when `step5_quality_gate.run_quality_gate()` returns `passed=False`
+- ❌ You MUST NOT proceed when test count drops significantly from baseline (enforced by `coverage_baseline.check_test_count_regression()`)
 
 Loop until **0 failures, 0 errors**. Do NOT proceed to STEP 10 with any failures.
 
@@ -435,7 +436,7 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 
 **Test Gate Output Format** — The quality gate (`step5_quality_gate.run_quality_gate()`) now reports acceptance coverage and tier distribution in the summary:
 ```
-PASS: 45 passed | Coverage: 87% (baseline: 85%) | Skip count OK: 2 | Acceptance: 3/4 criteria | Tiers: T0=2, T1=5, T2=8, T3=30
+PASS: 45 passed | Coverage: 87% (baseline: 85%) | Skip count OK: 2 | Test count OK: 45 (baseline: 44) | Acceptance: 3/4 criteria | Tiers: T0=2, T1=5, T2=8, T3=30
 ```
 - **Acceptance coverage** (WARNING only, never blocks): Reports how many acceptance criteria from STEP 6 have matching tests. When total > 0 but covered == 0, a WARNING is appended to the summary.
 - **Tier distribution**: Reports test count by Diamond Model tier (T0-T3), computed by globbing `tests/**/*.py`.

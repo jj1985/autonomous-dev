@@ -37,7 +37,7 @@ Agent model assignments optimized for cost-performance balance (14 active agents
 
 **Tier 2 (Sonnet)** - Balanced reasoning for judgment tasks
 - researcher - Web research and synthesis
-- reviewer - Code quality gate (10-point checklist)
+- reviewer - Code quality gate (code quality, tests, documentation, observability)
 - security-auditor - OWASP security scanning
 - doc-master - Semantic documentation drift detection
 - continuous-improvement-analyst - Pipeline QA and gaming detection

@@ -160,6 +160,24 @@
       "severity": "critical"
     },
     {
+      "id": "silent_exception_swallowing",
+      "name": "Silent exception swallowing in generated code",
+      "description": "Generated code catches exceptions without re-raising, logging with exc_info, or using contextlib.suppress()",
+      "issue": "#715",
+      "hard_gate": "Reviewer Observability BLOCKING check in reviewer.md",
+      "detection": {
+        "type": "file_content",
+        "indicators": [
+          "except Exception: followed by log/print without raise or exc_info=True",
+          "except Exception:\\n            pass",
+          "bare except: without raise in the handler",
+          "contextlib.suppress() wrapping non-trivial operations",
+          "finally block with return/break/continue that suppresses pending exception"
+        ]
+      },
+      "severity": "critical"
+    },
+    {
       "id": "prompt_file_edit_bypass",
       "name": "Prompt file classified as doc to bypass pipeline",
       "description": "Model classifies agents/*.md or commands/*.md as 'documentation' to justify direct Edit calls, bypassing /implement pipeline including TDD, security review, and CI gates",
@@ -319,6 +337,23 @@
         ]
       },
       "severity": "critical"
+    },
+    {
+      "id": "batch_last_issue_cia_skip",
+      "name": "Batch last issue CIA skip",
+      "description": "Model skips continuous-improvement-analyst for the last issue in a batch, exploiting the tendency to rush finalization under context pressure",
+      "issue": "#712",
+      "hard_gate": "Hook-level batch CIA gate in unified_pre_tool.py (Issue #712)",
+      "detection": {
+        "type": "pipeline_completeness",
+        "indicators": [
+          "Last issue in batch missing continuous-improvement-analyst completion",
+          "git commit attempted in batch worktree without CIA for all issues",
+          "Per-issue agent count shows CIA present for issues 1..N-1 but absent for issue N"
+        ]
+      },
+      "severity": "critical",
+      "remediation": "Hook blocks git commit until all batch issues have CIA completion. Set SKIP_BATCH_CIA_GATE=1 to bypass."
     },
     {
       "id": "research_skip_entire_batch",

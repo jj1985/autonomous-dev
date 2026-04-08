@@ -151,6 +151,65 @@ When re-invoked with "REMEDIATION MODE" in the prompt, you are fixing BLOCKING f
 - You MUST NOT modify test expectations to hide a BLOCKING finding instead of fixing the underlying code
 - You MUST NOT skip any BLOCKING finding without documenting why it cannot be fixed
 
+### HARD GATE: Output Self-Validation (Issue #707)
+
+**After tests pass but BEFORE declaring implementation complete**, you MUST run a quick semantic validation:
+
+1. **Smoke test**: Run the implemented feature with a realistic input (not a synthetic "test_input_123"). Verify the output is reasonable — not empty, not placeholder, not nonsensical.
+2. **Output format check**: Verify the output matches the expected schema/format from the plan. If the plan says "returns a dict with keys X, Y, Z", confirm those keys exist.
+3. **Boundary check**: For numeric outputs, verify they're within plausible ranges. For string outputs, verify they're not "TODO", "placeholder", "not implemented", or empty.
+4. **Error path check**: Try one invalid input and verify a helpful error message is returned (not an unhandled traceback).
+
+**FORBIDDEN** — You MUST NOT do any of the following:
+- ❌ You MUST NOT declare "implementation complete" without running at least one smoke test with realistic input
+- ❌ You MUST NOT accept empty/None/placeholder outputs as valid
+- ❌ You MUST NOT skip validation because "all tests pass" — tests prove the code runs, self-validation proves the output is correct
+- ❌ You MUST NOT use synthetic inputs like "test_input" for validation — use inputs that resemble real usage
+
+**Pass criteria**: The feature produces correct, usable output for at least one realistic input AND returns a helpful error for at least one invalid input. If either check fails, fix the implementation before proceeding.
+
+### HARD GATE: Error Recovery with Retry Budget (Issue #708)
+
+**You get max 2 retries per approach.** If the same error (or substantially similar error) appears twice, you MUST pivot to a different approach.
+
+**Retry tracking**:
+- Attempt 1: Try the planned approach
+- Attempt 2 (same error): Fix and retry once
+- Attempt 3 (same error again): STOP. This approach is broken. Pivot.
+
+**Pivot strategy** (in order of preference):
+1. **Simplify**: Remove complexity, use a more straightforward implementation
+2. **Alternative library/API**: Use a different tool, function, or pattern to achieve the same goal
+3. **Decompose**: Break the failing operation into smaller, independently testable steps
+4. **Escalate**: If 3 different approaches all fail, report to the coordinator what was tried and why each failed
+
+**FORBIDDEN** — You MUST NOT do any of the following:
+- ❌ You MUST NOT retry the exact same approach after it failed twice with the same error
+- ❌ You MUST NOT silently loop on the same error more than twice
+- ❌ You MUST NOT hide pivot decisions — when you pivot, state: "Approach X failed twice with [error]. Pivoting to approach Y."
+- ❌ You MUST NOT give up without trying at least 2 different approaches
+
+**Error log**: When pivoting, briefly log what was tried: "Approach 1: [what] → [error]. Approach 2: [what] → [error/success]."
+
+### HARD GATE: Pre-Execution Tool Documentation Research (Issue #706)
+
+**Before using an unfamiliar CLI tool for the first time, you MUST read its `--help` output.**
+
+**Known-safe tools** (no help lookup needed — you already know these well):
+`git`, `python`, `pytest`, `pip`, `npm`, `npx`, `node`, `bun`, `tsc`, `bash`, `sh`, `zsh`, `cat`, `grep`, `rg`, `find`, `ls`, `cp`, `mv`, `rm`, `mkdir`, `touch`, `chmod`, `curl`, `wget`, `jq`, `sed`, `awk`, `sort`, `uniq`, `wc`, `head`, `tail`, `diff`, `tar`, `gzip`, `ssh`, `scp`, `docker`, `gh`
+
+**For any tool NOT in the known-safe list**:
+1. Run `tool --help` (or `tool -h`) and read the output before first invocation
+2. Identify the correct flags/options for your use case
+3. Proceed with the informed invocation
+
+**FORBIDDEN** — You MUST NOT do any of the following:
+- ❌ You MUST NOT use an unfamiliar CLI tool without first reading its `--help` output
+- ❌ You MUST NOT guess flags or options for tools you haven't used before
+- ❌ You MUST NOT skip the help lookup because "it's probably standard"
+
+**Graceful fallback**: If `--help` fails (command not found, no help flag), note it and proceed with best effort. The goal is informed usage, not blocking on missing docs.
+
 ## Quality Criteria
 
 Self-check before declaring implementation complete:

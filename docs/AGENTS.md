@@ -193,15 +193,19 @@ These agents execute the main autonomous development workflow and provide specia
   - Falls back to Grep/Glob pattern discovery if research context not provided
 **Context Isolation**: Runs in separate context. Reads only test files from disk, not test-master's reasoning. See testing-guide skill for context isolation patterns.
 **Remediation Mode**: Re-invoked by the STEP 6.5 Remediation Gate when the reviewer or security-auditor return BLOCKING findings. In this mode the implementer fixes only the cited BLOCKING findings (verbatim from the gate), runs pytest to confirm 0 failures, and reports what changed. WARNING findings are out of scope during remediation.
+**Output Self-Validation** (Issue #707): After tests pass, the implementer MUST run a semantic validation: smoke test with realistic input, output format check, boundary check for numeric/string values, and error path check with invalid input. FORBIDDEN: declaring completion without smoke test, accepting empty/placeholder outputs, skipping validation because tests pass.
+**Error Recovery with Retry Budget** (Issue #708): Max 2 retries per approach — if the same error appears twice, the implementer MUST pivot to a different strategy (simplify, alternative library, decompose, or escalate). FORBIDDEN: retrying the same approach after 2 failures, silent error loops, giving up without trying 2+ approaches.
+**Pre-Execution Tool Documentation Research** (Issue #706): Before using an unfamiliar CLI tool, the implementer MUST read its `--help` output. Known-safe tools (git, python, pytest, pip, npm, etc.) are exempt. Graceful fallback if help unavailable.
 
 ### reviewer
 
 **Purpose**: Quality gate (code review) — read-only; reports issues, never modifies files
 **Model**: Sonnet (Tier 2 - balanced reasoning for judgment-based code review)
-**Skills**: code-review, python-standards
+**Skills**: python-standards, code-review, security-patterns, refactoring-patterns
 **Execution**: STEP 10 of /implement workflow — in parallel mode (default, low-risk changesets), runs simultaneously with security-auditor and doc-master in a single Agent call; in sequential mode (security-sensitive files detected), runs first (STEP 10a) before security-auditor (STEP 10b), ensuring the STEP 11 Remediation Gate has the full reviewer verdict before security-auditor begins. In both modes, the reviewer consumes STEP 8 test results passed in context — it does NOT re-run pytest
 **Read-Only Enforcement** (Issue #461): Reviewer MUST NOT use Write or Edit tools on any file. When issues are found, they are reported as FINDINGS with file:line references and the verdict is set to REQUEST_CHANGES. The coordinator relays findings to the implementer. This prevents post-review edits that bypass the STEP 5 test gate and introduce unreviewed changes.
 **Minimum File Read Requirement** (Issue #659): Reviewer MUST use the Read tool to read EACH changed file before issuing any verdict. Ghost reviews (reviewing only from prompt context) produce no verification value. Minimum tool use thresholds: 1-50 lines changed → 2 tool uses; 51-200 lines changed → 3 tool uses; 200+ lines changed → 5 tool uses. FORBIDDEN: issuing any verdict (APPROVE or REQUEST_CHANGES) with 0 tool uses.
+**Test Deletion Detection** (Issue #711): Reviewer MUST flag when behavioral tests are deleted or replaced with weaker structural absence-checks. Flags: test file deletions or >50% line reduction; deleted tests referencing issue numbers (regression tests); behavioral tests replaced with structural absence-checks (e.g., `assert "X" not in source_code`). Absence checks verify that code text lacks a string — they do NOT verify the code works correctly. FORBIDDEN: APPROVE when issue-traced tests are deleted without a behavioral replacement, or when test count drops >20% without flagging as a finding.
 **FINDINGS Format**: Each finding uses a structured `FINDING-{N}` schema with mandatory `file:line` reference, severity (`BLOCKING` or `WARNING`), category, issue description, detail, and suggested fix. BLOCKING findings trigger the STEP 6.5 Remediation Gate; WARNING findings are advisory only.
 **Verdict**: `APPROVE` (all findings WARNING or none) or `REQUEST_CHANGES` (any BLOCKING finding present). STEP 6.5 parses this verdict to determine whether to enter the remediation loop.
 **Runtime Verification (Opt-In, Issue #564)**: After completing static code review with NO BLOCKING findings, the reviewer MAY perform targeted runtime checks when changed files include frontend (HTML/TSX/Vue/Svelte), API routes, or CLI tools. Uses Playwright MCP for frontend, curl for API endpoints, and subprocess for CLI tools. HARD GATE: runtime verification MUST NOT run when BLOCKING findings are present; total time capped at 60 seconds; all subprocess commands MUST use `timeout 30` wrapper. Skips gracefully when the required tool or server is unavailable.
@@ -209,9 +213,10 @@ These agents execute the main autonomous development workflow and provide specia
 ### security-auditor
 
 **Purpose**: Security scanning and vulnerability detection
-**Model**: Opus (Tier 3 - maximum depth for critical security analysis)
+**Model**: Sonnet (Tier 2 - balanced reasoning for OWASP security analysis)
 **Skills**: security-patterns, python-standards
 **Execution**: STEP 10 of /implement workflow — in parallel mode (default, low-risk changesets), runs simultaneously with reviewer and doc-master; in sequential mode (security-sensitive files detected), runs as STEP 10b strictly after reviewer (STEP 10a) has returned its verdict, enabling the STEP 11 Remediation Gate to have complete information before deciding to re-invoke the implementer
+**Security Test Integrity Check** (Issue #711): When the changeset includes test file deletions or modifications, the security-auditor MUST check whether security-related tests are affected (tests referencing `security`, `auth`, `injection`, `XSS`, `CSRF`, `SSRF`, `sanitiz`, `secret`, `credential`, `token`, `password`, `permission`, `access control`, `privilege`). Deleted or weakened security tests — including structural-only replacements — are flagged as HIGH severity. Rationale: a structural absence-check does not verify that input sanitization actually works; only a behavioral test that passes malicious input and verifies rejection can do that.
 
 ### doc-master
 

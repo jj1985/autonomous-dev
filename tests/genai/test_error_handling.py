@@ -49,14 +49,31 @@ class TestErrorHandling:
         assert result["score"] >= 6, f"Error handling quality too low: {result['reasoning']}"
 
     def test_no_silent_failures(self, genai):
-        """Files should not silently swallow exceptions."""
+        """Files should not silently swallow exceptions.
+
+        Detects multiple silent-swallow patterns beyond bare ``except: pass``:
+        - ``except:`` with no body or only ``pass``
+        - ``except Exception:`` / ``except Exception as e:`` without re-raise or ``exc_info=True``
+        - ``contextlib.suppress()`` wrapping operations where failure would be significant
+        - ``finally`` blocks containing ``return``/``break``/``continue``
+        """
         files = _sample_python_files(10)
 
-        # Collect any files with bare except or pass-only handlers
+        # Detect suspect patterns: bare except, except-pass, except-log-without-raise,
+        # contextlib.suppress usage, and finally-with-return/break/continue.
+        import re
+
+        _SILENT_SWALLOW_PATTERNS = [
+            re.compile(r"except\s*:", re.MULTILINE),
+            re.compile(r"except\s+Exception(\s+as\s+\w+)?\s*:\s*\n\s*pass", re.MULTILINE),
+            re.compile(r"contextlib\.suppress\(", re.MULTILINE),
+            re.compile(r"finally\s*:(?:[^}]*?)\b(return|break|continue)\b", re.MULTILINE | re.DOTALL),
+        ]
+
         suspect_snippets = []
         for f in files:
             content = f.read_text()
-            if "except:" in content or "except Exception:\n            pass" in content:
+            if any(pat.search(content) for pat in _SILENT_SWALLOW_PATTERNS):
                 rel = f.relative_to(PLUGIN_ROOT)
                 suspect_snippets.append(f"--- {rel} ---\n{content[:1000]}")
 
@@ -68,7 +85,47 @@ class TestErrorHandling:
             question="Do these files silently swallow exceptions in a harmful way?",
             context="\n\n".join(suspect_snippets)[:6000],
             criteria="Bare except or except-pass is acceptable ONLY for cleanup/fallback code "
-            "where failure is non-critical. Score 10 = all justified, 6 = mostly justified, "
-            "3 = dangerous silent failures.",
+            "where failure is non-critical. "
+            "except-Exception without re-raise or exc_info=True is a silent swallow. "
+            "contextlib.suppress() on non-trivial operations is risky. "
+            "finally with return/break/continue suppresses pending exceptions. "
+            "Score 10 = all justified, 6 = mostly justified, 3 = dangerous silent failures.",
         )
         assert result["score"] >= 6, f"Silent failure risk: {result['reasoning']}"
+
+    def test_no_finally_return_suppression(self, genai):
+        """Files should not use return/break/continue inside finally blocks.
+
+        A ``return`` (or ``break``/``continue``) inside a ``finally`` block silently
+        discards any exception propagating out of the corresponding ``try`` body.
+        This is one of the hardest-to-spot silent-swallow patterns.
+        """
+        files = _sample_python_files(10)
+
+        import re
+
+        _FINALLY_SUPPRESS_RE = re.compile(
+            r"finally\s*:(?:[^}]*?)\b(return|break|continue)\b",
+            re.MULTILINE | re.DOTALL,
+        )
+
+        suspect_snippets = []
+        for f in files:
+            content = f.read_text()
+            if _FINALLY_SUPPRESS_RE.search(content):
+                rel = f.relative_to(PLUGIN_ROOT)
+                suspect_snippets.append(f"--- {rel} ---\n{content[:1500]}")
+
+        if not suspect_snippets:
+            # No suspects found — pattern absent, nothing to judge
+            return
+
+        result = genai.judge(
+            question="Do these files use return/break/continue inside finally blocks in a way that suppresses exceptions?",
+            context="\n\n".join(suspect_snippets)[:6000],
+            criteria="return/break/continue inside a finally block is acceptable ONLY when the code "
+            "intentionally overrides exception propagation (rare, must be documented). "
+            "Score 10 = all uses are intentional and documented, 6 = mostly justified, "
+            "3 = dangerous exception suppression.",
+        )
+        assert result["score"] >= 6, f"Finally-return suppression risk: {result['reasoning']}"
