@@ -488,11 +488,7 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
     if tool_name not in AGENT_TOOL_NAMES:
         return ("allow", "Not an agent invocation")
 
-    # Only enforce during active pipeline
-    if not _is_pipeline_active():
-        return ("allow", "No active pipeline - prompt integrity check skipped")
-
-    # Extract agent type
+    # Extract agent type first — needed for minimum word count check
     agent_type = tool_input.get("subagent_type", "").strip().lower()
     if not agent_type:
         return ("allow", "Could not determine agent type")
@@ -506,7 +502,7 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
     if agent_type not in COMPRESSION_CRITICAL_AGENTS:
         return ("allow", f"Agent '{agent_type}' is not compression-critical")
 
-    # Extract prompt and check word count
+    # Extract prompt and check word count — enforced regardless of pipeline state (Issue #716)
     prompt = tool_input.get("prompt", "")
     word_count = len(prompt.split())
 
@@ -519,6 +515,41 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
             f"output, list of changed files, and test results. "
             f"Use get_agent_prompt_template('{agent_type}') to reload the agent's base prompt from disk."
         )
+
+    # Baseline shrinkage check — runs whenever a baseline exists (no pipeline-active gate).
+    # Falls open (returns allow) when no baseline is recorded yet. Issue #723.
+    # max_shrinkage is 0.25 (25%) instead of the library default of 15% to give
+    # more headroom for legitimate prompt variation at the hook level.
+    try:
+        from prompt_integrity import (
+            get_prompt_baseline,
+            record_prompt_baseline,
+            validate_prompt_word_count,
+        )
+
+        baseline_word_count = get_prompt_baseline(agent_type)
+
+        if baseline_word_count is not None:
+            result = validate_prompt_word_count(
+                agent_type, prompt, baseline_word_count, max_shrinkage=0.25
+            )
+            if not result.passed:
+                return (
+                    "deny",
+                    f"BLOCKED: Prompt for '{agent_type}' shrank {result.shrinkage_pct:.1f}% "
+                    f"from baseline ({baseline_word_count} words → {word_count} words, "
+                    f"threshold: 25%). "
+                    f"The agent prompt is being compressed across invocations. "
+                    f"REQUIRED NEXT ACTION: Use get_agent_prompt_template('{agent_type}') "
+                    f"to reload the full agent prompt from disk and reconstruct with complete context.",
+                )
+        else:
+            # No baseline yet — seed it with this invocation (issue_number=0 is hook sentinel)
+            record_prompt_baseline(agent_type, issue_number=0, word_count=word_count)
+
+    except Exception:
+        # Fail open: any error in baseline check must not block the agent
+        pass
 
     return ("allow", f"Prompt integrity OK: {agent_type} has {word_count} words (>= {MIN_CRITICAL_AGENT_PROMPT_WORDS})")
 

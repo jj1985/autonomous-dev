@@ -11,6 +11,7 @@ Catalog of research findings for autonomous development.
 | gh_issue_marker_bypass_security | 2026-03-30 | 0 | [GH_ISSUE_MARKER_BYPASS_SECURITY.md](GH_ISSUE_MARKER_BYPASS_SECURITY.md) |
 | pipeline_efficiency_analyzer | 2026-04-08 | 0 | [PIPELINE_EFFICIENCY_ANALYZER.md](PIPELINE_EFFICIENCY_ANALYZER.md) |
 | pipeline_time_budgets | 2026-04-08 | 0 | [PIPELINE_TIME_BUDGETS.md](PIPELINE_TIME_BUDGETS.md) |
+| terminal_bench_2_gap_analysis | 2026-04-08 | 6 | [TERMINAL_BENCH_2_GAP_ANALYSIS.md](TERMINAL_BENCH_2_GAP_ANALYSIS.md) |
 
 ---
 

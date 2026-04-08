@@ -527,7 +527,32 @@ Invoke reviewer, security-auditor, and doc-master in a SINGLE message (all three
 
 - **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
 - **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list with complete diffs. Output: PASS/FAIL (OWASP Top 10).
-- **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. Collected at STEP 12.
+- **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description using the template below.
+
+```
+subagent_type: "doc-master"
+model: "sonnet"
+prompt: "DOCUMENTATION REVIEW: You are reviewing a feature implementation for documentation drift. Your task is to determine whether any user-facing documentation, API references, configuration guides, or inline code comments need updating as a result of this implementation. Do not summarize the implementer output — use it verbatim.
+
+REQUIRED STEPS — you MUST complete all three:
+
+1. SCAN: Identify every file changed by the implementation. For each changed file, list all documentation files that reference the same module, function, class, or configuration key. Check README.md, docs/ directory, inline docstrings, CHANGELOG entries, and any covers: frontmatter in docs/*.md files.
+
+2. SEMANTIC COMPARISON: For each documentation reference found in step 1, compare the documented behavior against the new behavior after the implementation. Flag any mismatch where the documentation describes the old behavior, missing parameters, changed defaults, or removed functionality.
+
+3. DOC-DRIFT-VERDICT: State one of the following verdicts explicitly:
+   - DOCS-UPDATED: List each file updated and what changed.
+   - NO-UPDATE-NEEDED: Explain why the change is purely internal with no user-facing behavior change.
+   - DOCS-DRIFT-FOUND: List each documentation file that is now stale and what needs changing (this is a BLOCKING finding).
+
+**Changed files**:
+[changed file list]
+
+**Feature description**:
+[feature description]
+
+Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
+```
 
 **FORBIDDEN** — Parallel mode violations:
 - ❌ You MUST NOT use parallel mode when any security-sensitive file is in the changeset
@@ -557,7 +582,32 @@ Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — 
 
 **STEP 10c: Doc-Master (can run in parallel with 10a/10b)**
 
-**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT. MAY be launched in parallel with STEP 10a for efficiency — collected at STEP 12.
+**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description using the template below. MAY be launched in parallel with STEP 10a for efficiency — collected at STEP 12.
+
+```
+subagent_type: "doc-master"
+model: "sonnet"
+prompt: "DOCUMENTATION REVIEW: You are reviewing a feature implementation for documentation drift. Your task is to determine whether any user-facing documentation, API references, configuration guides, or inline code comments need updating as a result of this implementation. Do not summarize the implementer output — use it verbatim.
+
+REQUIRED STEPS — you MUST complete all three:
+
+1. SCAN: Identify every file changed by the implementation. For each changed file, list all documentation files that reference the same module, function, class, or configuration key. Check README.md, docs/ directory, inline docstrings, CHANGELOG entries, and any covers: frontmatter in docs/*.md files.
+
+2. SEMANTIC COMPARISON: For each documentation reference found in step 1, compare the documented behavior against the new behavior after the implementation. Flag any mismatch where the documentation describes the old behavior, missing parameters, changed defaults, or removed functionality.
+
+3. DOC-DRIFT-VERDICT: State one of the following verdicts explicitly:
+   - DOCS-UPDATED: List each file updated and what changed.
+   - NO-UPDATE-NEEDED: Explain why the change is purely internal with no user-facing behavior change.
+   - DOCS-DRIFT-FOUND: List each documentation file that is now stale and what needs changing (this is a BLOCKING finding).
+
+**Changed files**:
+[changed file list]
+
+**Feature description**:
+[feature description]
+
+Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
+```
 
 **FORBIDDEN** — Sequential mode ordering violations:
 - ❌ You MUST NOT launch reviewer and security-auditor in the same Agent tool call message
@@ -799,7 +849,32 @@ Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 |
 
 **Progress**: Output step banner (STEP 4/5 — Documentation, Agent: doc-master (Sonnet)).
 
-**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description. Scans `covers:` frontmatter in `docs/*.md`, reads affected docs and source code, fixes semantic drift. Outputs DOC-DRIFT-VERDICT.
+**Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description using the template below.
+
+```
+subagent_type: "doc-master"
+model: "sonnet"
+prompt: "DOCUMENTATION REVIEW: You are reviewing a feature implementation for documentation drift. Your task is to determine whether any user-facing documentation, API references, configuration guides, or inline code comments need updating as a result of this implementation. Do not summarize the implementer output — use it verbatim.
+
+REQUIRED STEPS — you MUST complete all three:
+
+1. SCAN: Identify every file changed by the implementation. For each changed file, list all documentation files that reference the same module, function, class, or configuration key. Check README.md, docs/ directory, inline docstrings, CHANGELOG entries, and any covers: frontmatter in docs/*.md files.
+
+2. SEMANTIC COMPARISON: For each documentation reference found in step 1, compare the documented behavior against the new behavior after the implementation. Flag any mismatch where the documentation describes the old behavior, missing parameters, changed defaults, or removed functionality.
+
+3. DOC-DRIFT-VERDICT: State one of the following verdicts explicitly:
+   - DOCS-UPDATED: List each file updated and what changed.
+   - NO-UPDATE-NEEDED: Explain why the change is purely internal with no user-facing behavior change.
+   - DOCS-DRIFT-FOUND: List each documentation file that is now stale and what needs changing (this is a BLOCKING finding).
+
+**Changed files**:
+[changed file list]
+
+**Feature description**:
+[feature description]
+
+Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
+```
 
 ### STEP L5: Report and Finalize
 

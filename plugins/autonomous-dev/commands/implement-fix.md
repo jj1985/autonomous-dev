@@ -50,6 +50,22 @@ Check that the fix is within project scope. If misaligned: BLOCK with reason.
 
 This is the same alignment gate as the full pipeline STEP 1.
 
+#### Pipeline State Initialization
+
+After alignment validation passes, initialize the pipeline state file so that hook enforcement (prompt integrity, pipeline ordering) is active during fix mode:
+
+```bash
+python3 -c "
+import json, time
+state = {'mode': 'fix', 'explicitly_invoked': True, 'start_time': int(time.time())}
+with open('/tmp/implement_pipeline_state.json', 'w') as f:
+    json.dump(state, f)
+print('Pipeline state initialized for fix mode')
+"
+```
+
+This ensures prompt integrity enforcement (Layer 5) can detect an active pipeline and apply baseline shrinkage checks in addition to the minimum word count gate.
+
 ### STEP F1.5: Pre-Staged Files Check — HARD GATE
 
 **Progress**: Output step banner (STEP F1.5/4 — Pre-Staged Check). Output gate result.
@@ -134,8 +150,13 @@ prompt: "FIX MODE: Fix failing tests. Do NOT add new features.
 3. Fix the source code to make tests pass (prefer fixing code over fixing tests)
 4. If a test expectation is genuinely wrong, fix the test with a comment explaining why
 5. Run pytest after each fix to verify progress
+6. Add at least one new regression test that would FAIL without your fix
 
-HARD GATE: ALL tests must pass (0 failures). Do not stop until pytest shows 0 failures."
+HARD GATE: ALL tests must pass (0 failures). Do not stop until pytest shows 0 failures. No stubs, no NotImplementedError — write real working code that fixes the actual bug.
+
+Output: Summary of files changed, root cause of bug, regression tests added, and final pytest result (0 failures required).
+
+Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
 ```
 
 **HARD GATE**: After implementer completes, run `pytest --tb=short -q` again.
@@ -177,6 +198,7 @@ The library function `validate_prompt_word_count(agent_type, prompt)` from `plug
 - Sending a reviewer or security-auditor prompt with fewer than 80 words
 - Summarizing or condensing the implementer output before passing it to the reviewer
 - Omitting file paths, test results, or diff context from the reviewer prompt
+- Invoking security-auditor with only the skeleton prompt template without the actual verbatim implementer output pasted in
 
 Invoke TWO agents in PARALLEL:
 

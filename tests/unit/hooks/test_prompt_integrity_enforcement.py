@@ -38,18 +38,43 @@ class TestPromptIntegrityEnforcement:
         assert decision == "allow"
         assert "Not an agent invocation" in reason
 
-    def test_non_pipeline_allowed(self):
-        """Agent tool outside active pipeline should be allowed."""
+    def test_critical_agent_blocked_outside_pipeline_when_short(self):
+        """Critical agent with short prompt blocked even outside pipeline (Issue #716)."""
+        short_prompt = _make_prompt(40)
         with patch.object(hook, "_is_pipeline_active", return_value=False):
             decision, reason = hook.validate_prompt_integrity(
-                "Agent", {"subagent_type": "reviewer", "prompt": "short"}
+                "Agent",
+                {"subagent_type": "security-auditor", "prompt": short_prompt},
+            )
+            assert decision == "deny"
+            assert "BLOCKED" in reason
+            assert "security-auditor" in reason
+            assert "40 words" in reason
+
+    def test_critical_agent_allowed_outside_pipeline_when_adequate(self):
+        """Critical agent with adequate prompt allowed outside pipeline (Issue #716)."""
+        long_prompt = _make_prompt(100)
+        with patch.object(hook, "_is_pipeline_active", return_value=False):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "security-auditor", "prompt": long_prompt},
             )
             assert decision == "allow"
-            assert "No active pipeline" in reason
+            assert "Prompt integrity OK" in reason
 
-    def test_non_critical_agent_allowed(self):
+    def test_non_critical_agent_allowed_in_pipeline(self):
         """Non-critical agent should be allowed regardless of prompt length."""
         with patch.object(hook, "_is_pipeline_active", return_value=True):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "some-other-agent", "prompt": "short prompt"},
+            )
+            assert decision == "allow"
+            assert "not compression-critical" in reason
+
+    def test_non_critical_agent_allowed_outside_pipeline(self):
+        """Non-critical agent allowed outside pipeline regardless of prompt length."""
+        with patch.object(hook, "_is_pipeline_active", return_value=False):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
                 {"subagent_type": "some-other-agent", "prompt": "short prompt"},

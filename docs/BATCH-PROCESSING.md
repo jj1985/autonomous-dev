@@ -211,14 +211,14 @@ See `implement-batch.md` STEP B3 for complete enforcement logic.
 
 ### Overview
 
-As a batch progresses, context pressure can cause the coordinator to pass progressively shorter prompts to validation agents. The security-auditor and reviewer are most at risk: a compressed prompt may omit diff context or checklist items, causing the agent to produce a weaker (or absent) verdict without signaling failure.
+As a batch progresses, context pressure can cause the coordinator to pass progressively shorter prompts to validation agents. The security-auditor, reviewer, doc-master, implementer, and planner are most at risk: a compressed prompt may omit diff context or checklist items, causing the agent to produce a weaker (or absent) verdict without signaling failure.
 
 ### Enforcement
 
 `implement-batch.md` STEP B3 includes a **HARD GATE: Prompt Integrity Across Issues** (Issue #544) that requires:
 
 - Each agent MUST receive prompts of comparable length across all issues in the batch
-- Security-critical agents (security-auditor, reviewer) MUST receive at least 80 words in their prompts
+- Security-critical agents (security-auditor, reviewer, doc-master, implementer, planner) MUST receive at least 80 words in their prompts
 - The coordinator MUST log prompt word counts per agent per issue
 
 The `pipeline_intent_validator.py` library detects compression > 25% from the baseline (first issue) after the fact. The `prompt_integrity.py` library provides real-time prevention before each agent invocation.
@@ -236,7 +236,7 @@ The coordinator uses these functions for each agent in every batch issue:
 
 ### FORBIDDEN Behaviors
 
-- ❌ Passing progressively shorter prompts to security-auditor or reviewer in later batch issues
+- ❌ Passing progressively shorter prompts to security-auditor, reviewer, doc-master, implementer, or planner in later batch issues
 - ❌ Omitting diff context or implementation details from validation agent prompts due to context pressure
 - ❌ Summarizing implementer output for validation agents when full output was passed in earlier issues
 - ❌ Reducing prompt detail for any agent as the batch progresses
