@@ -73,8 +73,13 @@ Models predictably game evaluations. Detect these patterns:
     ls .claude/hooks/extensions/*.py 2>/dev/null && echo "Extensions present" || echo "No extensions"
     ```
 
-11. **Pipeline Timing Analysis** (severity: warning): Use `pipeline_timing_analyzer.py` to detect slow, wasteful, and ghost agent invocations:
+11. **Check #11 — Pipeline Timing Analysis** (severity: warning): Use `pipeline_timing_analyzer.py` to detect slow, wasteful, and ghost agent invocations. Also scan activity logs for `BudgetWarning` entries and budget violations logged by `session_activity_logger.py` (Issue #705):
     - Import and call `extract_agent_timings(events)` then `analyze_timings(timings, history_path=Path("logs/timing_history.jsonl"))`
+    - Scan activity logs for `"hook": "BudgetWarning"` entries: count consecutive budget violations per agent type (3+ consecutive → escalate to issue filing)
+      ```bash
+      grep '"hook":"BudgetWarning"' .claude/logs/activity/*.jsonl 2>/dev/null | tail -20
+      ```
+    - Budget violation escalation: if an agent has 3+ consecutive `BudgetWarning` entries with `"level": "exceeded"`, file or comment on a `[BUDGET-EXCEEDED]` issue
     - For each finding, use find-or-create+comment dedup:
       - Search: `gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state open --search "[TIMING] {agent_type}"`
       - If found: `gh issue comment {number} --body "..."`
@@ -248,6 +253,28 @@ gh issue create -R akaszubski/autonomous-dev \
 ---
 *Filed automatically by continuous-improvement-analyst*"
 ```
+
+### Step 5.5: Pipeline Efficiency Analysis (Check 14)
+
+14. **Pipeline Efficiency Analysis** (severity: info): After 5+ pipeline runs with token data, analyze cross-run efficiency trends using pipeline_efficiency_analyzer.analyze_efficiency(). Report findings in CLI output. Advisory only, not issue-filing. Circuit breaker: max 5 findings per report.
+
+```python
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from pipeline_efficiency_analyzer import analyze_efficiency, format_efficiency_report
+from pipeline_timing_analyzer import load_full_timing_history
+from pathlib import Path
+
+history_path = Path("logs/timing_history.jsonl")
+if history_path.exists():
+    history = load_full_timing_history(history_path)
+    all_entries = [entry for entries in history.values() for entry in entries]
+    if len(all_entries) >= 5:
+        findings = analyze_efficiency(all_entries)
+        if findings:
+            print(format_efficiency_report(findings))
+```
+
+**Skip conditions**: Do NOT run if timing_history.jsonl does not exist or has fewer than 5 total entries.
 
 ### Step 6: Auto-trigger trends analysis (every 10 issues)
 

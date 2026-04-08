@@ -251,6 +251,8 @@ def save_timing_entry(
                 "agent_type": t.agent_type,
                 "wall_clock_seconds": t.wall_clock_seconds,
                 "result_word_count": t.result_word_count,
+                "total_tokens": t.total_tokens,
+                "tool_uses": t.tool_uses,
                 "timestamp": t.invocation_ts,
             })
 
@@ -274,6 +276,55 @@ def save_timing_entry(
                     f.write(json.dumps(entry) + "\n")
         except (OSError, IOError) as e:
             logger.warning("Cannot write timing history: %s", e)
+
+
+def load_full_timing_history(history_path: Path) -> dict[str, list[dict]]:
+    """Load complete historical timing entries from JSONL file, grouped by agent_type.
+
+    Unlike load_timing_history() which returns only durations, this returns
+    the full entry dicts including token data fields. Entries missing token
+    fields default to 0 for total_tokens and tool_uses.
+
+    Args:
+        history_path: Path to the JSONL history file.
+
+    Returns:
+        Dict mapping agent_type to list of entry dicts.
+        Returns empty dict if file is missing or unreadable.
+    """
+    result: dict[str, list[dict]] = {}
+
+    if not history_path.exists():
+        return result
+
+    try:
+        text = history_path.read_text().strip()
+    except (OSError, IOError) as e:
+        logger.warning("Cannot read timing history at %s: %s", history_path, e)
+        return result
+
+    if not text:
+        return result
+
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+            agent_type = entry.get("agent_type", "")
+            if not agent_type:
+                continue
+            # Ensure token fields have defaults
+            entry.setdefault("total_tokens", 0)
+            entry.setdefault("tool_uses", 0)
+            entry.setdefault("wall_clock_seconds", 0)
+            entry.setdefault("result_word_count", 0)
+            result.setdefault(agent_type, []).append(entry)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+
+    return result
 
 
 def compute_adaptive_thresholds(
@@ -579,3 +630,161 @@ def check_consecutive_violations(
             break
 
     return count
+
+
+# ---------------------------------------------------------------------------
+# Per-agent time budget functions (Issue #705)
+# ---------------------------------------------------------------------------
+
+# Module-level cache for loaded budgets (reset to None to force reload)
+_cached_budgets: dict[str, dict] | None = None
+
+# Default config path relative to this file's location
+_DEFAULT_BUDGET_CONFIG = Path(__file__).parent.parent / "config" / "pipeline_time_budgets.json"
+
+
+def load_time_budgets(config_path: Path | None = None) -> dict[str, dict]:
+    """Load per-agent time budgets from config file, falling back to STATIC_THRESHOLDS.
+
+    Args:
+        config_path: Path to pipeline_time_budgets.json. Defaults to the canonical
+            config location next to this library. Pass a nonexistent path to force
+            the static fallback (useful in tests).
+
+    Returns:
+        Dict mapping agent_type -> {"budget_seconds": int, "warning_pct": float}.
+        Never returns an empty dict — falls back to STATIC_THRESHOLDS if config
+        file is missing or invalid.
+    """
+    global _cached_budgets
+
+    # Use provided path or canonical default
+    path = config_path if config_path is not None else _DEFAULT_BUDGET_CONFIG
+
+    # Only use cache when using the default path
+    if config_path is None and _cached_budgets is not None:
+        return _cached_budgets
+
+    budgets: dict[str, dict] = {}
+
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text())
+            for key, val in raw.items():
+                # Skip comment/metadata keys
+                if key.startswith("_"):
+                    continue
+                if isinstance(val, dict) and "budget_seconds" in val and "warning_pct" in val:
+                    budgets[key] = {
+                        "budget_seconds": float(val["budget_seconds"]),
+                        "warning_pct": float(val["warning_pct"]),
+                    }
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+            logger.warning("Failed to load time budgets from %s: %s — using static fallback", path, exc)
+
+    # Fall back to STATIC_THRESHOLDS for any missing agents (or full fallback)
+    for agent_type, (max_seconds, _min_words) in STATIC_THRESHOLDS.items():
+        if agent_type not in budgets:
+            budgets[agent_type] = {
+                "budget_seconds": float(max_seconds),
+                "warning_pct": 0.8,
+            }
+
+    # Cache the result when using the default path
+    if config_path is None:
+        _cached_budgets = budgets
+
+    return budgets
+
+
+def check_budget_violation(
+    agent_type: str,
+    duration_seconds: float,
+    budgets: dict[str, dict] | None = None,
+) -> dict | None:
+    """Check whether an agent duration exceeds its time budget.
+
+    Args:
+        agent_type: The agent type to check (e.g. "implementer").
+        duration_seconds: Measured duration in seconds. Values <= 0 are ignored.
+        budgets: Budget dict from load_time_budgets(). Loaded from config if None.
+
+    Returns:
+        None if within budget, or a violation dict with keys:
+            - level: "warning" (>= warning threshold) or "exceeded" (> budget)
+            - agent_type: str
+            - duration: float (seconds)
+            - budget: float (budget_seconds)
+            - pct_used: float (0.0–1.0+)
+    """
+    if duration_seconds <= 0:
+        return None
+
+    if budgets is None:
+        budgets = load_time_budgets()
+
+    agent_budget = budgets.get(agent_type)
+    if agent_budget is None:
+        return None
+
+    budget_seconds = agent_budget["budget_seconds"]
+    warning_pct = agent_budget["warning_pct"]
+    pct_used = duration_seconds / budget_seconds
+
+    if pct_used > 1.0:
+        return {
+            "level": "exceeded",
+            "agent_type": agent_type,
+            "duration": duration_seconds,
+            "budget": budget_seconds,
+            "pct_used": pct_used,
+        }
+    elif pct_used >= warning_pct:
+        return {
+            "level": "warning",
+            "agent_type": agent_type,
+            "duration": duration_seconds,
+            "budget": budget_seconds,
+            "pct_used": pct_used,
+        }
+
+    return None
+
+
+def format_budget_warning(violation: dict) -> str:
+    """Format a human-readable budget warning message (stick+carrot pattern).
+
+    Args:
+        violation: Dict returned by check_budget_violation().
+
+    Returns:
+        Formatted warning string with REQUIRED NEXT ACTION directive.
+    """
+    agent_type = violation["agent_type"]
+    duration = violation["duration"]
+    budget = violation["budget"]
+    pct_used = violation["pct_used"]
+    level = violation["level"]
+
+    pct_display = f"{pct_used * 100:.0f}%"
+    duration_display = f"{duration:.1f}s"
+    budget_display = f"{budget:.0f}s"
+
+    if level == "exceeded":
+        prefix = f"[BUDGET-EXCEEDED] {agent_type}: {duration_display} used, budget {budget_display} ({pct_display} of budget)"
+        action = (
+            "REQUIRED NEXT ACTION: "
+            "Review this agent's task scope — it ran over its time budget. "
+            "Consider breaking the task into smaller steps or raising the budget "
+            f"for {agent_type} in plugins/autonomous-dev/config/pipeline_time_budgets.json."
+        )
+    else:
+        prefix = f"[BUDGET-WARNING] {agent_type}: {duration_display} used, budget {budget_display} ({pct_display} of budget)"
+        action = (
+            "REQUIRED NEXT ACTION: "
+            "Monitor this agent — it is approaching its time budget. "
+            "If this pattern repeats, review task scope or adjust "
+            f"budget_seconds for {agent_type} in plugins/autonomous-dev/config/pipeline_time_budgets.json."
+        )
+
+    return f"{prefix}\n{action}"

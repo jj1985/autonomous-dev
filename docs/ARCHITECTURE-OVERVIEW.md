@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 14 agents (18 archived), 17 skills, 22 active commands, 185 libraries, 27 active hooks (62 archived).
+**Component Counts**: 14 agents (18 archived), 17 skills, 22 active commands, 187 libraries, 27 active hooks (62 archived).
 
 ---
 
@@ -81,11 +81,11 @@ Reusable Python libraries for security, validation, automation, and more. See [d
 **Design Pattern**: Progressive enhancement, two-tier design (core logic + CLI), non-blocking enhancements
 
 **Key Libraries**:
-- **Security**: security_utils.py, mcp_security.py, sandbox_enforcer.py, agent_ordering_gate.py (pure-logic pipeline ordering decisions — no I/O)
+- **Security**: security_utils.py, mcp_security.py, sandbox_enforcer.py, agent_ordering_gate.py (pure-logic pipeline ordering decisions — no I/O), secret_patterns.py (shared credential/OWASP patterns — single source of truth for hooks and active scanner), active_security_scanner.py (dependency audit, credential history scan, OWASP pattern scan — used by security-auditor STEP 0)
 - **Validation**: validation.py, alignment_validator.py, project_validator.py
 - **Automation**: unified_git_automation.py (git operations), batch_processor.py, session_tracker.py
 - **State Management**: session_state_manager.py (session persistence), batch_state_manager.py, user_state_manager.py, session_resource_manager.py (resource tracking), pipeline_state.py (pipeline progression tracking), pipeline_completion_state.py (agent ordering enforcement state — completions written by session tracker, launches written by pre-tool hook, both read by pre-tool hook for ordering decisions)
-- **Infrastructure**: path_utils.py, performance_timer.py, agent_tracker.py, pipeline_timing_analyzer.py, test_pruning_analyzer.py (AST-based test hygiene — detects orphaned imports, archived refs, zero-assertion tests, duplicate coverage, and stale regressions; used by `/sweep --tests`), test_issue_tracer.py (test-to-issue traceability — maps tests to GitHub issues, flags untested issues, orphaned pairs, and untraced tests; used by `/audit --test-tracing` and STEP 13 non-blocking warning), test_lifecycle_manager.py (composition layer — orchestrates TestIssueTracer, TestPruningAnalyzer, tier_registry, and coverage_baseline into a unified `TestHealthReport`; used by `/improve` STEP 2.7 and continuous-improvement-analyst check #12)
+- **Infrastructure**: path_utils.py, performance_timer.py, agent_tracker.py, pipeline_timing_analyzer.py, pipeline_efficiency_analyzer.py (cross-run efficiency analysis — model tier recommendations, token trend detection, IQR outlier detection; CIA check #14), test_pruning_analyzer.py (AST-based test hygiene — detects orphaned imports, archived refs, zero-assertion tests, duplicate coverage, and stale regressions; used by `/sweep --tests`), test_issue_tracer.py (test-to-issue traceability — maps tests to GitHub issues, flags untested issues, orphaned pairs, and untraced tests; used by `/audit --test-tracing` and STEP 13 non-blocking warning), test_lifecycle_manager.py (composition layer — orchestrates TestIssueTracer, TestPruningAnalyzer, tier_registry, and coverage_baseline into a unified `TestHealthReport`; used by `/improve` STEP 2.7 and continuous-improvement-analyst check #12)
 - **See**: [docs/LIBRARIES.md](docs/LIBRARIES.md) for complete API reference
 
 **Note on auto_git_workflow.py**: A backward compatibility shim exists at `.claude/hooks/auto_git_workflow.py` (56 lines) that redirects to `unified_git_automation.py`. The original hook was consolidated in Issue #144. Duplicate resolution completed in Issue #212. See `plugins/autonomous-dev/hooks/archived/README.md` for details.

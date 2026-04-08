@@ -183,6 +183,22 @@ def main():
         # Heartbeat check for batch session monitoring (Issue #526)
         _check_and_log_heartbeat(session_id, log_dir, date_str)
 
+        # Budget check for Agent/Task completions (Issue #705 — non-blocking soft gate)
+        if tool_name in ("Task", "Agent") and log_level != "debug":
+            try:
+                agent_duration_ms = output_summary.get("agent_duration_ms")
+                agent_type = input_summary.get("subagent_type")
+                if agent_type and agent_duration_ms and agent_duration_ms > 0:
+                    _check_and_log_budget(
+                        agent_type=agent_type,
+                        duration_ms=agent_duration_ms,
+                        session_id=session_id,
+                        log_file=log_file,
+                    )
+            except Exception:
+                # Non-blocking: budget check errors must never crash the hook
+                pass
+
     except Exception:
         # Non-blocking: never crash Claude Code
         pass
@@ -383,6 +399,54 @@ def _find_log_dir() -> Path:
 
     # Fallback to cwd
     return cwd / ".claude" / "logs" / "activity"
+
+
+def _check_and_log_budget(
+    agent_type: str,
+    duration_ms: int | float,
+    session_id: str,
+    log_file: Path,
+) -> None:
+    """Check agent duration against time budget and log a BudgetWarning entry if needed.
+
+    This is a soft gate — never blocks. Writes an additional JSONL entry tagged
+    "BudgetWarning" when an agent uses >= warning_pct of its budget or exceeds it.
+
+    Args:
+        agent_type: The pipeline agent type (e.g. "implementer").
+        duration_ms: Agent wall-clock duration in milliseconds.
+        session_id: Current Claude session identifier.
+        log_file: Path to the active JSONL log file for writing.
+    """
+    try:
+        # Lazy import so that the hook still works even if the library is unavailable
+        import sys as _sys
+        _lib_dir = str(Path(__file__).parent.parent / "lib")
+        if _lib_dir not in _sys.path:
+            _sys.path.insert(0, _lib_dir)
+        from pipeline_timing_analyzer import check_budget_violation, format_budget_warning
+
+        duration_seconds = duration_ms / 1000.0
+        violation = check_budget_violation(agent_type, duration_seconds)
+        if violation is None:
+            return
+
+        warning_text = format_budget_warning(violation)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "hook": "BudgetWarning",
+            "agent_type": agent_type,
+            "level": violation["level"],
+            "duration_seconds": violation["duration"],
+            "budget_seconds": violation["budget"],
+            "pct_used": round(violation["pct_used"], 3),
+            "session_id": session_id,
+            "message": warning_text,
+        }
+        with open(log_file, "a") as _f:
+            _f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except Exception:
+        pass  # Non-blocking: never crash the hook
 
 
 def _check_and_log_heartbeat(session_id: str, log_dir: Path, date_str: str):
