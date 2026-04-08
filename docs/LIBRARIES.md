@@ -5,7 +5,7 @@ covers:
 
 # Shared Libraries Reference
 
-**Last Updated**: 2026-04-08 (Issue #710 - Added active_security_scanner.py and secret_patterns.py)
+**Last Updated**: 2026-04-08 (Issue #729 - Added context_budget_monitor.py)
 **Purpose**: Comprehensive API documentation for autonomous-dev shared libraries
 
 This document provides detailed API documentation for shared libraries in `plugins/autonomous-dev/lib/` and `plugins/autonomous-dev/scripts/`. For high-level overview, see [CLAUDE.md](../CLAUDE.md) Architecture section.
@@ -14,7 +14,7 @@ This document provides detailed API documentation for shared libraries in `plugi
 
 The autonomous-dev plugin includes shared libraries organized into the following categories:
 
-### Core Libraries (82)
+### Core Libraries (85)
 
 1. **security_utils.py** - Security validation and audit logging
 2. **project_md_updater.py** - Atomic PROJECT.md updates with merge conflict detection
@@ -106,6 +106,10 @@ The autonomous-dev plugin includes shared libraries organized into the following
 83. **secret_patterns.py** - Shared credential detection patterns — single source of truth for `hooks/security_scan.py` and `lib/active_security_scanner.py`. Exports `SECRET_PATTERNS` (list of `(regex_str, description)` tuples for API keys, AWS keys, generic secrets, database URLs, and private keys), `COMPILED_SECRET_PATTERNS` (pre-compiled versions for efficient reuse), `OWASP_CODE_PATTERNS` (list of `(regex_str, owasp_category, remediation)` tuples covering A03 command/code/SQL injection, A05 debug=True misconfiguration, A10 SSRF dynamic URL construction), `COMPILED_OWASP_PATTERNS`, and `DEPENDENCY_ADVISORIES` (dict of package → CVE advisory list for django, flask, requests, urllib3, cryptography, pillow, jinja2, pyyaml). (v1.0.0, Issue #710)
 
 84. **active_security_scanner.py** - Active security scanning with three modes: dependency audit, credential history scan, and OWASP pattern scan. `dependency_audit(project_root)` parses `requirements.txt` and `pyproject.toml`, checks versions against `DEPENDENCY_ADVISORIES`, and runs `pip-audit` when available. `credential_history_scan(project_root, *, max_commits=1000)` scans `git log --all -p` diff lines against `COMPILED_SECRET_PATTERNS`, returning `CRITICAL` findings for any leaked credentials. `owasp_pattern_scan(file_paths)` checks Python source files against `COMPILED_OWASP_PATTERNS`, skipping test files and comments to reduce false positives. `full_scan(project_root, changed_files=None)` orchestrates all three scans and returns an `ActiveScanReport` dataclass with `findings` (sorted by `Severity` enum: CRITICAL→HIGH→MEDIUM→LOW), `scan_duration`, and `scans_completed`. `format_report(report)` renders Markdown with severity summary table, findings table, and remediation actions. Used by the `security-auditor` agent at STEP 0 before passive OWASP checklist review. (v1.0.0, Issue #710)
+
+85. **context_budget_monitor.py** - Inline truncation warnings and context budget threshold tracking (pure Python, no external dependencies). `truncate_output(text, *, max_chars=12000, tail_chars=500)` returns text unchanged if within limit; when the text exceeds `max_chars` it inserts an inline `[TRUNCATED: N chars removed. Showing first K + last T chars]` marker so downstream agents know content was cut — the head-only path activates when `tail_chars >= max_chars`. `check_context_budget(current_tokens, max_tokens, *, warn_threshold=0.80, critical_threshold=0.95)` returns `None` below the warn threshold, an advisory `[CONTEXT NOTE: X% of token budget used. Prioritize completing current task over exploration.]` string between warn and critical thresholds, and a blocking `[CONTEXT WARNING: X% of token budget used (N/M). Complete current step only.]` string at or above the critical threshold; `max_tokens <= 0` always returns a critical warning. `estimate_tokens(text)` approximates token count via `word_count * 1.3` (model-agnostic rough estimate). Constants: `DEFAULT_MAX_OUTPUT_CHARS = 12000`, `DEFAULT_TAIL_CHARS = 500`, `WARN_THRESHOLD = 0.80`, `CRITICAL_THRESHOLD = 0.95`. Integrated into `implement.md` STEP 10b VERBATIM PASSING: coordinators MUST include the `[TRUNCATED: N chars removed]` marker at truncation points when passing file diffs to downstream agents. (v1.0.0, Issue #729)
+
+86. **blocking_signal_classifier.py** - Three-tier blocking signal classification for implementer adaptive replanning (pure Python, no external dependencies). `classify_blocking_signal(error_output)` inspects raw tool output and returns a `BlockingSignal` dataclass with `signal_type` (`BlockingSignalType.RECOVERABLE`, `STRUCTURAL`, or `NOT_BLOCKING`), `error_name`, `error_detail`, and `suggested_action`. Recoverable signals (ModuleNotFoundError, FileNotFoundError, ImportError, AttributeError, command not found / exit code 127) trigger mini-replan cycles; structural signals (SyntaxError, IndentationError, TabError) indicate the code must be fixed before retrying. `sanitize_error_for_directive(error_output)` truncates to `MAX_DIRECTIVE_ERROR_LENGTH=500` chars and removes newlines, delegating to `failure_classifier.sanitize_error_message` when available. `format_mini_replan_directive(signal, *, cycle)` produces a structured `[MINI-REPLAN cycle N/2]` directive for injection into the implementer prompt, including the error name, detail, suggested action, FORBIDDEN retry clause, and a final-cycle escalation warning when `cycle >= MAX_MINI_REPLAN_CYCLES=2`. Used by the implementer agent HARD GATE (Issue #730). (v1.0.0, Issue #730)
 
 ### Tracking Libraries (3) - NEW in v3.28.0, ENHANCED in v3.48.0
 
