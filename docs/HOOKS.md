@@ -74,7 +74,7 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) skip the 4-layer MCP validation
 - Governed by settings.json permissions instead
 - Eliminates unwanted permission prompts for standard tools
-- **Exception — Agent/Task tools**: Pipeline ordering gate runs before extensions for Agent/Task tool calls during active pipeline sessions (Issues #625, #629, #632)
+- **Exception — Agent/Task tools**: Pipeline ordering gate and prompt integrity gate run before extensions for Agent/Task tool calls (Issues #625, #629, #632, #695, #716). Prompt integrity minimum word count fires regardless of pipeline state; baseline shrinkage check only during active pipeline.
 - Hook extensions still run for all native tools (extensions can block any tool)
 
 **Project Detection Guard** (Issue #662 — non-native MCP tools only):
@@ -101,6 +101,15 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - In parallel mode, distinguishes "running concurrently" (launched, not yet complete — allowed with warning) from "skipped entirely" (never launched — blocked)
 - Controlled by env var `PRE_TOOL_PIPELINE_ORDERING` (default: `true`)
 - Fails open — ordering check errors never block workflow
+
+**Prompt Integrity Gate** (Issues #695, #716, #723 — native Agent/Task tools only):
+- Blocks invocations of compression-critical agents (security-auditor, reviewer, doc-master, implementer, planner) when their prompt falls below the minimum word count
+- Minimum word count enforcement fires **regardless of pipeline state** (Issue #716 fix) — this gate is always active for critical agents, not just during `/implement` batches
+- Baseline shrinkage check (detecting > 25% compression vs first-issue baseline) fires **whenever a baseline exists** (Issue #723 — no pipeline-active gate); first invocation seeds the baseline using `record_prompt_baseline` with `issue_number=0` as a hook sentinel
+- Uses `validate_prompt_integrity()` which imports `COMPRESSION_CRITICAL_AGENTS` and `MIN_CRITICAL_AGENT_PROMPT_WORDS` from `prompt_integrity.py` (minimum: 80 words)
+- Shrinkage check calls `validate_prompt_word_count` with `max_shrinkage=0.25` (25%, higher than the library default of 15% to allow legitimate prompt variation at the hook level)
+- Block message directs the coordinator to reconstruct the prompt with full context and use `get_agent_prompt_template()` to reload the agent base prompt from disk
+- Fails open in two cases: ImportError when `prompt_integrity` module is unavailable, and any Exception raised during the baseline check
 
 **Infrastructure Protection** (scoped to autonomous-dev repos):
 - Write/Edit to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` are blocked outside the `/implement` pipeline

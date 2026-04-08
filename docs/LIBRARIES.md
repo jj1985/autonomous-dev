@@ -16097,8 +16097,8 @@ launched = get_launched_agents(session_id="abc123", issue_number=42)
 - **`get_completed_agents(session_id, *, issue_number=0) -> set[str]`** — Get the set of agents that have completed successfully for a session/issue. Returns empty set on any read error (fail-open).
 - **`record_agent_launch(session_id, agent_type, *, issue_number=0) -> None`** — Record that an agent has been launched (started) for a given session and issue. Called by `unified_pre_tool.py` in PreToolUse BEFORE the agent runs. Used by the parallel-mode defense-in-depth guard to distinguish "running concurrently" from "skipped entirely". (Issue #686)
 - **`get_launched_agents(session_id, *, issue_number=0) -> set[str]`** — Get the set of agents that have been launched for a session/issue. Returns empty set on any read error. (Issue #686)
-- **`record_prompt_baseline(session_id, agent_type, word_count, issue_number) -> None`** — Record baseline prompt word count for an agent.
-- **`get_prompt_baseline(session_id, agent_type) -> Optional[int]`** — Get baseline prompt word count for an agent.
+- **`record_prompt_baseline(agent_type, issue_number, word_count, *, state_dir=None) -> None`** — Record baseline prompt word count for an agent. Persists to `.claude/logs/prompt_baselines.json`. Hook uses `issue_number=0` as a sentinel when seeding from the prompt integrity gate (Issue #723).
+- **`get_prompt_baseline(agent_type, *, state_dir=None) -> Optional[int]`** — Get the baseline word count (from the first recorded issue) for an agent. Returns `None` if no baseline exists (fail-open).
 - **`set_validation_mode(session_id, mode) -> None`** — Set ordering enforcement mode (`"sequential"` or `"parallel"`).
 - **`get_validation_mode(session_id) -> str`** — Get ordering enforcement mode (default: `"sequential"`).
 - **`clear_session(session_id) -> None`** — Remove the state file for a session (called at pipeline cleanup).

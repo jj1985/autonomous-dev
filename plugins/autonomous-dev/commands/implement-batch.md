@@ -267,12 +267,20 @@ prompt: "**BATCH CONTEXT** (CRITICAL - Operating in worktree):
 - Read/Write/Edit tools: Use absolute paths like $WORKTREE_PATH/src/file.py
 - Bash commands: Run from worktree using: cd $WORKTREE_PATH && [command]
 
-Implement production-quality code for: [user's feature description].
+Implement production-quality code for Issue [issue number]: [user's feature description].
 
 **Implementation Plan**: [Paste planner output]
 **Tests to Pass**: [Paste test-master output summary]
 
-Output: Production-quality code following the architecture plan."
+**Requirements** (HARD GATES — all must be met before returning):
+- Write WORKING code — no stubs, no NotImplementedError, no pass placeholders
+- Write unit tests alongside implementation (not after — test-driven)
+- ALL tests must pass — 0 failures, 0 errors before returning
+- If any test fails: fix it, adjust its expectation, or document a specific blocker
+
+Output: Implementation summary with files changed, tests written, and final pytest result (0 failures required)."
+
+model: "sonnet"
 
 model: "sonnet"
 ```
@@ -285,7 +293,7 @@ The coordinator MUST maintain consistent prompt quality across all issues in the
 
 **Requirements**:
 - Each agent MUST receive prompts of comparable length across all issues in the batch
-- Security-critical agents (security-auditor, reviewer) MUST receive at least 80 words in their prompts
+- Security-critical agents (security-auditor, reviewer, doc-master, implementer, planner) MUST receive at least 80 words in their prompts
 - The coordinator MUST log prompt word counts per agent per issue for post-hoc analysis
 - The pipeline_intent_validator detects shrinkage > 25% from the baseline (first issue) automatically
 
