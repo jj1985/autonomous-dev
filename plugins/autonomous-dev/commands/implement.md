@@ -226,6 +226,18 @@ Do NOT proceed to STEP 2 until the staging area is clean.
 - ❌ Silently unstaging files without user confirmation
 - ❌ Treating pre-staged files as part of the current feature
 
+**Baseline Test Count Capture** (for regression test gate in STEP 8):
+
+```bash
+BASELINE_TEST_COUNT=$(python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from bugfix_detector import get_test_count
+from pathlib import Path
+print(get_test_count(Path('.')))
+")
+echo "Baseline test count: $BASELINE_TEST_COUNT"
+```
+
 ### STEP 2: Validate PROJECT.md Alignment — HARD GATE
 
 **Progress**: Output step banner (STEP 2/15 — Alignment). Output gate result after.
@@ -440,6 +452,54 @@ PASS: 45 passed | Coverage: 87% (baseline: 85%) | Skip count OK: 2 | Test count 
 ```
 - **Acceptance coverage** (WARNING only, never blocks): Reports how many acceptance criteria from STEP 6 have matching tests. When total > 0 but covered == 0, a WARNING is appended to the summary.
 - **Tier distribution**: Reports test count by Diamond Model tier (T0-T3), computed by globbing `tests/**/*.py`.
+
+### HARD GATE: Regression Test Requirement (Bug Fixes)
+
+If the feature being implemented is a bug fix, at least one NEW test must be added. This gate applies the same enforcement as `implement-fix.md` (lines 166-177) to the full pipeline.
+
+**Bug-fix detection** (inline — coordinator checks):
+```bash
+IS_BUGFIX=$(python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from bugfix_detector import is_bugfix_feature
+desc = '''FEATURE_DESCRIPTION'''
+labels = ISSUE_LABELS  # from STEP 0 gh issue view, or empty list
+print('true' if is_bugfix_feature(desc, labels) else 'false')
+")
+```
+
+If `IS_BUGFIX` is `true`:
+
+```bash
+CURRENT_TEST_COUNT=$(python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from bugfix_detector import get_test_count
+from pathlib import Path
+print(get_test_count(Path('.')))
+")
+```
+
+If `CURRENT_TEST_COUNT <= BASELINE_TEST_COUNT`: **BLOCK** with message:
+```
+BLOCKED — Bug fix detected but no new regression tests added.
+
+Feature: FEATURE_DESCRIPTION
+Test count before: $BASELINE_TEST_COUNT
+Test count after: $CURRENT_TEST_COUNT
+
+REQUIRED NEXT ACTION:
+Add at least one test that reproduces the bug and fails without the fix.
+
+Exception: If an existing failing test IS the regression test, document
+which test covers it and the gate passes automatically.
+```
+
+**Exception**: If the bug was caught BY an existing failing test (the test that originally failed IS the regression test), this gate passes. Document which existing test covers the regression.
+
+**FORBIDDEN**:
+- ❌ Fixing a bug without a test that proves it was broken
+- ❌ Claiming "the fix is obvious and doesn't need a test"
+- ❌ Adding a test that passes both with and without the fix (not a real regression test)
 
 ### STEP 9: Hook Registration Check — HARD GATE
 

@@ -108,7 +108,8 @@
         "plugins/autonomous-dev/hooks/validate_claude_md_size.py",
         "plugins/autonomous-dev/hooks/validate_command_file_ops.py",
         "plugins/autonomous-dev/hooks/validate_project_alignment.py",
-        "plugins/autonomous-dev/hooks/validate_session_quality.py"
+        "plugins/autonomous-dev/hooks/validate_session_quality.py",
+        "plugins/autonomous-dev/hooks/enforce_regression_test.py"
       ],
       "target": ".claude/hooks"
     },
@@ -287,7 +288,8 @@
         "plugins/autonomous-dev/lib/workflow_violation_logger.py",
         "plugins/autonomous-dev/lib/worktree_command.py",
         "plugins/autonomous-dev/lib/worktree_conflict_integration.py",
-        "plugins/autonomous-dev/lib/worktree_manager.py"
+        "plugins/autonomous-dev/lib/worktree_manager.py",
+        "plugins/autonomous-dev/lib/bugfix_detector.py"
       ],
       "target": ".claude/lib"
     },

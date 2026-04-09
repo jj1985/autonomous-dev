@@ -165,6 +165,10 @@
           {
             "type": "command",
             "command": "python \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/validate_claude_md_size.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/enforce_regression_test.py\""
           }
         ]
       }
