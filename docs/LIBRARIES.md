@@ -91,11 +91,11 @@ The autonomous-dev plugin includes shared libraries organized into the following
 73. **prompt_integrity.py** - Real-time prevention of progressive prompt compression in batch processing. `validate_prompt_word_count(agent_type, prompt, baseline_word_count)` checks: (1) prompt must not be empty; (2) critical agents must have at least 80 words; (3) shrinkage vs baseline must be ≤ 15% (configurable via `max_shrinkage`). Returns `PromptIntegrityResult` with `passed`, `reason`, `shrinkage_pct`, and `should_reload` fields. `record_prompt_baseline(agent_type, issue_number, word_count)` persists word counts to `.claude/logs/prompt_baselines.json`. `get_prompt_baseline(agent_type)` retrieves the word count from the lowest-numbered (first) issue. `get_agent_prompt_template(agent_type)` reads the agent's `.md` source file for prompt reconstruction. `clear_prompt_baselines()` resets state at batch start. `compute_template_baselines(agents_dir=None)` reads each critical agent's `.md` template file and returns `{agent_type: word_count}` for all found templates — agents with missing files are skipped with a warning. `seed_baselines_from_templates(agents_dir=None, state_dir=None)` seeds `prompt_baselines.json` with template-derived word counts at `issue_number=0`, providing a ground-truth floor that prevents corrupted first-issue observations from poisoning the baseline (Issue #748). Call immediately after `clear_prompt_baselines()` at batch start. `COMPRESSION_CRITICAL_AGENTS = {"security-auditor", "reviewer", "researcher-local", "researcher", "implementer", "planner", "doc-master"}` — mirrors the same set in `pipeline_intent_validator.py`. (v1.0.0, Issues #601, #603, #696, #748)
 74. **pipeline_timing_analyzer.py** - Automatic pipeline timing analysis for the continuous-improvement-analyst (check #11, Issue #621). Detects four finding types: `GHOST` (duration <10s, words <50), `WASTEFUL` (low words/sec over 60s), `SLOW` (exceeds static or adaptive p95×1.5 threshold), and `TOKEN_EFFICIENCY` (tokens-per-word ratio >500 — added Issue #704). `AgentTiming` dataclass includes `total_tokens` and `tool_uses` fields (populated from Agent result `<usage>` blocks via `session_activity_logger.py`). `format_timing_report()` conditionally adds `Tokens` and `Tok/Word` columns to the timing table when any invocation has token data. Adaptive thresholds computed from rolling history via `load_timing_history()` / `save_timing_entry(timings, history_path)`. `check_consecutive_violations(agent_type, history_path, threshold)` counts consecutive recent runs exceeding a threshold — used as a circuit breaker before filing GitHub issues. Per-agent time budget functions added in Issue #705: `load_time_budgets(config_path)` loads `pipeline_time_budgets.json` (falls back to `STATIC_THRESHOLDS` when file missing); `check_budget_violation(agent_type, duration_seconds, budgets)` returns `None` if within budget or a dict with `level` ("warning"/"exceeded"), `duration`, `budget`, and `pct_used`; `format_budget_warning(violation)` formats a human-readable stick+carrot message with `REQUIRED NEXT ACTION` directive. Budget config at `plugins/autonomous-dev/config/pipeline_time_budgets.json`.
 75. **version_reader.py** - Lightweight plugin version + git SHA stamping for session logs and auto-filed issues (Issue #630).
-76. **test_pruning_analyzer.py** - AST-based test hygiene analyzer for `/sweep --tests`. Detects 5 categories of pruning candidates: dead imports, archived references, zero-assertion tests, duplicate coverage, and stale regression references. All output is informational — never auto-deletes. (v1.0.0, Issue #674)
+76. **test_pruning_analyzer.py** - AST-based test hygiene analyzer for `/sweep --tests`. Detects 5 categories of pruning candidates: dead imports, archived references, zero-assertion tests, duplicate coverage, and stale regression references. Default output is informational. `prune_tests(dry_run=True)` can delete fully-flagged files with safety guards (security exclusion, tier protection, whole-file-only). Returns `PruneResult` dataclass. (v1.0.0, Issue #674; pruning: Issue #736)
 77. **test_issue_tracer.py** - Test-to-issue traceability library: scans test files for issue references (class names, function names, docstrings, comments, GH-NNN shorthand, pytest markers), cross-references with GitHub issues via `gh` CLI, and produces a `TracingReport` with three finding categories: untested issues, orphaned pairs, and untraced tests. Non-blocking — used by `/audit --test-tracing` and STEP 13 non-blocking warning in `/implement`. (v1.0.0, Issue #675)
 78. **acceptance_criteria_tracker.py** - Tracks which acceptance criteria from STEP 6 have corresponding tests, computing N/M coverage ratios surfaced in the STEP 8 quality gate report. `save_criteria_registry(criteria, artifact_dir)` writes a JSON registry mapping each criterion to its scenario_name and test_file. `load_criteria_registry(artifact_dir)` reads the registry (returns empty list if missing or corrupt). `compute_criteria_coverage(registry, tests_dir)` scans all test files under tests_dir and returns a `CriteriaCoverageResult` dataclass with `total`, `covered`, `uncovered_criteria`, `coverage_ratio`, and `has_warning` (True when total > 0 but covered == 0). Consumed by `step5_quality_gate.run_quality_gate()`. Coverage is advisory only — never blocks the pipeline. (v1.0.0, Issue #676)
 
-79. **test_lifecycle_manager.py** - Orchestrates existing test analyzers (TestIssueTracer, TestPruningAnalyzer, tier_registry, coverage_baseline) into a unified `TestHealthReport`. Each analyzer runs in an isolated error boundary so a single failure produces a partial report rather than a crash. `TestLifecycleManager(project_root).analyze()` returns a `TestHealthReport` with `tracing`, `pruning`, `tier_distribution`, `coverage_baseline`, `summary` (aggregated `TestHealthSummary`), `scan_duration_ms`, and `errors` fields. `format_dashboard(report)` renders a markdown health dashboard. `check_issue_tracing(project_root, issue_number)` is a pipeline convenience wrapper that returns a warning string when an issue has no test references. Used by `/improve` STEP 2.7 and by `continuous-improvement-analyst` check #12. (v1.0.0, Issue #673)
+79. **test_lifecycle_manager.py** - Orchestrates existing test analyzers (TestIssueTracer, TestPruningAnalyzer, tier_registry, coverage_baseline) into a unified `TestHealthReport`. Each analyzer runs in an isolated error boundary so a single failure produces a partial report rather than a crash. `TestLifecycleManager(project_root).analyze()` returns a `TestHealthReport` with `tracing`, `pruning`, `tier_distribution`, `coverage_baseline`, `summary` (aggregated `TestHealthSummary`), `scan_duration_ms`, and `errors` fields. `format_dashboard(report)` renders a markdown health dashboard with a Gate Status line showing PASS/FAIL against `PRUNABLE_THRESHOLD` (default 100). `check_prunable_threshold(report, threshold=None)` returns `(passed: bool, message: str)` for CI gate integration. `check_issue_tracing(project_root, issue_number)` is a pipeline convenience wrapper that returns a warning string when an issue has no test references. Used by `/improve` STEP 2.7 and by `continuous-improvement-analyst` check #12. (v1.0.0, Issue #673; gate: Issue #736)
 
 80. **skill_change_detector.py** - Detect which skills were modified in a changeset and check evaluation readiness. `detect_skill_changes(file_paths)` extracts skill names from paths matching `skills/*/SKILL.md`. `get_eval_status(skill_name, *, repo_root)` checks for eval prompts (`tests/genai/skills/eval_prompts/{name}.json`) and baseline data (`tests/genai/skills/baselines/effectiveness.json`), returning `{skill_name, has_eval_prompts, baseline, evaluable}`. `format_skill_eval_report(results)` formats per-skill results with PASS/WARNING/BLOCK verdicts (delta < -0.10 triggers BLOCK). `get_weak_skills(baselines_path, *, min_delta, min_pass_rate, stale_days)` identifies skills with weak delta, low pass rate, or stale baselines — used by `/improve` STEP 2.5 to surface skill health. Used by STEP 11.5 (Skill Effectiveness Gate) in `/implement` and by `/improve`. (v1.0.0, Issue #643)
 
@@ -16200,13 +16200,13 @@ markers = build_directory_markers()
 
 ---
 
-## 176+6. test_pruning_analyzer.py (818 lines, v1.0.0 - Issue #674)
+## 176+6. test_pruning_analyzer.py (v1.0.0 - Issue #674; pruning: Issue #736)
 
-**Purpose**: AST-based test hygiene analyzer that detects orphaned, stale, and redundant tests. Invoked by `/sweep --tests` to produce an informational pruning report. Never auto-deletes files.
+**Purpose**: AST-based test hygiene analyzer that detects orphaned, stale, and redundant tests. Invoked by `/sweep --tests` to produce an informational pruning report. The `prune_tests()` method can delete fully-flagged files when explicitly requested (dry-run by default).
 
 **Problem**: Test suites accumulate dead weight — imports that reference deleted modules, tests for archived code, zero-assertion stubs, and stale regression markers. Manual identification is tedious and error-prone.
 
-**Solution**: `TestPruningAnalyzer` walks all `test_*.py` / `*_test.py` files using Python's `ast` module and runs 5 detectors in sequence, reporting each finding with severity, prunable flag (from `tier_registry`), and a suggested action.
+**Solution**: `TestPruningAnalyzer` walks all `test_*.py` / `*_test.py` files using Python's `ast` module and runs 5 detectors in sequence, reporting each finding with severity, prunable flag (from `tier_registry`), and a suggested action. The optional `prune_tests()` method deletes files where every test function is flagged by a safe category, with multiple safety guards.
 
 ### Detection Categories
 
@@ -16221,16 +16221,22 @@ markers = build_directory_markers()
 ### Public API
 
 ```python
-from test_pruning_analyzer import TestPruningAnalyzer, PruningReport, PruningFinding
+from test_pruning_analyzer import TestPruningAnalyzer, PruningReport, PruningFinding, PruneResult
 from pathlib import Path
 
 analyzer = TestPruningAnalyzer(Path("."))
 report = analyzer.analyze()
 print(report.format_table())
+
+# Pruning (dry run by default — no files deleted):
+result = analyzer.prune_tests()
+# Actually delete:
+result = analyzer.prune_tests(dry_run=False)
 ```
 
 **`TestPruningAnalyzer(project_root: Path)`**
 - `analyze() -> PruningReport` — runs all detectors and returns consolidated report
+- `prune_tests(*, dry_run=True, categories=None, exclude_dirs=None) -> PruneResult` — delete fully-flagged test files with safety guards; safe categories only by default (`dead_import`, `archived_ref`, `zero_assertion`); security tests excluded (`tests/security/`); whole-file-only deletion (all test functions must be flagged); respects tier protection (T0/T1 never deleted)
 
 **`PruningReport`**
 - `findings: List[PruningFinding]` — all findings across scanned files
@@ -16242,19 +16248,25 @@ print(report.format_table())
 - `file_path: str`, `line: int`, `category: PruningCategory`, `severity: Severity`
 - `description: str`, `suggestion: str`, `prunable: bool`
 
+**`PruneResult`**
+- `deleted_files: List[Path]` — files deleted (or would-be deleted in dry run)
+- `skipped_files: List[Tuple[Path, str]]` — files skipped with reason (excluded dir, partial flag, tier protection)
+- `dry_run: bool` — whether this was a dry run
+- `error_messages: List[str]` — errors from failed deletions
+
 ### Prunable Flag
 
 `prunable` is determined by `tier_registry.is_prunable(path)`. T2/T3 tier test files are prunable; T0/T1 are not. This prevents accidentally flagging smoke tests and critical regression tests as safe to delete.
 
 ### Integration
 
-- Used by `plugins/autonomous-dev/commands/sweep.md` (`/sweep --tests` mode)
+- Used by `plugins/autonomous-dev/commands/sweep.md` (`/sweep --tests` and `/sweep --tests --prune` modes)
 - Depends on `tier_registry.get_tier_for_path()` and `tier_registry.is_prunable()`
 - Skips `__pycache__`, `.git`, `.worktrees`, `archived`, `node_modules`, `.tox`, `.venv`, `venv` directories
 
 ### Testing
 
-- `tests/unit/lib/test_test_pruning_analyzer.py` — unit tests for all 5 detectors
+- `tests/unit/lib/test_test_pruning_analyzer.py` — unit tests for all 5 detectors and pruning behavior
 
 ## 176+7. test_issue_tracer.py (v1.0.0 - Issue #675)
 

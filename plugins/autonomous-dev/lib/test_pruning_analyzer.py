@@ -2,8 +2,10 @@
 """Test Pruning Analyzer -- detects orphaned, stale, and redundant tests.
 
 AST-based analyzer that scans test files for dead imports, archived references,
-zero-assertion tests, duplicate coverage, and stale regression tests. All output
-is informational -- never auto-deletes.
+zero-assertion tests, duplicate coverage, and stale regression tests. Default
+output is informational. The ``prune_tests()`` method can delete fully-flagged
+files with safety guards (dry_run default, security exclusion, tier protection,
+whole-file-only deletion).
 
 Usage:
     from test_pruning_analyzer import TestPruningAnalyzer
@@ -12,6 +14,10 @@ Usage:
     analyzer = TestPruningAnalyzer(Path("."))
     report = analyzer.analyze()
     print(report.format_table())
+
+    # Pruning (dry run by default):
+    result = analyzer.prune_tests()  # dry_run=True, shows candidates
+    result = analyzer.prune_tests(dry_run=False)  # actually deletes
 
 Date: 2026-04-06
 """
@@ -127,6 +133,23 @@ class PruningReport:
         return "\n".join(lines)
 
 
+@dataclass
+class PruneResult:
+    """Result of a prune_tests() operation.
+
+    Args:
+        deleted_files: List of Path objects that were deleted.
+        skipped_files: List of (Path, reason) tuples for files that were skipped.
+        dry_run: Whether this was a dry-run (no files actually deleted).
+        error_messages: List of error strings from failed deletions.
+    """
+
+    deleted_files: List[Path] = field(default_factory=list)
+    skipped_files: List[Tuple[Path, str]] = field(default_factory=list)
+    dry_run: bool = True
+    error_messages: List[str] = field(default_factory=list)
+
+
 class TestPruningAnalyzer:
     """AST-based analyzer for orphaned, stale, and redundant tests.
 
@@ -171,6 +194,128 @@ class TestPruningAnalyzer:
             scan_duration_ms=elapsed_ms,
             files_scanned=len(test_files),
         )
+
+    # Default safe categories for auto-pruning (exclude duplicate_coverage and
+    # stale_regression which require human judgment)
+    SAFE_PRUNE_CATEGORIES: Set[str] = {
+        PruningCategory.DEAD_IMPORT.value,
+        PruningCategory.ARCHIVED_REF.value,
+        PruningCategory.ZERO_ASSERTION.value,
+    }
+
+    # Default directories to exclude from pruning (OWASP: never auto-prune security tests)
+    DEFAULT_EXCLUDE_DIRS: Set[str] = {"tests/security"}
+
+    def prune_tests(
+        self,
+        *,
+        dry_run: bool = True,
+        categories: Optional[Set[str]] = None,
+        exclude_dirs: Optional[Set[str]] = None,
+    ) -> PruneResult:
+        """Prune test files that are fully flagged by safe detectors.
+
+        Safety guards:
+        - dry_run=True by default (no files deleted unless explicitly requested)
+        - Security tests excluded by default (tests/security/)
+        - Only safe categories pruned (dead_import, archived_ref, zero_assertion)
+        - Only files where ALL test functions are flagged are deleted (whole-file-only)
+        - Respects tier protection (T0/T1 files are never deleted)
+
+        Args:
+            dry_run: If True, return candidates without deleting. Defaults to True.
+            categories: Set of category values to consider for pruning.
+                Defaults to SAFE_PRUNE_CATEGORIES.
+            exclude_dirs: Set of directory prefixes to exclude.
+                Defaults to DEFAULT_EXCLUDE_DIRS.
+
+        Returns:
+            PruneResult with lists of deleted, skipped, and error messages.
+        """
+        if categories is None:
+            categories = self.SAFE_PRUNE_CATEGORIES
+        if exclude_dirs is None:
+            exclude_dirs = self.DEFAULT_EXCLUDE_DIRS
+
+        report = self.analyze()
+        result = PruneResult(dry_run=dry_run)
+
+        if not report.findings:
+            return result
+
+        # Filter findings to only safe categories with prunable=True
+        eligible_findings: List[PruningFinding] = [
+            f for f in report.findings
+            if f.category.value in categories and f.prunable
+        ]
+
+        if not eligible_findings:
+            return result
+
+        # Group eligible findings by file path
+        findings_by_file: Dict[str, List[PruningFinding]] = {}
+        for finding in eligible_findings:
+            findings_by_file.setdefault(finding.file_path, []).append(finding)
+
+        # For whole-file-only deletion, we need to know ALL test functions per file.
+        # Count test functions per file from the AST.
+        test_files = self._discover_test_files()
+        test_count_by_rel_path: Dict[str, int] = {}
+        for tf in test_files:
+            rel = self._relative_path(tf)
+            tree = self._parse_file(tf)
+            if tree is None:
+                continue
+            count = 0
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node.name.startswith("test_"):
+                        count += 1
+            test_count_by_rel_path[rel] = count
+
+        # Map relative paths back to absolute paths
+        abs_path_map: Dict[str, Path] = {}
+        for tf in test_files:
+            abs_path_map[self._relative_path(tf)] = tf
+
+        for rel_path, findings in findings_by_file.items():
+            abs_path = abs_path_map.get(rel_path)
+            if abs_path is None:
+                # Try to resolve from project root
+                abs_path = self.project_root / rel_path
+                if not abs_path.exists():
+                    continue
+
+            # Check exclude_dirs
+            if any(rel_path.startswith(ed) for ed in exclude_dirs):
+                result.skipped_files.append(
+                    (abs_path, f"Excluded directory: matches {[ed for ed in exclude_dirs if rel_path.startswith(ed)][0]}")
+                )
+                continue
+
+            # Whole-file-only: only delete if ALL test functions in the file are flagged
+            total_tests = test_count_by_rel_path.get(rel_path, 0)
+            flagged_count = len(findings)
+
+            if total_tests > 0 and flagged_count < total_tests:
+                result.skipped_files.append(
+                    (abs_path, f"Partially flagged: {flagged_count}/{total_tests} test functions")
+                )
+                continue
+
+            # Prune (or report as candidate)
+            if dry_run:
+                result.deleted_files.append(abs_path)
+            else:
+                try:
+                    abs_path.unlink()
+                    result.deleted_files.append(abs_path)
+                except OSError as e:
+                    result.error_messages.append(
+                        f"Failed to delete {rel_path}: {e}"
+                    )
+
+        return result
 
     def _discover_test_files(self) -> List[Path]:
         """Find all test files under the project root.

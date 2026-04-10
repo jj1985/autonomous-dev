@@ -2274,6 +2274,37 @@ AGENT_DENY_STATE_DIR = "/tmp"
 AGENT_DENY_TTL = 300  # seconds
 
 
+def _sanitize_session_id(raw: str) -> str:
+    """Sanitize session_id for safe use in filesystem paths.
+
+    Defense-in-depth layers:
+    1. Strip null bytes (prevents C-layer truncation bypass)
+    2. Unicode NFKC normalization (prevents lookalike characters to ASCII equivalents)
+    3. Allowlist regex: replace non-[a-zA-Z0-9_-] with underscore (OWASP recommended)
+    4. Cap length at 128 characters (prevents PATH_MAX exhaustion)
+
+    Args:
+        raw: The raw session_id string from hook input_data dictionary.
+
+    Returns:
+        A filesystem-safe session_id string containing only [a-zA-Z0-9_-].
+        Returns 'unknown' if input is empty or None after sanitization.
+    """
+    import re as _re
+    import unicodedata
+    if not isinstance(raw, str):
+        raw = str(raw) if raw is not None else "unknown"
+    # Layer 1: Strip null bytes — must be first before any regex processing
+    raw = raw.replace('\x00', '')
+    # Layer 2: Unicode NFKC normalization — collapse lookalike characters to ASCII equivalents
+    raw = unicodedata.normalize('NFKC', raw)
+    # Layer 3: Allowlist regex — only permit alphanumeric, underscore, hyphen characters
+    sanitized = _re.sub(r'[^a-zA-Z0-9_-]', '_', raw)
+    # Layer 4: Length cap — prevent PATH_MAX exhaustion on macOS (1024) and Linux (4096)
+    sanitized = sanitized[:128]
+    return sanitized if sanitized else 'unknown'
+
+
 def _update_deny_cache(file_path: str) -> None:
     """Record a denied file path in the deny cache for escalation tracking.
 
@@ -2369,6 +2400,7 @@ def _record_agent_denial(agent_type: str) -> None:
         agent_type: The agent type that was denied (e.g. 'implementer').
     """
     import json as _json
+    import tempfile as _tempfile
     import time as _time
     try:
         state = {
@@ -2377,10 +2409,22 @@ def _record_agent_denial(agent_type: str) -> None:
             "session_id": _session_id,
         }
         state_path = os.path.join(AGENT_DENY_STATE_DIR, f"adev-agent-deny-{_session_id}.json")
-        tmp_path = state_path + ".tmp"
-        with open(tmp_path, "w") as f:
-            _json.dump(state, f)
-        os.replace(tmp_path, state_path)
+        # Path confinement: verify resolved path stays within AGENT_DENY_STATE_DIR
+        resolved = os.path.realpath(state_path)
+        base = os.path.realpath(AGENT_DENY_STATE_DIR)
+        if not resolved.startswith(base + os.sep) and resolved != base:
+            return  # Path escapes base directory — fail-open, silently refuse to write
+        # Atomic creation via O_CREAT|O_EXCL prevents symlink attacks (replaces predictable .tmp)
+        tmp_fd, tmp_path = _tempfile.mkstemp(dir=AGENT_DENY_STATE_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(tmp_fd, "w") as f:
+                _json.dump(state, f)
+            os.replace(tmp_path, state_path)
+        except OSError:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
     except Exception:
         pass  # Fail-open: never block on state file errors
 
@@ -2401,6 +2445,11 @@ def _check_agent_denial(*, window_seconds: int = AGENT_DENY_TTL) -> "Optional[st
     import time as _time
     try:
         state_path = os.path.join(AGENT_DENY_STATE_DIR, f"adev-agent-deny-{_session_id}.json")
+        # Path confinement: verify resolved path stays within AGENT_DENY_STATE_DIR
+        resolved = os.path.realpath(state_path)
+        base = os.path.realpath(AGENT_DENY_STATE_DIR)
+        if not resolved.startswith(base + os.sep) and resolved != base:
+            return None  # Path escapes base directory — fail-open, refuse to read
         if not os.path.exists(state_path):
             return None
         with open(state_path) as f:
@@ -2699,7 +2748,7 @@ def main():
         # The env var CLAUDE_SESSION_ID is absent in most hook contexts, so we
         # store the stdin value at module level as a fallback.
         global _session_id, _agent_type
-        _session_id = input_data.get("session_id", "unknown")
+        _session_id = _sanitize_session_id(input_data.get("session_id", "unknown"))
 
         # Extract agent_type from hook stdin JSON (Issue #591).
         # When fired inside a subagent, Claude Code populates agent_type in the

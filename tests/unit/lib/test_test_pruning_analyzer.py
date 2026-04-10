@@ -9,6 +9,7 @@ Date: 2026-04-06
 import sys
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +25,7 @@ sys.path.insert(
 )
 
 from test_pruning_analyzer import (
+    PruneResult,
     PruningCategory,
     PruningFinding,
     PruningReport,
@@ -617,3 +619,211 @@ class TestFileDiscovery:
         report = analyzer.analyze()
 
         assert report.files_scanned == 1
+
+
+# ---------------------------------------------------------------
+# Tests for PruneResult dataclass and prune_tests() method (Issue #736)
+# ---------------------------------------------------------------
+
+
+def _make_finding(
+    file_path: str,
+    category: PruningCategory = PruningCategory.DEAD_IMPORT,
+    prunable: bool = True,
+    line: int = 1,
+) -> PruningFinding:
+    """Helper to create a PruningFinding for testing."""
+    return PruningFinding(
+        file_path=file_path,
+        line=line,
+        category=category,
+        severity=Severity.HIGH,
+        description=f"Test finding in {file_path}",
+        suggestion="Remove test",
+        prunable=prunable,
+    )
+
+
+class TestPruneResultDataclass:
+    """Tests for PruneResult dataclass."""
+
+    def test_prune_result_dataclass_fields(self) -> None:
+        """PruneResult has all required fields with correct defaults."""
+        result = PruneResult()
+        assert result.deleted_files == []
+        assert result.skipped_files == []
+        assert result.dry_run is True
+        assert result.error_messages == []
+
+    def test_prune_result_custom_values(self) -> None:
+        """PruneResult can be initialized with custom values."""
+        p = Path("/tmp/test.py")
+        result = PruneResult(
+            deleted_files=[p],
+            skipped_files=[(p, "reason")],
+            dry_run=False,
+            error_messages=["err"],
+        )
+        assert result.deleted_files == [p]
+        assert result.skipped_files == [(p, "reason")]
+        assert result.dry_run is False
+        assert result.error_messages == ["err"]
+
+
+class TestPruneTestsMethod:
+    """Tests for TestPruningAnalyzer.prune_tests()."""
+
+    def test_prune_tests_dry_run_returns_candidates_without_deleting(self, tmp_path: Path) -> None:
+        """Dry run lists candidates but does not delete files."""
+        test_file = _write_test_file(
+            tmp_path,
+            "tests/unit/test_dead.py",
+            "def test_func_0():\n    pass\n",
+        )
+        rel_path = str(test_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        finding = _make_finding(rel_path, PruningCategory.DEAD_IMPORT, prunable=True)
+        mock_report = PruningReport(findings=[finding], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests(dry_run=True)
+
+        assert result.dry_run is True
+        assert test_file.exists(), "File should NOT be deleted in dry run"
+        # Should appear in deleted_files (candidates) or skipped
+        assert len(result.deleted_files) > 0 or len(result.skipped_files) > 0
+
+    def test_prune_tests_deletes_fully_flagged_files(self, tmp_path: Path) -> None:
+        """Non-dry-run deletes files where all tests are flagged."""
+        test_file = _write_test_file(
+            tmp_path,
+            "tests/unit/test_dead.py",
+            "def test_func_0():\n    pass\n",
+        )
+        rel_path = str(test_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        finding = _make_finding(rel_path, PruningCategory.DEAD_IMPORT, prunable=True)
+        mock_report = PruningReport(findings=[finding], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests(dry_run=False)
+
+        assert result.dry_run is False
+        assert not test_file.exists(), "Fully-flagged file should be deleted"
+        assert test_file in result.deleted_files
+
+    def test_prune_tests_skips_partially_flagged_files(self, tmp_path: Path) -> None:
+        """Files with some unflagged test functions are skipped."""
+        test_file = _write_test_file(
+            tmp_path,
+            "tests/unit/test_partial.py",
+            "def test_func_0():\n    pass\n\ndef test_func_1():\n    assert True\n",
+        )
+        rel_path = str(test_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        # Only 1 of 2 tests flagged
+        finding = _make_finding(rel_path, PruningCategory.ZERO_ASSERTION, prunable=True)
+        mock_report = PruningReport(findings=[finding], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests(dry_run=False)
+
+        assert test_file.exists(), "Partially flagged file should NOT be deleted"
+        skipped_paths = [p for p, _ in result.skipped_files]
+        assert test_file in skipped_paths
+
+    def test_prune_tests_excludes_security_dir_by_default(self, tmp_path: Path) -> None:
+        """Files in tests/security/ are excluded by default."""
+        sec_file = _write_test_file(
+            tmp_path,
+            "tests/security/test_auth.py",
+            "def test_func_0():\n    pass\n",
+        )
+        rel_path = str(sec_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        finding = _make_finding(rel_path, PruningCategory.DEAD_IMPORT, prunable=True)
+        mock_report = PruningReport(findings=[finding], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests(dry_run=False)
+
+        assert sec_file.exists(), "Security tests should never be deleted"
+        skipped_paths = [p for p, _ in result.skipped_files]
+        assert sec_file in skipped_paths
+
+    def test_prune_tests_respects_tier_protection(self, tmp_path: Path) -> None:
+        """T0/T1 files (prunable=False) are never deleted."""
+        test_file = _write_test_file(
+            tmp_path,
+            "tests/unit/test_critical.py",
+            "def test_func_0():\n    pass\n",
+        )
+        rel_path = str(test_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        # prunable=False means T0/T1 tier
+        finding = _make_finding(rel_path, PruningCategory.DEAD_IMPORT, prunable=False)
+        mock_report = PruningReport(findings=[finding], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests(dry_run=False)
+
+        assert test_file.exists(), "T0/T1 files should never be deleted"
+        assert test_file not in result.deleted_files
+
+    def test_prune_tests_only_safe_categories_by_default(self, tmp_path: Path) -> None:
+        """duplicate_coverage and stale_regression are excluded from default categories."""
+        test_file = _write_test_file(
+            tmp_path,
+            "tests/unit/test_dup.py",
+            "def test_func_0():\n    pass\n",
+        )
+        rel_path = str(test_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        f1 = _make_finding(rel_path, PruningCategory.DUPLICATE_COVERAGE, prunable=True)
+        f2 = _make_finding(rel_path, PruningCategory.STALE_REGRESSION, prunable=True)
+        mock_report = PruningReport(findings=[f1, f2], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests(dry_run=False)
+
+        assert test_file.exists(), "Non-safe categories should not trigger deletion"
+        assert len(result.deleted_files) == 0
+
+    def test_prune_tests_handles_deletion_error(self, tmp_path: Path) -> None:
+        """OSError during unlink is captured in error_messages."""
+        test_file = _write_test_file(
+            tmp_path,
+            "tests/unit/test_err.py",
+            "def test_func_0():\n    pass\n",
+        )
+        rel_path = str(test_file.relative_to(tmp_path))
+
+        analyzer = TestPruningAnalyzer(tmp_path)
+        finding = _make_finding(rel_path, PruningCategory.DEAD_IMPORT, prunable=True)
+        mock_report = PruningReport(findings=[finding], files_scanned=1)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report), \
+             patch.object(Path, "unlink", side_effect=OSError("Permission denied")):
+            result = analyzer.prune_tests(dry_run=False)
+
+        assert len(result.error_messages) > 0
+        assert "Permission denied" in result.error_messages[0]
+
+    def test_prune_tests_empty_findings_returns_empty_result(self, tmp_path: Path) -> None:
+        """No findings produces an empty PruneResult."""
+        analyzer = TestPruningAnalyzer(tmp_path)
+        mock_report = PruningReport(findings=[], files_scanned=0)
+
+        with patch.object(analyzer, "analyze", return_value=mock_report):
+            result = analyzer.prune_tests()
+
+        assert result.deleted_files == []
+        assert result.skipped_files == []
+        assert result.error_messages == []
+        assert result.dry_run is True

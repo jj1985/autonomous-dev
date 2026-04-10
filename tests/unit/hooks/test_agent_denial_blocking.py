@@ -236,3 +236,83 @@ class TestAgentDenialBlocking:
         )
         assert "REQUIRED NEXT ACTION" in block_reason
         assert "get_agent_prompt_template" in block_reason
+
+
+# ---------------------------------------------------------------------------
+# Session ID sanitization regression tests (Issue #752)
+# ---------------------------------------------------------------------------
+
+class TestSessionIdSanitization:
+    """Security regression tests for session_id path traversal fix (Issue #752)."""
+
+    def test_sanitize_session_id_normal(self):
+        """A normal alphanumeric session_id passes through unchanged."""
+        result = hook._sanitize_session_id("abc-123_def")
+        assert result == "abc-123_def"
+
+    def test_sanitize_session_id_path_traversal(self):
+        """Path traversal sequences are replaced with underscores."""
+        result = hook._sanitize_session_id("../../etc/passwd")
+        # All dots and slashes replaced with underscore
+        assert result == "______etc_passwd"
+        # Must not contain any path separator characters
+        assert "/" not in result
+        assert "\\" not in result
+        assert ".." not in result
+
+    def test_sanitize_session_id_null_bytes(self):
+        """Null bytes are stripped before regex processing."""
+        result = hook._sanitize_session_id("abc\x00def")
+        assert result == "abcdef"
+        assert "\x00" not in result
+
+    def test_sanitize_session_id_empty(self):
+        """Empty string returns 'unknown' as safe fallback."""
+        result = hook._sanitize_session_id("")
+        assert result == "unknown"
+
+    def test_sanitize_session_id_length_cap(self):
+        """Very long session_id is truncated to 128 characters."""
+        long_id = "a" * 300
+        result = hook._sanitize_session_id(long_id)
+        assert len(result) == 128
+
+    def test_record_denial_traversal_confined(self, tmp_path, monkeypatch):
+        """Path traversal in session_id does not escape the base directory.
+
+        This is the primary regression test for CWE-22 (Issue #752).
+        Without the fix, session_id='../../evil' would write outside /tmp.
+        """
+        monkeypatch.setattr(hook, "AGENT_DENY_STATE_DIR", str(tmp_path))
+        monkeypatch.setattr(hook, "_session_id", "../../evil")
+        hook._record_agent_denial("implementer")
+        # Walk parent directories to verify nothing escaped tmp_path
+        parent = tmp_path.parent
+        grandparent = parent.parent
+        evil_file = grandparent / "evil.json"
+        assert not evil_file.exists(), f"Path traversal escaped to: {evil_file}"
+        # Verify no file was written outside tmp_path
+        for f in grandparent.iterdir():
+            assert f == parent or f.is_dir(), f"Unexpected file escaped to: {f}"
+
+    def test_check_denial_traversal_returns_none(self, tmp_path, monkeypatch):
+        """Path traversal in session_id causes _check_agent_denial to return None."""
+        monkeypatch.setattr(hook, "AGENT_DENY_STATE_DIR", str(tmp_path))
+        monkeypatch.setattr(hook, "_session_id", "../../evil")
+        result = hook._check_agent_denial()
+        assert result is None
+
+    def test_record_denial_uses_mkstemp_not_predictable_tmp(self, tmp_path, monkeypatch):
+        """No predictable state_path+'.tmp' file remains after _record_agent_denial."""
+        test_sid = "safe-session-752"
+        monkeypatch.setattr(hook, "AGENT_DENY_STATE_DIR", str(tmp_path))
+        monkeypatch.setattr(hook, "_session_id", test_sid)
+        hook._record_agent_denial("implementer")
+        # The predictable .tmp suffix pattern must not exist after completion
+        predictable_tmp = tmp_path / f"adev-agent-deny-{test_sid}.json.tmp"
+        assert not predictable_tmp.exists(), (
+            f"Predictable .tmp file should not remain: {predictable_tmp}"
+        )
+        # The actual state file should exist and be valid JSON
+        state_file = tmp_path / f"adev-agent-deny-{test_sid}.json"
+        assert state_file.exists()

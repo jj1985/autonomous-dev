@@ -26,6 +26,10 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Maximum number of prunable findings before the gate fails.
+# Run `/sweep --tests --prune` to reduce the count.
+PRUNABLE_THRESHOLD = 100
+
 # Import existing analyzers with fallback for both installed and dev paths
 try:
     from test_issue_tracer import TestIssueTracer, TracingReport
@@ -171,6 +175,19 @@ class TestLifecycleManager:
         lines.append("# Test Health Dashboard")
         lines.append("")
         lines.append(f"Scan duration: {report.scan_duration_ms:.0f}ms")
+        lines.append("")
+
+        # Gate status
+        passed, gate_msg = check_prunable_threshold(report)
+        gate_label = "PASS" if passed else "FAIL"
+        gate_line = (
+            f"Gate Status: {gate_label} "
+            f"({report.summary.prunable_count} prunable, "
+            f"threshold: {PRUNABLE_THRESHOLD})"
+        )
+        if not passed:
+            gate_line += " — run /sweep --tests --prune"
+        lines.append(gate_line)
         lines.append("")
 
         # Summary section
@@ -334,3 +351,35 @@ def check_issue_tracing(project_root: Path, issue_number: int) -> str:
         logger.debug("check_issue_tracing failed: %s", e)
 
     return ""
+
+
+def check_prunable_threshold(
+    report: TestHealthReport,
+    *,
+    threshold: Optional[int] = None,
+) -> tuple:
+    """Check whether prunable findings exceed the allowed threshold.
+
+    Args:
+        report: A TestHealthReport (from TestLifecycleManager.analyze()).
+        threshold: Maximum allowed prunable count. Defaults to PRUNABLE_THRESHOLD.
+
+    Returns:
+        Tuple of (passed: bool, message: str).
+    """
+    if threshold is None:
+        threshold = PRUNABLE_THRESHOLD
+
+    prunable_count = report.summary.prunable_count
+
+    if prunable_count <= threshold:
+        return (
+            True,
+            f"Prunable count {prunable_count} within threshold {threshold}",
+        )
+    else:
+        return (
+            False,
+            f"Prunable count {prunable_count} exceeds threshold {threshold}. "
+            f"Run /sweep --tests --prune",
+        )
