@@ -117,9 +117,12 @@ COMPRESSION_CRITICAL_AGENTS = {
     "doc-master",
 }
 
-# Maximum allowed prompt shrinkage ratio from baseline (issue 1) to later issues
-# e.g. 0.25 means if issue 3's prompt is < 25% of issue 1's prompt, flag it
-MAX_PROMPT_SHRINKAGE_RATIO = 0.25
+# Post-hoc progressive compression threshold (Issue #757).
+# More generous than the real-time hook threshold (25%) because legitimate
+# task-level variation causes different prompt sizes between issues.
+# The real-time hook (unified_pre_tool.py) handles per-invocation enforcement;
+# this post-hoc check catches only severe compression patterns.
+MAX_PROMPT_SHRINKAGE_RATIO = 0.40
 
 # Minimum prompt word count for security-critical agents
 MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
@@ -445,15 +448,17 @@ def _validate_step_ordering_for_group(
         if not first_events or not second_events:
             continue
 
-        # Issue #732: Skip planner->implementer ordering check when the implementer
-        # events are from a --fix mode pipeline. In --fix mode, implementer runs
-        # without a planner, which is by design. Flagging it is a false positive.
+        # Issue #732 + #760: Filter out --fix implementers before timestamp
+        # comparison. In --fix mode, implementer runs without a planner, which
+        # is by design. Only check ordering for non-fix implementers.
         if (first_type, second_type) == ("planner", "implementer"):
-            all_implementer_are_fix = all(
-                e.pipeline_mode in ("--fix", "fix") for e in second_events
-            )
-            if all_implementer_are_fix:
-                continue
+            non_fix_implementers = [
+                e for e in second_events
+                if e.pipeline_mode not in ("--fix", "fix")
+            ]
+            if not non_fix_implementers:
+                continue  # All implementers are --fix — no ordering check needed
+            second_events = non_fix_implementers
 
         # Use earliest timestamp for each
         first_ts = first_events[0].timestamp

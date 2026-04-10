@@ -87,8 +87,8 @@ class TestDetectProgressiveCompression:
         findings = detect_progressive_compression(events)
         assert len(findings) == 0, "#544: consistent prompts should produce no findings"
 
-    def test_30_percent_compression_flagged(self):
-        """30% shrinkage exceeds 25% threshold and is flagged."""
+    def test_30_percent_compression_not_flagged(self):
+        """30% shrinkage does NOT exceed 40% threshold (Issue #757)."""
         events = [
             _make_batch_event(
                 subagent_type="implementer",
@@ -104,17 +104,16 @@ class TestDetectProgressiveCompression:
             ),
         ]
         findings = detect_progressive_compression(events)
-        assert len(findings) == 1, "#544: 30% shrinkage should be flagged"
-        assert findings[0].finding_type == "progressive_compression"
+        assert len(findings) == 0, "#757: 30% shrinkage should NOT be flagged with 40% threshold"
 
-    def test_25_percent_boundary_flagged(self):
-        """Exactly 25% shrinkage means ratio = 0.75, which equals the threshold.
+    def test_40_percent_boundary(self):
+        """Exactly 40% shrinkage means ratio = 0.60, which equals the threshold.
 
-        The check is `ratio < (1 - MAX_PROMPT_SHRINKAGE_RATIO)` = `ratio < 0.75`.
-        So at exactly 25% shrinkage (ratio = 0.75), it should NOT be flagged.
-        Just below 25% (ratio slightly < 0.75) SHOULD be flagged.
+        The check is `ratio < (1 - MAX_PROMPT_SHRINKAGE_RATIO)` = `ratio < 0.60`.
+        So at exactly 40% shrinkage (ratio = 0.60), it should NOT be flagged.
+        Just past 40% (ratio slightly < 0.60) SHOULD be flagged.
         """
-        # Exactly at boundary: 750/1000 = 0.75, NOT flagged (ratio is not < 0.75)
+        # Exactly at boundary: 600/1000 = 0.60, NOT flagged (ratio is not < 0.60)
         events_boundary = [
             _make_batch_event(
                 subagent_type="implementer",
@@ -125,14 +124,14 @@ class TestDetectProgressiveCompression:
             _make_batch_event(
                 subagent_type="implementer",
                 batch_issue_number=2,
-                prompt_word_count=750,
+                prompt_word_count=600,
                 timestamp="2026-03-22T10:10:00+00:00",
             ),
         ]
         findings = detect_progressive_compression(events_boundary)
-        assert len(findings) == 0, "#544: exactly 25% shrinkage (ratio=0.75) should not flag"
+        assert len(findings) == 0, "#757: exactly 40% shrinkage (ratio=0.60) should not flag"
 
-        # Just past boundary: 749/1000 = 0.749, IS flagged (ratio < 0.75)
+        # Just past boundary: 599/1000 = 0.599, IS flagged (ratio < 0.60)
         events_past = [
             _make_batch_event(
                 subagent_type="implementer",
@@ -143,15 +142,15 @@ class TestDetectProgressiveCompression:
             _make_batch_event(
                 subagent_type="implementer",
                 batch_issue_number=2,
-                prompt_word_count=749,
+                prompt_word_count=599,
                 timestamp="2026-03-22T10:10:00+00:00",
             ),
         ]
         findings = detect_progressive_compression(events_past)
-        assert len(findings) == 1, "#544: >25% shrinkage (ratio=0.749) should flag"
+        assert len(findings) == 1, "#757: >40% shrinkage (ratio=0.599) should flag"
 
-    def test_24_percent_passes(self):
-        """24% shrinkage does not exceed 25% threshold."""
+    def test_39_percent_passes(self):
+        """39% shrinkage does not exceed 40% threshold (Issue #757)."""
         events = [
             _make_batch_event(
                 subagent_type="reviewer",
@@ -162,12 +161,12 @@ class TestDetectProgressiveCompression:
             _make_batch_event(
                 subagent_type="reviewer",
                 batch_issue_number=2,
-                prompt_word_count=760,  # 24% shrinkage, ratio = 0.76 > 0.75
+                prompt_word_count=610,  # 39% shrinkage, ratio = 0.61 > 0.60
                 timestamp="2026-03-22T10:10:00+00:00",
             ),
         ]
         findings = detect_progressive_compression(events)
-        assert len(findings) == 0, "#544: 24% shrinkage should not be flagged"
+        assert len(findings) == 0, "#757: 39% shrinkage should not be flagged"
 
     def test_critical_severity_for_security_agents(self):
         """Security-critical agents (reviewer, security-auditor) get CRITICAL severity."""
@@ -196,13 +195,13 @@ class TestDetectProgressiveCompression:
         """Non-critical agents get WARNING severity."""
         events = [
             _make_batch_event(
-                subagent_type="implementer",
+                subagent_type="scaffolder",
                 batch_issue_number=1,
                 prompt_word_count=1000,
                 timestamp="2026-03-22T10:00:00+00:00",
             ),
             _make_batch_event(
-                subagent_type="implementer",
+                subagent_type="scaffolder",
                 batch_issue_number=2,
                 prompt_word_count=500,  # 50% shrinkage
                 timestamp="2026-03-22T10:10:00+00:00",
@@ -312,12 +311,12 @@ class TestDetectMinimumPromptViolation:
         """Non-critical agents are not subject to minimum prompt checks."""
         events = [
             _make_batch_event(
-                subagent_type="implementer",
+                subagent_type="scaffolder",
                 prompt_word_count=30,
                 timestamp="2026-03-22T10:00:00+00:00",
             ),
             _make_batch_event(
-                subagent_type="planner",
+                subagent_type="aligner",
                 prompt_word_count=20,
                 timestamp="2026-03-22T10:05:00+00:00",
             ),
@@ -421,8 +420,8 @@ class TestConstants:
         assert "researcher" in COMPRESSION_CRITICAL_AGENTS
 
     def test_max_prompt_shrinkage_ratio(self):
-        """MAX_PROMPT_SHRINKAGE_RATIO is 0.25 (25%)."""
-        assert MAX_PROMPT_SHRINKAGE_RATIO == 0.25
+        """MAX_PROMPT_SHRINKAGE_RATIO is 0.40 (40%) per Issue #757."""
+        assert MAX_PROMPT_SHRINKAGE_RATIO == 0.40
 
     def test_min_critical_agent_prompt_words(self):
         """MIN_CRITICAL_AGENT_PROMPT_WORDS is 80."""
