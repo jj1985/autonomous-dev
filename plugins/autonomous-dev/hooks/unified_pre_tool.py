@@ -522,6 +522,7 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
     # more headroom for legitimate prompt variation at the hook level.
     try:
         from prompt_integrity import (
+            get_agent_prompt_template,
             get_prompt_baseline,
             record_prompt_baseline,
             validate_prompt_word_count,
@@ -544,8 +545,15 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
                     f"to reload the full agent prompt from disk and reconstruct with complete context.",
                 )
         else:
-            # No baseline yet — seed it with this invocation (issue_number=0 is hook sentinel)
-            record_prompt_baseline(agent_type, issue_number=0, word_count=word_count)
+            # No baseline yet — seed from template so the first real issue is compared
+            # against the canonical template size, not the observed first invocation.
+            # Falls back to observed word count if template file is missing.
+            try:
+                template = get_agent_prompt_template(agent_type)
+                template_wc = len(template.split())
+                record_prompt_baseline(agent_type, issue_number=0, word_count=template_wc)
+            except FileNotFoundError:
+                record_prompt_baseline(agent_type, issue_number=0, word_count=word_count)
 
     except Exception:
         # Fail open: any error in baseline check must not block the agent
@@ -2261,6 +2269,10 @@ def output_decision(decision: str, reason: str, *, system_message: str = ""):
 
 DENY_CACHE_PATH = "/tmp/.claude_deny_cache.jsonl"
 
+# Agent denial state for blocking coordinator workaround edits (Issue #750)
+AGENT_DENY_STATE_DIR = "/tmp"
+AGENT_DENY_TTL = 300  # seconds
+
 
 def _update_deny_cache(file_path: str) -> None:
     """Record a denied file path in the deny cache for escalation tracking.
@@ -2341,6 +2353,65 @@ def _check_deny_cache(file_path: str, *, window_seconds: int = 60) -> bool:
     except Exception:
         pass  # Never fail the hook for cache reads
     return False
+
+
+def _record_agent_denial(agent_type: str) -> None:
+    """Record that an agent invocation was denied by prompt integrity (Issue #750).
+
+    Writes a JSON file keyed by session_id so subsequent Write/Edit calls
+    can detect the workaround pattern and block substantive edits to
+    protected infrastructure.
+
+    Atomic write: writes to a .tmp file first, then os.replace.
+    Fail-open: exceptions are silently ignored.
+
+    Args:
+        agent_type: The agent type that was denied (e.g. 'implementer').
+    """
+    import json as _json
+    import time as _time
+    try:
+        state = {
+            "agent_type": agent_type,
+            "timestamp": _time.time(),
+            "session_id": _session_id,
+        }
+        state_path = os.path.join(AGENT_DENY_STATE_DIR, f"adev-agent-deny-{_session_id}.json")
+        tmp_path = state_path + ".tmp"
+        with open(tmp_path, "w") as f:
+            _json.dump(state, f)
+        os.replace(tmp_path, state_path)
+    except Exception:
+        pass  # Fail-open: never block on state file errors
+
+
+def _check_agent_denial(*, window_seconds: int = AGENT_DENY_TTL) -> "Optional[str]":
+    """Check whether an agent invocation was recently denied (Issue #750).
+
+    Returns the agent_type if a denial record exists within the time window
+    and the session_id matches, otherwise None. Fail-open on all errors.
+
+    Args:
+        window_seconds: How far back to look for denials (default: AGENT_DENY_TTL).
+
+    Returns:
+        The denied agent_type string, or None if no recent denial.
+    """
+    import json as _json
+    import time as _time
+    try:
+        state_path = os.path.join(AGENT_DENY_STATE_DIR, f"adev-agent-deny-{_session_id}.json")
+        if not os.path.exists(state_path):
+            return None
+        with open(state_path) as f:
+            state = _json.load(f)
+        if state.get("session_id") != _session_id:
+            return None
+        if _time.time() - state.get("timestamp", 0) > window_seconds:
+            return None
+        return state.get("agent_type", "")
+    except Exception:
+        return None  # Fail-open
 
 
 def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
@@ -2849,6 +2920,42 @@ def main():
                         )
                         sys.exit(0)
 
+            # Issue #750: Block coordinator workaround edits after agent prompt-shrinkage denial
+            # When validate_prompt_integrity denies an Agent call, the coordinator may
+            # fall back to direct Write/Edit to protected infrastructure files.
+            if tool_name in ("Write", "Edit"):
+                _denied_agent = _check_agent_denial()
+                if _denied_agent:
+                    _deny750_path = tool_input.get("file_path", "")
+                    if _is_protected_infrastructure(_deny750_path):
+                        _deny750_is_substantive = False
+                        if tool_name == "Edit":
+                            _d750_old = tool_input.get("old_string", "")
+                            _d750_new = tool_input.get("new_string", "")
+                            _d750_sig, _, _ = _has_significant_additions(_d750_old, _d750_new, _deny750_path)
+                            _deny750_is_substantive = _d750_sig
+                        else:  # Write
+                            _d750_content = tool_input.get("content", "")
+                            _deny750_is_substantive = len(_d750_content.splitlines()) >= SIGNIFICANT_LINE_THRESHOLD
+                        if _deny750_is_substantive:
+                            _deny750_reason = (
+                                f"BLOCKED: Agent '{_denied_agent}' was recently denied by prompt integrity. "
+                                f"Direct edits to protected infrastructure ({_deny750_path}) are not allowed "
+                                f"as a workaround. "
+                                f"REQUIRED NEXT ACTION: Use get_agent_prompt_template('{_denied_agent}') "
+                                f"to reload the full agent prompt from disk and retry the agent invocation. "
+                                f"Do NOT attempt direct edits as a workaround."
+                            )
+                            _log_pretool_activity(tool_name, tool_input, "deny", _deny750_reason)
+                            output_decision(
+                                "deny", _deny750_reason,
+                                system_message=(
+                                    f"AGENT DENIAL WORKAROUND BLOCKED: Reload agent prompt and retry. "
+                                    f"Do not edit infrastructure files directly."
+                                ),
+                            )
+                            sys.exit(0)
+
             # Layer 4: Pipeline ordering gate (Issues #625, #629, #632)
             # Only applies to Agent/Task tool calls during active pipeline.
             if tool_name in AGENT_TOOL_NAMES:
@@ -2866,6 +2973,9 @@ def main():
             if tool_name in AGENT_TOOL_NAMES:
                 pi_decision, pi_reason = validate_prompt_integrity(tool_name, tool_input)
                 if pi_decision == "deny":
+                    # Issue #750: Record denial so subsequent Write/Edit workarounds are blocked
+                    _pi_agent_type = tool_input.get("subagent_type", "")
+                    _record_agent_denial(_pi_agent_type)
                     _log_pretool_activity(tool_name, tool_input, "deny", pi_reason)
                     output_decision(
                         "deny", pi_reason,

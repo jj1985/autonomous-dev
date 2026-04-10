@@ -96,12 +96,56 @@ class TestPromptIntegrityEnforcement:
             assert "50 words" in reason
 
     def test_critical_agent_above_minimum_allowed(self):
-        """Reviewer with 100-word prompt should be allowed during pipeline."""
+        """Reviewer with 100-word prompt should be allowed during pipeline.
+
+        Patches get_prompt_baseline to return None so only the minimum word
+        count gate is tested — not the baseline shrinkage gate (Issue #747).
+        """
         long_prompt = _make_prompt(100)
-        with patch.object(hook, "_is_pipeline_active", return_value=True):
+        with (
+            patch.object(hook, "_is_pipeline_active", return_value=True),
+            patch("prompt_integrity.get_prompt_baseline", return_value=None),
+        ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
                 {"subagent_type": "reviewer", "prompt": long_prompt},
+            )
+            assert decision == "allow"
+            assert "Prompt integrity OK" in reason
+
+    def test_critical_agent_shrinkage_detected(self):
+        """Reviewer prompt that shrank >25% from baseline should be denied (Issue #747).
+
+        Mocks get_prompt_baseline to return 396 (realistic reviewer baseline).
+        100 < 396 * 0.75 = 297, so shrinkage gate fires.
+        """
+        short_prompt = _make_prompt(100)
+        with (
+            patch.object(hook, "_is_pipeline_active", return_value=True),
+            patch("prompt_integrity.get_prompt_baseline", return_value=396),
+        ):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "reviewer", "prompt": short_prompt},
+            )
+            assert decision == "deny"
+            assert "BLOCKED" in reason
+            assert "shrank" in reason
+            assert "reviewer" in reason
+
+    def test_critical_agent_no_shrinkage_when_above_baseline(self):
+        """Reviewer prompt at 300 words should be allowed with 396-word baseline (Issue #747).
+
+        300 > 396 * 0.75 = 297, so shrinkage gate should pass.
+        """
+        adequate_prompt = _make_prompt(300)
+        with (
+            patch.object(hook, "_is_pipeline_active", return_value=True),
+            patch("prompt_integrity.get_prompt_baseline", return_value=396),
+        ):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "reviewer", "prompt": adequate_prompt},
             )
             assert decision == "allow"
             assert "Prompt integrity OK" in reason

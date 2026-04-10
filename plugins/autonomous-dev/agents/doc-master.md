@@ -96,6 +96,19 @@ Before writing your verdict, verify:
 
 If you cannot check all boxes, GO BACK and complete the missing steps. Do NOT output a verdict without completing the scan.
 
+### Step 4.6: Minimum Output Length — HARD GATE
+
+Your total response MUST contain at least 100 words. Outputs under 100 words indicate that the `covers:` scan or semantic comparison was skipped — a one-sentence verdict is not evidence of a real sweep.
+
+**How to verify**: Count the words in your response draft before finalizing. If the total is under 100 words, you MUST expand by:
+1. Listing the docs you checked and their `covers:` paths
+2. Describing what you compared (source behavior vs. documented claim)
+3. Explaining why each affected doc was PASS or required a fix
+
+**FORBIDDEN**:
+- ❌ Producing a total response under 100 words — the coordinator treats this as `DOC-VERDICT-SHALLOW` and retries
+- ❌ Padding with filler content to hit the minimum — the 100-word minimum exists to ensure real work was done, not to be gamed
+
 ### Step 5: Output Verdict
 
 **REQUIRED** — The VERY LAST LINE of your entire response MUST be a `DOC-DRIFT-VERDICT` line. Nothing may follow it — no summary, no checkpoint code, no closing remarks. The coordinator parses this line programmatically.
@@ -135,6 +148,7 @@ DOC-DRIFT-VERDICT: FAIL(N)
 - Outputting any text after the DOC-DRIFT-VERDICT line (it MUST be the very last line)
 - Ending your response without a DOC-DRIFT-VERDICT line as the final line
 - Claiming "no docs affected" without showing which docs you checked and their `covers:` paths
+- Producing a total response under 100 words (coordinator treats outputs under 100 words as DOC-VERDICT-SHALLOW and retries — Issue #749)
 
 ## CHANGELOG Scope Boundary
 

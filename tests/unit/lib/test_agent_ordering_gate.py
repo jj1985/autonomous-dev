@@ -268,7 +268,7 @@ class TestBatchCompleteness:
         assert len(result.missing_agents) > 0
 
     def test_light_mode_requires_fewer(self):
-        completed = {"planner", "implementer", "doc-master"}
+        completed = {"planner", "implementer", "doc-master", "continuous-improvement-analyst"}
         result = check_batch_agent_completeness(
             completed, issue_number=10, mode="light"
         )
@@ -286,9 +286,15 @@ class TestBatchCompleteness:
         result = check_batch_agent_completeness(set(), issue_number=99)
         assert "#99" in result.reason
 
-    def test_light_mode_agents_subset_of_full(self):
-        """Light mode agents should be a subset of full pipeline agents."""
-        assert LIGHT_PIPELINE_AGENTS.issubset(FULL_PIPELINE_AGENTS)
+    def test_light_mode_core_agents_subset_of_full(self):
+        """Light mode core agents (excluding CIA) should be a subset of full pipeline agents.
+
+        CIA is included in light and fix pipeline completeness checks but not in
+        FULL_PIPELINE_AGENTS because it runs as a background agent in full mode
+        and is not part of the synchronous completeness gate there.
+        """
+        light_without_cia = LIGHT_PIPELINE_AGENTS - {"continuous-improvement-analyst"}
+        assert light_without_cia.issubset(FULL_PIPELINE_AGENTS)
 
 
 # ---------------------------------------------------------------------------
@@ -301,11 +307,11 @@ class TestGetRequiredAgents:
 
     def test_fix_mode_returns_fix_agents(self):
         result = get_required_agents("fix")
-        assert result == {"implementer", "reviewer", "doc-master"}
+        assert result == {"implementer", "reviewer", "doc-master", "continuous-improvement-analyst"}
 
     def test_light_mode_returns_light_agents(self):
         result = get_required_agents("light")
-        assert result == {"planner", "implementer", "doc-master"}
+        assert result == {"planner", "implementer", "doc-master", "continuous-improvement-analyst"}
 
     def test_full_mode_returns_full_pipeline_agents(self):
         result = get_required_agents("full")
@@ -366,8 +372,8 @@ class TestGetRequiredAgents:
 class TestBatchCompletenessFixMode:
     """Tests for check_batch_agent_completeness with fix and other modes."""
 
-    def test_fix_mode_with_all_3_agents_passes(self):
-        completed = {"implementer", "reviewer", "doc-master"}
+    def test_fix_mode_with_all_4_agents_passes(self):
+        completed = {"implementer", "reviewer", "doc-master", "continuous-improvement-analyst"}
         result = check_batch_agent_completeness(completed, issue_number=100, mode="fix")
         assert result.passed
 
@@ -383,8 +389,8 @@ class TestBatchCompletenessFixMode:
         assert not result.passed
         assert "implementer" in result.missing_agents
 
-    def test_light_mode_with_all_3_agents_passes(self):
-        completed = {"planner", "implementer", "doc-master"}
+    def test_light_mode_with_all_4_agents_passes(self):
+        completed = {"planner", "implementer", "doc-master", "continuous-improvement-analyst"}
         result = check_batch_agent_completeness(completed, issue_number=10, mode="light")
         assert result.passed
 
@@ -637,3 +643,61 @@ class TestPipelineModeFiltering:
         )
         assert not result.passed
         assert "implementer" in result.missing_agents
+
+
+# ---------------------------------------------------------------------------
+# Issue #751 — CIA missing from fix and light pipeline final issue group
+# ---------------------------------------------------------------------------
+
+
+class TestCIAInFixAndLightPipelines:
+    """Regression tests for Issue #751: CIA missing from fix/light pipeline completeness.
+
+    The bug: --fix and --light batch runs passed completeness checks without
+    continuous-improvement-analyst completing, because CIA was not in
+    FIX_PIPELINE_AGENTS or LIGHT_PIPELINE_AGENTS.
+
+    Fix: Add "continuous-improvement-analyst" to both sets.
+    """
+
+    def test_fix_pipeline_agents_includes_cia(self):
+        """FIX_PIPELINE_AGENTS must include continuous-improvement-analyst. Issue #751."""
+        assert "continuous-improvement-analyst" in FIX_PIPELINE_AGENTS
+
+    def test_light_pipeline_agents_includes_cia(self):
+        """LIGHT_PIPELINE_AGENTS must include continuous-improvement-analyst. Issue #751."""
+        assert "continuous-improvement-analyst" in LIGHT_PIPELINE_AGENTS
+
+    def test_fix_mode_missing_cia_fails(self):
+        """Completeness check fails when CIA is absent in fix mode.
+
+        This is the core regression: before the fix, 3 agents were sufficient
+        to pass the completeness gate. After the fix, CIA is required.
+        """
+        completed = {"implementer", "reviewer", "doc-master"}  # CIA missing
+        result = check_batch_agent_completeness(completed, issue_number=751, mode="fix")
+        assert not result.passed
+        assert "continuous-improvement-analyst" in result.missing_agents
+
+    def test_light_mode_missing_cia_fails(self):
+        """Completeness check fails when CIA is absent in light mode.
+
+        Before the fix, 3 agents (planner, implementer, doc-master) were enough.
+        After the fix, CIA is also required.
+        """
+        completed = {"planner", "implementer", "doc-master"}  # CIA missing
+        result = check_batch_agent_completeness(completed, issue_number=751, mode="light")
+        assert not result.passed
+        assert "continuous-improvement-analyst" in result.missing_agents
+
+    def test_get_required_agents_fix_includes_cia(self):
+        """get_required_agents('fix') must return 4 agents including CIA."""
+        result = get_required_agents("fix")
+        assert "continuous-improvement-analyst" in result
+        assert len(result) == 4
+
+    def test_get_required_agents_light_includes_cia(self):
+        """get_required_agents('light') must return 4 agents including CIA."""
+        result = get_required_agents("light")
+        assert "continuous-improvement-analyst" in result
+        assert len(result) == 4

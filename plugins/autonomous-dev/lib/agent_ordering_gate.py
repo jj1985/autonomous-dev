@@ -58,6 +58,7 @@ LIGHT_PIPELINE_AGENTS = {
     "planner",
     "implementer",
     "doc-master",
+    "continuous-improvement-analyst",
 }
 
 # Fix mode requires only the core fix agents
@@ -65,6 +66,7 @@ FIX_PIPELINE_AGENTS = {
     "implementer",
     "reviewer",
     "doc-master",
+    "continuous-improvement-analyst",
 }
 
 # The sequential pair that is mode-dependent:

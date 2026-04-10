@@ -335,3 +335,79 @@ def clear_prompt_baselines(*, state_dir: Optional[Path] = None) -> None:
     if baselines_path.exists():
         baselines_path.unlink()
         logger.debug("Cleared prompt baselines: %s", baselines_path)
+
+
+def compute_template_baselines(*, agents_dir: Optional[Path] = None) -> dict:
+    """Compute word counts for each critical agent's prompt template.
+
+    Reads each agent's .md file from disk and measures its word count.
+    Agents with missing template files are skipped with a warning.
+
+    Args:
+        agents_dir: Optional override for agents directory path.
+
+    Returns:
+        Mapping of {agent_type: word_count} for agents with found templates.
+    """
+    if agents_dir is None:
+        root = _find_project_root()
+        agents_dir = root / "plugins" / "autonomous-dev" / "agents"
+
+    baselines: dict = {}
+    for agent_type in COMPRESSION_CRITICAL_AGENTS:
+        agent_file = agents_dir / f"{agent_type}.md"
+        if not agent_file.exists():
+            logger.warning(
+                "Template baseline: agent file not found, skipping: %s", agent_file
+            )
+            continue
+        try:
+            template = agent_file.read_text(encoding="utf-8")
+            baselines[agent_type] = len(template.split())
+            logger.debug(
+                "Template baseline computed: %s = %d words", agent_type, baselines[agent_type]
+            )
+        except OSError as exc:
+            logger.warning(
+                "Template baseline: could not read %s: %s", agent_file, exc
+            )
+
+    return baselines
+
+
+def seed_baselines_from_templates(
+    *,
+    agents_dir: Optional[Path] = None,
+    state_dir: Optional[Path] = None,
+) -> dict:
+    """Seed prompt baselines from template word counts at batch start.
+
+    Computes word counts from agent template files and records them as
+    issue_number=0 baselines so the first real issue is compared against
+    the canonical template size, not the (potentially already-compressed)
+    observed first invocation.
+
+    Call this immediately after clear_prompt_baselines() at the start of
+    each batch run.
+
+    Args:
+        agents_dir: Optional override for agents directory path.
+        state_dir: Optional override for state directory (baseline JSON location).
+
+    Returns:
+        Mapping of {agent_type: word_count} for agents successfully seeded.
+    """
+    template_baselines = compute_template_baselines(agents_dir=agents_dir)
+    for agent_type, word_count in template_baselines.items():
+        record_prompt_baseline(
+            agent_type, issue_number=0, word_count=word_count, state_dir=state_dir
+        )
+        logger.debug(
+            "Seeded template baseline: %s = %d words", agent_type, word_count
+        )
+    logger.info(
+        "Seeded template baselines for %d agents: %s",
+        len(template_baselines),
+        sorted(template_baselines.keys()),
+    )
+    return template_baselines

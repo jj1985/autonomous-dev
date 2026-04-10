@@ -105,7 +105,7 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 **Prompt Integrity Gate** (Issues #695, #716, #723 — native Agent/Task tools only):
 - Blocks invocations of compression-critical agents (security-auditor, reviewer, doc-master, implementer, planner) when their prompt falls below the minimum word count
 - Minimum word count enforcement fires **regardless of pipeline state** (Issue #716 fix) — this gate is always active for critical agents, not just during `/implement` batches
-- Baseline shrinkage check (detecting > 25% compression vs first-issue baseline) fires **whenever a baseline exists** (Issue #723 — no pipeline-active gate); first invocation seeds the baseline using `record_prompt_baseline` with `issue_number=0` as a hook sentinel
+- Baseline shrinkage check (detecting > 25% compression vs first-issue baseline) fires **whenever a baseline exists** (Issue #723 — no pipeline-active gate); when no baseline exists, the hook seeds one from the agent's template `.md` file word count (`get_agent_prompt_template()`) at `issue_number=0` — falling back to the observed word count only if the template file is missing (Issue #748 fix; previously always used observed word count)
 - Uses `validate_prompt_integrity()` which imports `COMPRESSION_CRITICAL_AGENTS` and `MIN_CRITICAL_AGENT_PROMPT_WORDS` from `prompt_integrity.py` (minimum: 80 words)
 - Shrinkage check calls `validate_prompt_word_count` with `max_shrinkage=0.25` (25%, higher than the library default of 15% to allow legitimate prompt variation at the hook level)
 - Block message directs the coordinator to reconstruct the prompt with full context and use `get_agent_prompt_template()` to reload the agent base prompt from disk
@@ -115,6 +115,14 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - Write/Edit to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` are blocked outside the `/implement` pipeline
 - Scoped to autonomous-dev repos (detected via `_is_autonomous_dev_repo()`) — does not affect user projects
 - User-facing docs (`README.md`, `CHANGELOG.md`, `docs/*.md`), config files (`.json`/`.yaml`), and all non-infrastructure paths are unaffected
+
+**Agent Denial Fallback Guard** (Issue #750):
+- When the Prompt Integrity Gate denies an Agent/Task invocation due to prompt shrinkage, the orchestrator may fall back to direct Write/Edit calls to the same protected infrastructure files
+- `_record_agent_denial(agent_type)` writes a session-scoped JSON state file at `AGENT_DENY_STATE_DIR` (`/tmp/adev-agent-deny-{session_id}.json`) immediately after any prompt-integrity denial
+- `_check_agent_denial()` is called at the top of every Write/Edit check; if a denial record exists within `AGENT_DENY_TTL` (300 seconds) for the same session, the Write/Edit to a protected infrastructure path is blocked
+- Block message includes a `REQUIRED NEXT ACTION` directive telling the orchestrator to reload the agent prompt template via `get_agent_prompt_template()` and retry the Agent call with a full-length prompt
+- Non-infrastructure paths (docs, config, test files) are unaffected — the guard only activates for the same `_is_protected_infrastructure()` paths that the base infrastructure gate covers
+- Fails open on all state file errors (`_record_agent_denial` swallows exceptions; `_check_agent_denial` returns `None` on any error) to avoid blocking legitimate work
 
 **GitHub Issue Creation Gate** (Issue #599):
 - Direct `gh issue create` in Bash is blocked outside approved contexts to enforce the `/create-issue` pipeline (research, duplicate detection, proper formatting)

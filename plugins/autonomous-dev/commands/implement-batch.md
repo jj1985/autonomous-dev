@@ -169,15 +169,16 @@ If the return value is empty, wait 3 seconds before retrying (filesystem flush d
 
 - If `DOC-DRIFT-VERDICT: PASS`: record `doc-drift-verdict: PASS` and proceed
 - If `DOC-DRIFT-VERDICT: FAIL`: **BLOCK** the per-issue pipeline. Do NOT advance to the next issue until doc-drift is resolved.
+- **Shallow Verdict Detection**: Count the words in the doc-master output. If the output is fewer than 100 words, treat it as `DOC-VERDICT-SHALLOW` — the output is too short to confirm a real semantic sweep occurred. Log `[DOC-VERDICT-SHALLOW] doc-master produced N words (minimum: 100) for issue #N` and retry once with reduced context (only changed file list + feature description). If retry also produces fewer than 100 words or no verdict, log `[DOC-VERDICT-SHALLOW-RETRY-FAILED] doc-master still shallow after retry for issue #N — proceeding with warning` and record `doc-drift-verdict: SHALLOW`.
 - If doc-master returned empty output or no `DOC-DRIFT-VERDICT` found: wait 3 seconds for filesystem flush (Issue #682), then **retry once** with reduced context (only changed file list + feature description). Log `[DOC-VERDICT-MISSING] Re-invoking doc-master with reduced context for issue #N`
   - If retry produces a verdict: use that verdict
   - If retry also fails: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry for issue #N — proceeding with warning` and record `doc-drift-verdict: MISSING`
 
-Include `doc-drift-verdict: PASS/FAIL/MISSING` in the per-issue agent verification display:
+Include `doc-drift-verdict: PASS/FAIL/MISSING/SHALLOW` in the per-issue agent verification display:
 ```
 Issue #N agent verification:
   ...
-  doc-master:       ✓/✗  (doc-drift-verdict: PASS/FAIL/MISSING)
+  doc-master:       ✓/✗  (doc-drift-verdict: PASS/FAIL/MISSING/SHALLOW)
   ...
 ```
 
@@ -313,7 +314,7 @@ Before each agent invocation in batch mode, the coordinator MUST:
    b. Validate: `result = validate_prompt_word_count(agent_type, constructed_prompt, baseline)`
    c. If `result.should_reload` is True: re-read the agent's source file using `get_agent_prompt_template(agent_type)` and reconstruct the prompt from source + issue-specific context, NOT from context memory
    d. Log: include word count in per-issue agent verification display
-3. **Batch start**: Call `clear_prompt_baselines()` to reset from any prior batch
+3. **Batch start**: Call `clear_prompt_baselines()` followed immediately by `seed_baselines_from_templates()` to reset from any prior batch and establish template-based baselines. This ensures the first issue is compared against the canonical template word count, not the (potentially already-compressed) observed first invocation.
 
 The library functions are in `plugins/autonomous-dev/lib/prompt_integrity.py`.
 
