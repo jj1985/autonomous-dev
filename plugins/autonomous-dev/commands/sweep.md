@@ -36,12 +36,53 @@ print(report.format_table())
 "
 ```
 
-Display the resulting markdown table to the user. This is an **informational report only** — never auto-delete any files.
+Display the resulting markdown table to the user. This is an **informational report only** — no files are auto-deleted.
 
 After displaying results, suggest:
 - Review HIGH severity findings first
 - Files marked `prunable=yes` (T2/T3 tier) are safe candidates for removal
 - Files marked `prunable=no` (T0/T1 tier) should NOT be removed without careful review
+
+**If `--tests --prune` is in the arguments** (with optional `--dry-run`):
+
+Run the pruner to delete fully-flagged test files (safe categories only, security tests excluded, tier-protected). Execute:
+
+```bash
+cd {{PROJECT_ROOT}} && python3 -c "
+import sys
+sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from test_pruning_analyzer import TestPruningAnalyzer
+from pathlib import Path
+
+dry_run = '--dry-run' in '{{ARGUMENTS}}'
+analyzer = TestPruningAnalyzer(Path('.'))
+result = analyzer.prune_tests(dry_run=dry_run)
+
+if dry_run:
+    print('DRY RUN — no files deleted')
+    print(f'Would delete {len(result.deleted_files)} files:')
+    for f in result.deleted_files:
+        print(f'  - {f}')
+else:
+    print(f'Deleted {len(result.deleted_files)} files:')
+    for f in result.deleted_files:
+        print(f'  - {f}')
+
+if result.skipped_files:
+    print(f'Skipped {len(result.skipped_files)} files:')
+    for f, reason in result.skipped_files:
+        print(f'  - {f}: {reason}')
+
+if result.error_messages:
+    print(f'Errors:')
+    for err in result.error_messages:
+        print(f'  - {err}')
+"
+```
+
+- `--tests --prune`: Run pruner with `dry_run=False`, display deleted files
+- `--tests --prune --dry-run`: Run pruner with `dry_run=True`, show what would be deleted
+- `--tests` alone: existing report-only behavior (unchanged)
 
 **If `--tests` is NOT in the arguments** (default mode):
 
