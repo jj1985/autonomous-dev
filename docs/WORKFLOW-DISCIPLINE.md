@@ -2,6 +2,7 @@
 covers:
   - plugins/autonomous-dev/commands/implement.md
   - plugins/autonomous-dev/agents/implementer.md
+  - plugins/autonomous-dev/agents/continuous-improvement-analyst.md
 ---
 
 # Workflow Discipline
@@ -358,6 +359,27 @@ bypass /implement    # BLOCKED - No bypassing
 # Add to .env file
 ENFORCE_WORKFLOW=false  # Disables bypass detection
 ```
+
+---
+
+## Cross-Repo Finding Routing
+
+The continuous-improvement-analyst routes each finding to the repository where the fix belongs:
+
+| Target | When | Filing Command |
+|--------|------|----------------|
+| `autonomous-dev` | Fix lives in `plugins/autonomous-dev/` (agents, hooks, commands, lib, skills) | `gh issue create -R akaszubski/autonomous-dev` |
+| `consumer` | Fix lives in consumer product code (outside `plugins/autonomous-dev/`) | `gh issue create` (no `-R` flag) |
+| `both` | Fix requires changes in both repos | Two issues with cross-references |
+
+**Decision heuristic**: Ask "where does the code that needs changing live?" If it's agent behavior, hook logic, or pipeline ordering → framework repo. If it's app tests, app config, or app code → consumer repo. If the root cause is in the framework but the symptom manifests as bad data in the consumer → both.
+
+**Examples**:
+- doc-master outputs docs for wrong scope → file in `autonomous-dev` (agent prompt issue)
+- Missing unit test for new API endpoint → file in consumer repo (app-code gap)
+- CHANGELOG has wrong test count because doc-master miscounted → file in BOTH repos
+
+**For human contributors**: When manually filing improvement issues found during code review or testing, apply the same heuristic. Framework bugs should always be fixed once in autonomous-dev, not patched per-repo.
 
 ---
 
