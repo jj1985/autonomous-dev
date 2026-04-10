@@ -43,6 +43,7 @@ class PipelineEvent:
     tool_uses: int = 0
     batch_issue_number: int = 0
     session_id: str = ""
+    pipeline_mode: str = ""
 
 
 @dataclass
@@ -226,6 +227,13 @@ def _parse_single_log(
         if not isinstance(batch_issue_number, int):
             batch_issue_number = 0
 
+        # Extract pipeline_mode from input_summary (e.g. "--fix", "--light", "full")
+        # Used by ordering validator to skip planner->implementer check in --fix mode.
+        # Issue #732.
+        pipeline_mode = input_summary.get("pipeline_mode", "") if isinstance(input_summary, dict) else ""
+        if not isinstance(pipeline_mode, str):
+            pipeline_mode = ""
+
         # Detect raw Bash pytest commands (Bug #620): PreToolUse Bash entries
         # where the command contains "pytest" but pipeline_action is not set.
         # Normalise these as test_run events so hard-gate ordering can find them.
@@ -252,6 +260,7 @@ def _parse_single_log(
                 tool_uses=output_summary.get("tool_uses", 0),
                 batch_issue_number=batch_issue_number,
                 session_id=entry.get("session_id", ""),
+                pipeline_mode=pipeline_mode,
             ))
         elif tool == "Bash" and pipeline_action == "test_run":
             events.append(PipelineEvent(
@@ -435,6 +444,16 @@ def _validate_step_ordering_for_group(
 
         if not first_events or not second_events:
             continue
+
+        # Issue #732: Skip planner->implementer ordering check when the implementer
+        # events are from a --fix mode pipeline. In --fix mode, implementer runs
+        # without a planner, which is by design. Flagging it is a false positive.
+        if (first_type, second_type) == ("planner", "implementer"):
+            all_implementer_are_fix = all(
+                e.pipeline_mode in ("--fix", "fix") for e in second_events
+            )
+            if all_implementer_are_fix:
+                continue
 
         # Use earliest timestamp for each
         first_ts = first_events[0].timestamp

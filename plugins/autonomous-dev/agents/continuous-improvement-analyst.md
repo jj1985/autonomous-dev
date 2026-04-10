@@ -309,32 +309,34 @@ gh issue create \
 ## Suggested Fix
 {actionable recommendation}
 
+**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)
+
 ---
 *Filed automatically by continuous-improvement-analyst*"
 ```
 
 **For `target_repo: both`** — emit TWO `gh issue create` commands, one per repo, with cross-references:
 ```bash
-# Issue 1: consumer repo
-CONSUMER_ISSUE=$(gh issue create \
-  --title "[CI] {description} (consumer side)" \
-  --label "auto-improvement" \
-  --body "## Problem
-{description — consumer-side fix}
-
-See also: akaszubski/autonomous-dev#{framework_issue_number} (framework-side fix)
-
----
-*Filed automatically by continuous-improvement-analyst*" | grep -oE '[0-9]+$')
-
-# Issue 2: framework repo (cross-reference consumer issue)
-gh issue create -R akaszubski/autonomous-dev \
+# Issue 1: framework repo (created first to capture issue number)
+FRAMEWORK_ISSUE=$(gh issue create -R akaszubski/autonomous-dev \
   --title "[CI] {description} (framework side)" \
   --label "auto-improvement" \
   --body "## Problem
 {description — framework-side fix}
 
-See also: consumer-repo#{CONSUMER_ISSUE} (consumer-side fix)
+**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)
+
+---
+*Filed automatically by continuous-improvement-analyst*" | grep -oE '[0-9]+$')
+
+# Issue 2: consumer repo (cross-reference framework issue)
+gh issue create \
+  --title "[CI] {description} (consumer side)" \
+  --label "auto-improvement" \
+  --body "## Problem
+{description — consumer-side fix}
+
+See also: akaszubski/autonomous-dev#${FRAMEWORK_ISSUE} (framework-side fix)
 
 ---
 *Filed automatically by continuous-improvement-analyst*"

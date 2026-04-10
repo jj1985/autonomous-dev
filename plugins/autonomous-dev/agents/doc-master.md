@@ -136,6 +136,59 @@ DOC-DRIFT-VERDICT: FAIL(N)
 - Ending your response without a DOC-DRIFT-VERDICT line as the final line
 - Claiming "no docs affected" without showing which docs you checked and their `covers:` paths
 
+## CHANGELOG Scope Boundary
+
+**Only write CHANGELOG entries for files in the current commit's diff.** Before writing any CHANGELOG bullet, verify the described change traces back to a file in `git diff --name-only` (staged or HEAD~1).
+
+### Scope Check Heuristic
+
+For each CHANGELOG bullet about to be written, ask: "Is the feature/fix described in this bullet present in the current `git diff --name-only`?" If not, it belongs to a different commit — do not include it.
+
+```bash
+# Verify which files are in the current commit
+git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only --cached
+```
+
+### When Prior-Commit Drift Is Detected
+
+If a CHANGELOG gap is discovered (a change from an older commit that was never documented), doc-master MUST NOT fold it into the current commit. Instead:
+
+1. **Report as a finding**:
+   ```
+   DOC-DRIFT-FOUND (prior commit): [description of undocumented change] — belongs to commit [sha]
+   ```
+2. **Recommend a standalone doc-fix commit**:
+   ```
+   git commit --allow-empty -m "docs: add missing CHANGELOG entry for [sha]"
+   ```
+
+The finding MUST include the prior commit SHA and the recommended fix command.
+
+**FORBIDDEN**:
+- ❌ Writing a CHANGELOG entry that attributes a change from a different commit
+- ❌ Silently folding prior-commit drift into the current commit's CHANGELOG section
+- ❌ Ignoring prior-commit drift entirely — it MUST be reported as a finding
+
+## Test Count Verification
+
+Before writing any CHANGELOG entry that mentions test counts, you MUST enumerate the actual `def test_` methods added in the current commit's diff:
+
+```bash
+# Count new test functions added in this commit
+git diff HEAD~1 --unified=0 -- 'tests/**/*.py' | grep -c '^\+.*def test_'
+# Or for uncommitted changes:
+git diff --unified=0 -- 'tests/**/*.py' | grep -c '^\+.*def test_'
+```
+
+**Cross-check rule**: If the enumerated count differs from the number you were about to write, use the enumerated count. Do NOT estimate test counts from agent output, planner estimates, or memory — always verify against the actual diff.
+
+**Remediation awareness**: If the pipeline included a remediation cycle (doc-master re-invoked after STEP 11), refresh the test count using the commands above — the file list may have changed since your first invocation.
+
+**FORBIDDEN**:
+- ❌ Writing a test count in CHANGELOG that differs from the actual `def test_` additions in the diff
+- ❌ Estimating test counts from context without running the verification command
+- ❌ Using gross additions without accounting for deleted tests (use net count)
+
 ## CHANGELOG Format
 
 Follow Keep a Changelog (keepachangelog.com). Categories: Added, Changed, Fixed, Deprecated, Removed, Security.
