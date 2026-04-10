@@ -140,6 +140,12 @@ def get_completed_agents(
 ) -> set[str]:
     """Get the set of agents that have completed for a session/issue.
 
+    Falls back to checking the 'unknown' session state when the primary
+    session lookup returns empty. This handles the case where the coordinator
+    initialized pipeline state before CLAUDE_SESSION_ID was set — state is
+    written under session_id='unknown' but the hook reads with the real session
+    ID. Issue #738.
+
     Args:
         session_id: The pipeline session identifier.
         issue_number: The issue number (0 for non-batch).
@@ -148,13 +154,34 @@ def get_completed_agents(
         Set of agent type strings that completed successfully.
     """
     state = _read_state(session_id)
-    if not state:
-        return set()
+    if state:
+        completions = state.get("completions", {})
+        issue_key = str(issue_number)
+        issue_completions = completions.get(issue_key, {})
+        result = {k for k, v in issue_completions.items() if v}
+        if result:
+            return result
 
-    completions = state.get("completions", {})
-    issue_key = str(issue_number)
-    issue_completions = completions.get(issue_key, {})
-    return {k for k, v in issue_completions.items() if v}
+    # Fallback: if the primary session returned no completions, check the
+    # 'unknown' session. The coordinator may have written state before
+    # CLAUDE_SESSION_ID was available. Issue #738.
+    if session_id != "unknown":
+        fallback_state = _read_state("unknown")
+        if fallback_state:
+            completions = fallback_state.get("completions", {})
+            issue_key = str(issue_number)
+            issue_completions = completions.get(issue_key, {})
+            fallback_result = {k for k, v in issue_completions.items() if v}
+            if fallback_result:
+                import logging
+                logging.getLogger("pipeline_completion_state").info(
+                    "Falling back to session_id='unknown' state for ordering check "
+                    "(primary session_id=%r returned no completions). Issue #738.",
+                    session_id,
+                )
+                return fallback_result
+
+    return set()
 
 
 def record_agent_launch(
@@ -191,6 +218,10 @@ def get_launched_agents(
 ) -> set[str]:
     """Get the set of agents that have been launched for a session/issue.
 
+    Falls back to checking the 'unknown' session state when the primary
+    session lookup returns empty. This mirrors the fallback in
+    get_completed_agents. Issue #738.
+
     Args:
         session_id: The pipeline session identifier.
         issue_number: The issue number (0 for non-batch).
@@ -198,16 +229,30 @@ def get_launched_agents(
     Returns:
         Set of agent type strings that have been launched.
 
-    Issues: #686
+    Issues: #686, #738
     """
     state = _read_state(session_id)
-    if not state:
-        return set()
+    if state:
+        launches = state.get("launches", {})
+        issue_key = str(issue_number)
+        issue_launches = launches.get(issue_key, {})
+        result = {k for k, v in issue_launches.items() if v}
+        if result:
+            return result
 
-    launches = state.get("launches", {})
-    issue_key = str(issue_number)
-    issue_launches = launches.get(issue_key, {})
-    return {k for k, v in issue_launches.items() if v}
+    # Fallback: if the primary session returned no launches, check the
+    # 'unknown' session. Issue #738.
+    if session_id != "unknown":
+        fallback_state = _read_state("unknown")
+        if fallback_state:
+            launches = fallback_state.get("launches", {})
+            issue_key = str(issue_number)
+            issue_launches = launches.get(issue_key, {})
+            fallback_result = {k for k, v in issue_launches.items() if v}
+            if fallback_result:
+                return fallback_result
+
+    return set()
 
 
 def record_prompt_baseline(

@@ -62,3 +62,43 @@ class TestCIAFindingRouting:
         docs_content = WORKFLOW_DOCS.read_text()
         assert re.search(r"(?i)#+\s*cross-repo\s+finding\s+routing", docs_content), \
             "WORKFLOW-DISCIPLINE.md must have a 'Cross-repo finding routing' subsection"
+
+    def test_both_target_creates_framework_issue_first(self):
+        """Regression test (Issue #742): for target_repo: both, framework issue is created first.
+
+        The consumer issue body cross-references the framework issue number via ${FRAMEWORK_ISSUE}.
+        This only works if the framework issue is created first so the variable is populated.
+        Previously the order was reversed — consumer was created first but referenced a
+        framework_issue_number that didn't exist yet.
+        """
+        # Find the 'target_repo: both' shell block
+        both_block_match = re.search(
+            r"target_repo: both.*?```bash(.*?)```",
+            self.cia_content,
+            re.DOTALL,
+        )
+        assert both_block_match, "Must have a 'target_repo: both' bash code block"
+        shell_block = both_block_match.group(1)
+
+        # Framework issue command must appear before consumer issue command
+        framework_pos = shell_block.find("gh issue create -R akaszubski/autonomous-dev")
+        consumer_pos = shell_block.find("gh issue create \\\n  --title")
+
+        assert framework_pos != -1, "Framework gh issue create command must be present"
+        assert consumer_pos != -1, "Consumer gh issue create command must be present"
+        assert framework_pos < consumer_pos, (
+            "Framework issue must be created BEFORE consumer issue so "
+            "${FRAMEWORK_ISSUE} is populated when the consumer body is rendered"
+        )
+
+        # Consumer body must use ${FRAMEWORK_ISSUE} (not a placeholder)
+        assert "${FRAMEWORK_ISSUE}" in shell_block, (
+            "Consumer issue body must reference ${FRAMEWORK_ISSUE} — "
+            "the captured number from the framework issue created first"
+        )
+
+        # Consumer body must NOT reference the old unresolvable placeholder
+        assert "{framework_issue_number}" not in shell_block, (
+            "Consumer issue body must not use {framework_issue_number} literal placeholder — "
+            "use ${FRAMEWORK_ISSUE} shell variable instead"
+        )

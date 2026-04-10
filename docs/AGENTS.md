@@ -230,6 +230,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Skills**: documentation-guide
 **Execution**: STEP 10 of /implement workflow — runs in background (non-blocking). In parallel mode, launched simultaneously with reviewer and security-auditor. In sequential mode, launched alongside STEP 10a (reviewer), not waiting for security-auditor to finish. Collected at STEP 12. If STEP 11 remediation occurred, the STEP 10 background result is discarded as stale; STEP 12 re-invokes doc-master BLOCKING with a fresh post-remediation file list (#624)
 **Drift Detection**: Uses `covers:` YAML frontmatter in `docs/*.md` files to map source paths to docs, then applies LLM judgment to detect factual drift, behavioral drift, structural drift, and missing coverage
+**CHANGELOG Scope Boundary**: Only writes CHANGELOG entries for files present in the current commit's `git diff --name-only`. Prior-commit drift discovered during a run is reported as a `DOC-DRIFT-FOUND (prior commit)` finding and must not be silently folded into the current commit's CHANGELOG section. A standalone doc-fix commit is recommended for prior-commit gaps (Issue #741)
 
 ### ui-tester
 

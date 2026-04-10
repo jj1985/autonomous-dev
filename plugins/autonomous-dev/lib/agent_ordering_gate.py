@@ -288,6 +288,57 @@ def check_minimum_agent_count(
     return GateResult(passed=True, reason="All required agents completed")
 
 
+def check_ordering_with_session_fallback(
+    target_agent: str,
+    session_id: str,
+    *,
+    issue_number: int = 0,
+    validation_mode: str = "sequential",
+    pipeline_mode: str = "full",
+) -> GateResult:
+    """Check ordering prerequisites with 'unknown' session fallback.
+
+    Wraps check_ordering_prerequisites with a two-step state lookup:
+    1. Read completions from the primary session_id.
+    2. If empty, fall back to the 'unknown' session state.
+
+    This handles the case where the coordinator initialized pipeline state
+    before CLAUDE_SESSION_ID was set — state is written under session_id='unknown'
+    but the hook reads with the real session ID. Issue #738.
+
+    Args:
+        target_agent: The agent about to be invoked.
+        session_id: The current pipeline session identifier.
+        issue_number: The issue number (0 for non-batch).
+        validation_mode: "sequential" or "parallel".
+        pipeline_mode: Pipeline mode — "full", "light", "fix", or "tdd-first".
+
+    Returns:
+        GateResult indicating whether the agent may proceed.
+    """
+    try:
+        from pipeline_completion_state import get_completed_agents, get_launched_agents
+    except ImportError:
+        # If state module not available, fall back to pure logic (no completions)
+        return check_ordering_prerequisites(
+            target_agent,
+            set(),
+            validation_mode=validation_mode,
+            pipeline_mode=pipeline_mode,
+        )
+
+    completed = get_completed_agents(session_id, issue_number=issue_number)
+    launched = get_launched_agents(session_id, issue_number=issue_number)
+
+    return check_ordering_prerequisites(
+        target_agent,
+        completed,
+        validation_mode=validation_mode,
+        launched_agents=launched,
+        pipeline_mode=pipeline_mode,
+    )
+
+
 def check_batch_agent_completeness(
     completed_agents: set[str],
     issue_number: int,

@@ -417,6 +417,21 @@ If `--tdd-first`: **Agent**(subagent_type="test-master", model="opus") — Pass 
 
 **Agent**(subagent_type="implementer", model=PLANNER_RECOMMENDED_MODEL) — Pass planner output + acceptance tests (or test-master output if TDD). Must write WORKING code, no stubs. Use the model recommended by the planner (see STEP 5). Default to "opus" if planner did not specify.
 
+**Ghost Invocation Detection** — After the implementer agent returns, verify the output is non-trivial. Count the words in the implementer's result. If the result word count is fewer than 50 words AND the agent completed in less than 10 seconds, treat it as a ghost invocation — the agent was invoked but did not actually execute implementation work:
+1. Log: `[GHOST-INVOCATION-DETECTED] Implementer returned <N> words in <T>s — retrying once with same prompt`
+2. **RETRY the implementer once** with the exact same prompt (same planner output + acceptance tests)
+3. If the retry also produces fewer than 50 words in less than 10 seconds, BLOCK the pipeline:
+```
+BLOCKED: Ghost implementer invocation — agent returned <N> words in <T>s on both initial attempt and retry.
+This indicates the implementer failed to execute. Investigate agent health and retry manually:
+  /implement --resume $RUN_ID
+```
+
+**FORBIDDEN** — You MUST NOT do any of the following for ghost invocation:
+- ❌ You MUST NOT proceed past STEP 8 when a ghost invocation is detected without first retrying
+- ❌ You MUST NOT treat 0-word or near-0-word output as a valid implementation result
+- ❌ You MUST NOT retry more than once (one retry maximum — block after two consecutive ghost results)
+
 **HARD GATE** (inline — coordinator must verify):
 ```bash
 pytest --tb=short -q
@@ -690,9 +705,9 @@ Parse the reviewer verdict (`APPROVE` or `REQUEST_CHANGES`) and security-auditor
 For each cycle:
 1. **Collect BLOCKING findings** — Extract ALL findings with severity BLOCKING from the failing validator(s). Pass them VERBATIM to the implementer (do not summarize, paraphrase, or reorder).
 2. **VERBATIM PASSING REQUIRED**: Pass ALL BLOCKING findings VERBATIM to the implementer. Do NOT summarize, reword, or condense. Include the full validator output as critique history. The implementer needs the exact finding text to understand what to fix.
-3. **Re-invoke implementer in REMEDIATION MODE** — **Agent**(subagent_type="implementer", model="opus") with prompt: "REMEDIATION MODE — Fix the following BLOCKING findings. Critique history: {full validator output verbatim}. BLOCKING findings: {findings verbatim}."
+3. **Re-invoke implementer in REMEDIATION MODE** — **Agent**(subagent_type="implementer", model="opus") with prompt: "REMEDIATION MODE — Fix the following BLOCKING findings. Critique history: {full validator output verbatim}. BLOCKING findings: {findings verbatim}." The coordinator MUST NOT apply fixes directly. Even for trivial one-line fixes, the implementer agent must be re-invoked. If context limits prevent implementer re-invocation, BLOCK the pipeline and suggest `/clear` then `/implement --resume`.
 4. **Run pytest** — Verify 0 failures after remediation fixes.
-5. **Re-run ONLY failing validators** — If reviewer failed, re-run reviewer. If security-auditor failed, re-run security-auditor. Do NOT re-run validators that already passed. Do NOT invoke doc-master during remediation.
+5. **Re-run failing validators AND security-auditor** — If reviewer failed, re-run reviewer. If security-auditor failed, re-run security-auditor. **security-auditor MUST always re-run after remediation, even if it passed originally**, because remediation changes the code it certified — a PASS from STEP 10 is stale and cannot be accepted when code was modified in STEP 11. Do NOT invoke doc-master during remediation.
 6. **Check verdicts** — If all pass → proceed to STEP 12. If any fail → next cycle.
 
 **After 2 cycles still failing**:
@@ -709,8 +724,11 @@ For each cycle:
 - You MUST NOT skip the remediation loop when a validator fails
 - You MUST NOT summarize or paraphrase BLOCKING findings when passing to implementer (pass VERBATIM)
 - You MUST NOT exceed 2 remediation cycles (file issues and block after 2)
-- You MUST NOT re-run validators that already passed (only re-run the failing ones)
+- You MUST NOT skip re-running security-auditor after remediation — the STEP 10 PASS is against pre-remediation code and is stale once any file is changed during remediation
+- ❌ Accepting a security-auditor PASS from STEP 10 when remediation occurred in STEP 11 — the PASS is stale and must not be carried forward
 - You MUST NOT invoke doc-master during remediation (doc-master is excluded from the remediation loop)
+- ❌ Applying remediation fixes directly via Edit/Write/Bash instead of re-invoking the implementer agent — even for "simple" one-line fixes, the implementer agent MUST be re-invoked
+- ❌ Citing context pressure, context compression, or token limits as justification for skipping implementer re-invocation — if context prevents re-invocation, BLOCK the pipeline and suggest `/clear` then `/implement --resume`
 
 **Reviewer Out-of-Scope Finding Tracking**
 
@@ -791,6 +809,7 @@ If STEP 11 did NOT trigger remediation (both validators passed on first try), us
    If you must parse a transcript file instead of the return value, wait at least 3 seconds
    after the agent reports completion before reading the file (filesystem flush delay — Issue #682).
 2. Parse output for `DOC-DRIFT-VERDICT: PASS` or `DOC-DRIFT-VERDICT: FAIL`
+2a. **Shallow Verdict Detection**: Count the words in the doc-master output. If the output is fewer than 100 words, treat it as `DOC-VERDICT-SHALLOW` — the output is too short to confirm a real semantic sweep occurred. Log `[DOC-VERDICT-SHALLOW] doc-master produced N words (minimum: 100)` and retry once with reduced context (same as step 6 retry logic below). If retry also produces fewer than 100 words or no verdict, log `[DOC-VERDICT-SHALLOW-RETRY-FAILED] doc-master still shallow after retry — proceeding with warning`.
 3. If **PASS**: proceed to STEP 13
 4. If **FAIL with unfixed findings**: BLOCK pipeline. Output:
    ```
