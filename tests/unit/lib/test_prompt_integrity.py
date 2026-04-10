@@ -29,9 +29,11 @@ from prompt_integrity import (
     MIN_CRITICAL_AGENT_PROMPT_WORDS,
     PromptIntegrityResult,
     clear_prompt_baselines,
+    compute_template_baselines,
     get_agent_prompt_template,
     get_prompt_baseline,
     record_prompt_baseline,
+    seed_baselines_from_templates,
     validate_prompt_word_count,
 )
 
@@ -331,3 +333,136 @@ class TestIssue696RegressionImplementerCompression:
             f"prompt_integrity: {COMPRESSION_CRITICAL_AGENTS}\n"
             f"pipeline_intent_validator: {VALIDATOR_AGENTS}"
         )
+
+
+class TestTemplateBaselineSeeding:
+    """Tests for Issue #748: template-based baseline seeding.
+
+    Verifies that compute_template_baselines() and seed_baselines_from_templates()
+    establish word-count baselines derived from agent template files, so the first
+    real issue in a batch is compared against the canonical template rather than
+    the (potentially already-compressed) observed first invocation.
+    """
+
+    def _make_agents_dir(self, tmp_path: Path, agents: dict) -> Path:
+        """Helper: create an agents directory with given agent content files.
+
+        Args:
+            tmp_path: Temporary directory to create agents dir within.
+            agents: Mapping of {agent_type: content_string}.
+
+        Returns:
+            Path to the created agents directory.
+        """
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        for agent_type, content in agents.items():
+            (agents_dir / f"{agent_type}.md").write_text(content, encoding="utf-8")
+        return agents_dir
+
+    def test_compute_template_baselines_returns_word_counts(self, tmp_path: Path) -> None:
+        """compute_template_baselines() returns correct word counts for existing agents."""
+        content_implementer = "word " * 300  # 300 words
+        content_reviewer = "token " * 250  # 250 words
+        agents_dir = self._make_agents_dir(
+            tmp_path,
+            {"implementer": content_implementer, "reviewer": content_reviewer},
+        )
+
+        baselines = compute_template_baselines(agents_dir=agents_dir)
+
+        assert baselines["implementer"] == 300
+        assert baselines["reviewer"] == 250
+
+    def test_compute_template_baselines_skips_missing_agents(self, tmp_path: Path) -> None:
+        """compute_template_baselines() skips agents whose template files are absent."""
+        # Only create implementer — other critical agents are absent
+        agents_dir = self._make_agents_dir(
+            tmp_path, {"implementer": "word " * 200}
+        )
+
+        baselines = compute_template_baselines(agents_dir=agents_dir)
+
+        # Only implementer should be present; missing agents silently skipped
+        assert "implementer" in baselines
+        for agent in COMPRESSION_CRITICAL_AGENTS:
+            if agent != "implementer":
+                assert agent not in baselines
+
+    def test_seed_baselines_from_templates_writes_to_disk(self, tmp_path: Path) -> None:
+        """seed_baselines_from_templates() persists template word counts to JSON."""
+        agents_dir = self._make_agents_dir(
+            tmp_path,
+            {"implementer": "word " * 400, "reviewer": "token " * 350},
+        )
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        result = seed_baselines_from_templates(
+            agents_dir=agents_dir, state_dir=state_dir
+        )
+
+        assert result["implementer"] == 400
+        assert result["reviewer"] == 350
+        # Verify baseline is retrievable
+        assert get_prompt_baseline("implementer", state_dir=state_dir) == 400
+        assert get_prompt_baseline("reviewer", state_dir=state_dir) == 350
+
+    def test_seed_baselines_from_templates_baseline_used_by_validation(
+        self, tmp_path: Path
+    ) -> None:
+        """After seeding, validate_prompt_word_count() uses template baseline for comparison."""
+        # Template has 500 words
+        agents_dir = self._make_agents_dir(tmp_path, {"implementer": "word " * 500})
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
+        baseline = get_prompt_baseline("implementer", state_dir=state_dir)
+
+        # A first-issue prompt with 500 words — no shrinkage
+        full_prompt = " ".join(["word"] * 500)
+        result = validate_prompt_word_count("implementer", full_prompt, baseline)
+        assert result.passed is True
+
+        # A compressed first-issue prompt — 46% shrinkage from 500-word template
+        compressed_prompt = " ".join(["word"] * 270)
+        result_compressed = validate_prompt_word_count(
+            "implementer", compressed_prompt, baseline, max_shrinkage=0.25
+        )
+        assert result_compressed.passed is False
+        assert result_compressed.should_reload is True
+
+    def test_template_baseline_catches_first_issue_compression(
+        self, tmp_path: Path
+    ) -> None:
+        """Template baseline catches compression even on the first batch issue.
+
+        Reproduces the core bug: without template seeding, the first issue's
+        compressed prompt becomes the baseline, masking compression entirely.
+        With template seeding, the compressed first-issue prompt is caught.
+        """
+        template_words = 600
+        first_issue_words = 320  # ~47% shrinkage from template
+
+        agents_dir = self._make_agents_dir(
+            tmp_path, {"security-auditor": "word " * template_words}
+        )
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        # Seed from template
+        seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
+        baseline = get_prompt_baseline("security-auditor", state_dir=state_dir)
+
+        assert baseline == template_words
+
+        # First-issue prompt is already compressed — should be caught
+        compressed_first_issue = " ".join(["word"] * first_issue_words)
+        result = validate_prompt_word_count(
+            "security-auditor", compressed_first_issue, baseline, max_shrinkage=0.25
+        )
+        assert result.passed is False
+        assert result.should_reload is True
+        # shrinkage is roughly 47%
+        assert result.shrinkage_pct > 40.0

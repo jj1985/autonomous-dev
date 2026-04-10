@@ -227,12 +227,11 @@ The `pipeline_intent_validator.py` library detects compression > 25% from the ba
 
 The coordinator uses these functions for each agent in every batch issue:
 
-1. **First issue**: After invocation, call `record_prompt_baseline(agent_type, issue_number, word_count)` to persist the baseline word count to `.claude/logs/prompt_baselines.json`
-2. **Subsequent issues**: Before invoking each agent:
+1. **Batch start**: Call `clear_prompt_baselines()` to reset state from any prior batch, then immediately call `seed_baselines_from_templates()` to pre-seed baselines from each critical agent's template `.md` file at `issue_number=0`. This provides a ground-truth floor — all issues (including the first) are compared against the canonical template size, not against a potentially already-compressed first observation (Issue #748 fix).
+2. **Every issue** (including the first): Before invoking each agent:
    - Get baseline: `baseline = get_prompt_baseline(agent_type)`
    - Validate: `result = validate_prompt_word_count(agent_type, constructed_prompt, baseline)`
    - If `result.should_reload` is True: re-read the agent source via `get_agent_prompt_template(agent_type)` and reconstruct the prompt from disk rather than context memory
-3. **Batch start**: Call `clear_prompt_baselines()` to reset state from any prior batch
 
 ### FORBIDDEN Behaviors
 

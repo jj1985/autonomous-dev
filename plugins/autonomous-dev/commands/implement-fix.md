@@ -10,7 +10,7 @@ allowed-tools: [Agent, Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch]
 
 > The key words "MUST", "MUST NOT", "SHOULD", and "MAY" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
-Minimal pipeline (4 steps, 3 agents minimum) for test-fixing tasks.
+Minimal pipeline (5 steps, 4 agents minimum) for test-fixing tasks.
 Invoked via `/implement --fix "description"`. Skips research and planning
 since the problem is already known (failing tests).
 
@@ -18,22 +18,23 @@ since the problem is already known (failing tests).
 
 Output structured progress at each step. Same format conventions as the full pipeline protocol.
 
-**Step Banner**: `STEP FN/4 — Step Name` with agent info where applicable.
+**Step Banner**: `STEP FN/5 — Step Name` with agent info where applicable.
 **Timing**: Capture `FIX_START=$(date +%s)` at pipeline start. Capture per-step timing.
 **Gate Results**: `GATE: name — PASS/BLOCKED`
-**Final Summary** (after STEP F4):
+**Final Summary** (after STEP F4, before STEP F5 launches in background):
 ```
 ========================================
 FIX COMPLETE
 ========================================
-Step  Description         Agent(s)              Time    Status
-----  ------------------  --------------------  ------  ------
-F1    Alignment           —                     2s      PASS
-F1.5  Pre-staged check    —                     1s      PASS
-F2    Test context         —                    5s      done
-F3    Implementation      implementer (Opus)    2:30    done
-F3    Test gate           —                     8s      PASS
-F4    Review + docs       reviewer, doc-master  45s     done
+Step  Description         Agent(s)                           Time    Status
+----  ------------------  ---------------------------------  ------  ------
+F1    Alignment           —                                  2s      PASS
+F1.5  Pre-staged check    —                                  1s      PASS
+F2    Test context        —                                  5s      done
+F3    Implementation      implementer (Opus)                 2:30    done
+F3    Test gate           —                                  8s      PASS
+F4    Review + docs       reviewer, doc-master               45s     done
+F5    CI analysis         continuous-improvement-analyst     bg      launched
 ========================================
 Total: 3:31 | Tests: N passed, M failed | Files changed: N
 ========================================
@@ -43,7 +44,7 @@ Total: 3:31 | Tests: N passed, M failed | Files changed: N
 
 ### STEP F1: Validate PROJECT.md Alignment
 
-**Progress**: Output step banner (STEP F1/4 — Alignment). Capture FIX_START. Output gate result.
+**Progress**: Output step banner (STEP F1/5 — Alignment). Capture FIX_START. Output gate result.
 
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`").
 Check that the fix is within project scope. If misaligned: BLOCK with reason.
@@ -68,7 +69,7 @@ This ensures prompt integrity enforcement (Layer 5) can detect an active pipelin
 
 ### STEP F1.5: Pre-Staged Files Check — HARD GATE
 
-**Progress**: Output step banner (STEP F1.5/4 — Pre-Staged Check). Output gate result.
+**Progress**: Output step banner (STEP F1.5/5 — Pre-Staged Check). Output gate result.
 
 ```bash
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
@@ -103,7 +104,7 @@ Do NOT proceed to STEP F2 until the staging area is clean.
 
 ### STEP F2: Gather Test Context
 
-**Progress**: Output step banner (STEP F2/4 — Test Context). Output test failure summary after.
+**Progress**: Output step banner (STEP F2/5 — Test Context). Output test failure summary after.
 
 Run the test suite to capture current failures:
 
@@ -129,7 +130,7 @@ Fix Mode - Test Context:
 
 ### STEP F3: Implementer (Opus) - HARD GATE
 
-**Progress**: Output step banner (STEP F3/4 — Implementation, Agent: implementer (Opus)). Output agent completion, then test gate result with counts.
+**Progress**: Output step banner (STEP F3/5 — Implementation, Agent: implementer (Opus)). Output agent completion, then test gate result with counts.
 
 Invoke the implementer agent with the failing test output and affected files.
 
@@ -178,7 +179,7 @@ If fixing a bug, at least one NEW test must be added that would FAIL without the
 
 ### STEP F4: Reviewer + Doc-master (parallel)
 
-**Progress**: Output step banner (STEP F4/4 — Review + Docs, Agents: reviewer (Sonnet), doc-master (Sonnet)). Output each agent completion. Then output Final Summary table.
+**Progress**: Output step banner (STEP F4/5 — Review + Docs, Agents: reviewer (Sonnet), doc-master (Sonnet)). Output each agent completion. Then output Final Summary table.
 
 #### HARD GATE: Verbatim Implementer Output
 
@@ -284,12 +285,36 @@ prompt: "FIX MODE SECURITY REVIEW: You are auditing a test fix for security impl
 Report BLOCKING findings (must fix before merge) and WARNING findings (improvements for later) separately."
 ```
 
+#### Doc-master Verdict Collection
+
+After the parallel agents complete, parse the doc-master output:
+
+1. Parse output for `DOC-DRIFT-VERDICT: PASS`, `DOC-DRIFT-VERDICT: FAIL`, or one of the fix-mode verdicts (`DOCS-UPDATED`, `NO-UPDATE-NEEDED`, `DOCS-DRIFT-FOUND`)
+2. **Shallow Verdict Detection**: Count the words in the doc-master output. If the output is fewer than 100 words, treat it as `DOC-VERDICT-SHALLOW` — the output is too short to confirm a real semantic sweep occurred. Log `[DOC-VERDICT-SHALLOW] doc-master produced N words (minimum: 100)` and retry once with reduced context (same as empty-output retry logic above). If retry also produces fewer than 100 words or no verdict, log `[DOC-VERDICT-SHALLOW-RETRY-FAILED] doc-master still shallow after retry — proceeding with warning`.
+3. If `DOCS-DRIFT-FOUND`: BLOCK. Display the stale documentation files. User must address before proceeding.
+4. If doc-master made fixes: stage them with `git add`
+
+### STEP F5: Continuous Improvement (background)
+
+**Progress**: Output step banner (STEP F5/5 — Continuous Improvement). Output agent launch confirmation.
+
+**REQUIRED**: **Agent**(subagent_type="continuous-improvement-analyst", model="sonnet", run_in_background=true) — Examines session logs for bypasses, test drift, and fix pipeline completeness.
+
+**FORBIDDEN** — You MUST NOT do any of the following (violations = pipeline failure):
+- ❌ You MUST NOT skip STEP F5 for any reason (time pressure, context limits, "already reported")
+- ❌ You MUST NOT clean up pipeline state before launching the analyst
+- ❌ You MUST NOT inline the analysis yourself instead of invoking the agent
+
+After launching the analyst and confirming the agent task ID is valid, cleanup: `rm -f /tmp/implement_pipeline_state.json`
+
+**FORBIDDEN** (Issue #559): Cleaning up pipeline state before confirming the STEP F5 analyst agent launch succeeded. The analyst reads pipeline state — cleanup before launch loses context.
+
 ---
 
 ## Agent Count
 
-- **Minimum**: 3 agents (implementer, reviewer, doc-master)
-- **Maximum**: 4 agents (+ security-auditor if security-sensitive files changed)
+- **Minimum**: 4 agents (implementer, reviewer, doc-master, continuous-improvement-analyst)
+- **Maximum**: 5 agents (+ security-auditor if security-sensitive files changed)
 
 ## Mutual Exclusivity
 

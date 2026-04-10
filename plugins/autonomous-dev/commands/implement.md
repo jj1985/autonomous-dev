@@ -15,9 +15,9 @@ user-invocable: true
 | Mode | Flag | Description |
 |------|------|-------------|
 | **Full Pipeline** | (default) | Acceptance-first: Research → Plan → Acceptance Tests → Implement + Unit Tests → Review → Security → Docs |
-| **Light** | `--light` | Fast pipeline: Align → Plan → Implement → Test → Docs (4 agents, no research/security/CI) |
+| **Light** | `--light` | Fast pipeline: Align → Plan → Implement → Test → Docs → CI Analysis (4 agents, no research/security) |
 | **TDD-First** | `--tdd-first` | Research → Plan → Unit Tests → Implement → Review → Security → Docs |
-| **Fix** | `--fix` | Minimal pipeline: Align → Test Context → Implement Fix → Review + Docs (3 agents) |
+| **Fix** | `--fix` | Minimal pipeline: Align → Test Context → Implement Fix → Review + Docs → CI Analysis (4 agents minimum) |
 | **Batch File** | `--batch <file>` | Process features from file with auto-worktree |
 | **Batch Issues** | `--issues <nums>` | Process GitHub issues with auto-worktree |
 | **Resume** | `--resume <id>` | Resume interrupted batch from checkpoint |
@@ -888,7 +888,7 @@ After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -
 
 # LIGHT PIPELINE MODE (`--light`)
 
-Fast pipeline for low-risk changes: markdown, config, docs, simple edits, renames. 5 steps, 4 agents. Skips research, acceptance tests, security audit, reviewer, CI analyst.
+Fast pipeline for low-risk changes: markdown, config, docs, simple edits, renames. 5 steps, 4 agents. Skips research, acceptance tests, security audit, and reviewer.
 
 **When to use**: `--light` flag, or coordinator MAY suggest it when the feature description clearly involves only markdown/config/docs/typos/renames and no new logic or security-sensitive code.
 
@@ -989,9 +989,15 @@ Total: Xs | Files changed: N | Tests: N passed, M failed
 git push origin $(git branch --show-current) 2>/dev/null || echo "Warning: Push failed"
 ```
 
-Cleanup: `rm -f /tmp/implement_pipeline_state.json`
+**REQUIRED**: Launch continuous-improvement-analyst as a background agent before cleanup:
 
-**Agents (light)**: planner (Sonnet), implementer (Sonnet or Opus per planner), doc-master (Sonnet). 3-4 agents.
+**Agent**(subagent_type="continuous-improvement-analyst", model="sonnet", run_in_background=true) — Examines session logs for bypasses, test drift, and light pipeline completeness.
+
+**FORBIDDEN**: Skipping this step or cleaning up pipeline state before confirming the analyst agent launch succeeded.
+
+After confirming the analyst task ID is valid: Cleanup: `rm -f /tmp/implement_pipeline_state.json`
+
+**Agents (light)**: planner (Sonnet), implementer (Sonnet or Opus per planner), doc-master (Sonnet), continuous-improvement-analyst (Sonnet). 4 agents.
 
 ---
 

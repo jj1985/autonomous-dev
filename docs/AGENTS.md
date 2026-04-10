@@ -78,7 +78,7 @@ Deep reasoning for complex synthesis:
 
 | Status | Agent | Tokens | Notes |
 |--------|-------|--------|-------|
-| ✅ | doc-master | 1,634 | OK |
+| ✅ | doc-master | 2,517 | OK (updated: Issue #744 added Step 4.6 minimum output HARD GATE) |
 | ✅ | security-auditor | 1,231 | OK |
 | ✅ | issue-creator | 1,113 | OK |
 | ✅ | researcher-local | 1,104 | OK |
@@ -231,6 +231,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Execution**: STEP 10 of /implement workflow — runs in background (non-blocking). In parallel mode, launched simultaneously with reviewer and security-auditor. In sequential mode, launched alongside STEP 10a (reviewer), not waiting for security-auditor to finish. Collected at STEP 12. If STEP 11 remediation occurred, the STEP 10 background result is discarded as stale; STEP 12 re-invokes doc-master BLOCKING with a fresh post-remediation file list (#624)
 **Drift Detection**: Uses `covers:` YAML frontmatter in `docs/*.md` files to map source paths to docs, then applies LLM judgment to detect factual drift, behavioral drift, structural drift, and missing coverage
 **CHANGELOG Scope Boundary**: Only writes CHANGELOG entries for files present in the current commit's `git diff --name-only`. Prior-commit drift discovered during a run is reported as a `DOC-DRIFT-FOUND (prior commit)` finding and must not be silently folded into the current commit's CHANGELOG section. A standalone doc-fix commit is recommended for prior-commit gaps (Issue #741)
+**Minimum Output Enforcement** (Issue #744): doc-master's total response MUST contain at least 100 words. Outputs under 100 words indicate the `covers:` scan or semantic comparison was skipped. The coordinator (implement-batch.md STEP B3, implement-fix.md STEP F4) counts the words in the doc-master output and treats sub-100-word responses as `DOC-VERDICT-SHALLOW`, logging the shortfall and retrying once with reduced context. If the retry also produces fewer than 100 words, it records `doc-drift-verdict: SHALLOW` with a warning rather than blocking.
 
 ### ui-tester
 
