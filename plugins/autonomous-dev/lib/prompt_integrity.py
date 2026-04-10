@@ -387,6 +387,10 @@ def seed_baselines_from_templates(
     the canonical template size, not the (potentially already-compressed)
     observed first invocation.
 
+    A 0.70 slack factor is applied (Issue #759) because template files are
+    the full agent definition (~2500 words) but task-specific prompts are
+    naturally 20-40% shorter. Seeding at 100% caused immediate false positives.
+
     Call this immediately after clear_prompt_baselines() at the start of
     each batch run.
 
@@ -395,15 +399,23 @@ def seed_baselines_from_templates(
         state_dir: Optional override for state directory (baseline JSON location).
 
     Returns:
-        Mapping of {agent_type: word_count} for agents successfully seeded.
+        Mapping of {agent_type: adjusted_word_count} for agents successfully seeded.
     """
+    # Slack factor for template-seeded baselines (Issue #759).
+    # Template files are the full agent definition; task-specific prompts are
+    # naturally 20-40% shorter. 0.70 allows legitimate variation without
+    # triggering false positives.
+    TEMPLATE_BASELINE_SLACK_FACTOR = 0.70
+
     template_baselines = compute_template_baselines(agents_dir=agents_dir)
     for agent_type, word_count in template_baselines.items():
+        adjusted_wc = int(word_count * TEMPLATE_BASELINE_SLACK_FACTOR)
         record_prompt_baseline(
-            agent_type, issue_number=0, word_count=word_count, state_dir=state_dir
+            agent_type, issue_number=0, word_count=adjusted_wc, state_dir=state_dir
         )
         logger.debug(
-            "Seeded template baseline: %s = %d words", agent_type, word_count
+            "Seeded template baseline: %s = %d words (adjusted from %d)",
+            agent_type, adjusted_wc, word_count,
         )
     logger.info(
         "Seeded template baselines for %d agents: %s",

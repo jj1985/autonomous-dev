@@ -61,23 +61,13 @@ class TestBaselineShrinkageEnforcement:
         mock_get_baseline.assert_not_called()
 
     def test_no_baseline_seeds_and_allows(self):
-        """When no baseline exists, the current word count is seeded and the call is allowed."""
+        """When no baseline exists, the observed word count is seeded and the call is allowed."""
         adequate_prompt = _make_prompt(150)
-        passing_result = PromptIntegrityResult(
-            agent_type="reviewer",
-            word_count=150,
-            baseline_word_count=None,
-            shrinkage_pct=0.0,
-            passed=True,
-            reason="Prompt for reviewer OK (150 words).",
-            should_reload=False,
-        )
+        expected_baseline = 150  # Observed word count (Issue #759: hook seeds from observed, not template)
         with (
             patch("prompt_integrity.get_prompt_baseline", return_value=None) as mock_get,
             patch("prompt_integrity.record_prompt_baseline") as mock_record,
-            patch(
-                "prompt_integrity.validate_prompt_word_count", return_value=passing_result
-            ) as mock_validate,
+            patch("prompt_integrity.validate_prompt_word_count") as mock_validate,
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
@@ -85,8 +75,8 @@ class TestBaselineShrinkageEnforcement:
             )
 
         assert decision == "allow"
-        # record_prompt_baseline must be called with issue_number=0 sentinel
-        mock_record.assert_called_once_with("reviewer", issue_number=0, word_count=150)
+        # record_prompt_baseline seeded at observed word count (Issue #759)
+        mock_record.assert_called_once_with("reviewer", issue_number=0, word_count=expected_baseline)
         # validate_prompt_word_count should NOT be called when baseline is None
         mock_validate.assert_not_called()
 

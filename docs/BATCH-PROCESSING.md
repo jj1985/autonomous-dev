@@ -221,7 +221,7 @@ As a batch progresses, context pressure can cause the coordinator to pass progre
 - Security-critical agents (security-auditor, reviewer, doc-master, implementer, planner) MUST receive at least 80 words in their prompts
 - The coordinator MUST log prompt word counts per agent per issue
 
-The `pipeline_intent_validator.py` library detects compression > 25% from the baseline (first issue) after the fact. The `prompt_integrity.py` library provides real-time prevention before each agent invocation.
+The `pipeline_intent_validator.py` library detects compression > 40% from the baseline (first issue) after the fact (`MAX_PROMPT_SHRINKAGE_RATIO = 0.40`). This post-hoc threshold is more generous than the real-time hook threshold (25%) because legitimate task-level variation causes different prompt sizes between issues; the hook handles per-invocation enforcement while this catches only severe compression patterns. The `prompt_integrity.py` library provides real-time prevention before each agent invocation.
 
 ### How prompt_integrity.py Works
 

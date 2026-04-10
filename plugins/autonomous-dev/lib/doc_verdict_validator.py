@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+# Minimum word count for doc-master output to be considered substantive
+MIN_DOC_VERDICT_WORDS = 100
 
 # Regex to match DOC-DRIFT-VERDICT lines, with optional ANSI escape codes
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
@@ -36,6 +38,8 @@ class DocVerdictResult:
     finding_count: int
     raw_line: str
     position_warning: str
+    word_count: int = 0
+    is_shallow: bool = False
 
 
 def validate_doc_verdict(doc_master_output: str) -> DocVerdictResult:
@@ -58,10 +62,16 @@ def validate_doc_verdict(doc_master_output: str) -> DocVerdictResult:
             finding_count=0,
             raw_line="",
             position_warning="",
+            word_count=0,
+            is_shallow=True,
         )
 
     # Strip ANSI escape codes from the entire output
     cleaned = _ANSI_ESCAPE.sub("", doc_master_output)
+
+    # Calculate word count for shallow-output detection
+    word_count = len(doc_master_output.split())
+    is_shallow = word_count < MIN_DOC_VERDICT_WORDS
 
     # Split into lines and find all verdict lines
     lines = cleaned.splitlines()
@@ -80,6 +90,8 @@ def validate_doc_verdict(doc_master_output: str) -> DocVerdictResult:
             finding_count=0,
             raw_line="",
             position_warning="",
+            word_count=word_count,
+            is_shallow=is_shallow,
         )
 
     # Use the last verdict found
@@ -133,4 +145,6 @@ def validate_doc_verdict(doc_master_output: str) -> DocVerdictResult:
         finding_count=finding_count,
         raw_line=raw_line,
         position_warning=position_warning,
+        word_count=word_count,
+        is_shallow=is_shallow,
     )

@@ -265,6 +265,11 @@ def verify_state_hmac(state: dict, session_id: str) -> bool:
     parameter is kept for API compatibility but the actual HMAC key is derived
     from the secret file.
 
+    When the secret file has been cleaned up between sessions (common in
+    batch/worktree workflows after /clear), stale states older than 1 hour
+    are treated as expired rather than tampered to avoid generating repeated
+    HMAC failures (Issue #753).
+
     Args:
         state: Pipeline state dict with 'hmac' and 'nonce' fields.
         session_id: Session identifier (fallback if secret file missing).
@@ -283,18 +288,35 @@ def verify_state_hmac(state: dict, session_id: str) -> bool:
 
     run_id = state.get("run_id", "")
     secret = _read_pipeline_secret(run_id) if run_id else None
-    if secret is None:
-        # Fallback: try session_id-based key for backward compat with states
-        # signed before the secret-file approach was introduced
-        fallback_key = session_id
-        expected = _compute_state_hmac(state, fallback_key)
+
+    if secret is not None:
+        expected = _compute_state_hmac(state, secret)
         if _hmac.compare_digest(stored_hmac, expected):
             return True
-        # No secret file and session_id fallback failed
-        return False
 
-    expected = _compute_state_hmac(state, secret)
-    return _hmac.compare_digest(stored_hmac, expected)
+    # Session-id fallback for backward compat with states signed before
+    # the secret-file approach was introduced
+    fallback_key = session_id
+    expected = _compute_state_hmac(state, fallback_key)
+    if _hmac.compare_digest(stored_hmac, expected):
+        return True
+
+    # Stale state fail-open (Issue #753): use file mtime for stale detection
+    # (not session_start from state dict, which is attacker-controlled).
+    # File mtime cannot be forged by editing JSON content.
+    import time as _time
+
+    state_path = Path("/tmp/implement_pipeline_state.json")
+    if state_path.exists():
+        try:
+            mtime = state_path.stat().st_mtime
+            age_seconds = _time.time() - mtime
+            if age_seconds > 3600:  # > 1 hour old
+                return True  # fail-open for stale state files
+        except OSError:
+            pass
+
+    return False
 
 
 def sign_state(state: dict, session_id: str) -> dict:

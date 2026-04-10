@@ -404,9 +404,9 @@ class TestTemplateBaselineSeeding:
 
         assert result["implementer"] == 400
         assert result["reviewer"] == 350
-        # Verify baseline is retrievable
-        assert get_prompt_baseline("implementer", state_dir=state_dir) == 400
-        assert get_prompt_baseline("reviewer", state_dir=state_dir) == 350
+        # Verify baseline is retrievable — stored at 70% slack factor (Issue #759)
+        assert get_prompt_baseline("implementer", state_dir=state_dir) == int(400 * 0.70)
+        assert get_prompt_baseline("reviewer", state_dir=state_dir) == int(350 * 0.70)
 
     def test_seed_baselines_from_templates_baseline_used_by_validation(
         self, tmp_path: Path
@@ -419,14 +419,16 @@ class TestTemplateBaselineSeeding:
 
         seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
         baseline = get_prompt_baseline("implementer", state_dir=state_dir)
+        # Baseline is 500 * 0.70 = 350 (Issue #759 slack factor)
+        assert baseline == int(500 * 0.70)
 
-        # A first-issue prompt with 500 words — no shrinkage
+        # A first-issue prompt with 500 words — no shrinkage from 350 baseline
         full_prompt = " ".join(["word"] * 500)
         result = validate_prompt_word_count("implementer", full_prompt, baseline)
         assert result.passed is True
 
-        # A compressed first-issue prompt — 46% shrinkage from 500-word template
-        compressed_prompt = " ".join(["word"] * 270)
+        # A compressed first-issue prompt — 200 words is 42.9% shrinkage from 350 baseline
+        compressed_prompt = " ".join(["word"] * 200)
         result_compressed = validate_prompt_word_count(
             "implementer", compressed_prompt, baseline, max_shrinkage=0.25
         )
@@ -443,7 +445,9 @@ class TestTemplateBaselineSeeding:
         With template seeding, the compressed first-issue prompt is caught.
         """
         template_words = 600
-        first_issue_words = 320  # ~47% shrinkage from template
+        # Baseline after 0.70 slack = 420 (Issue #759)
+        adjusted_baseline = int(template_words * 0.70)
+        first_issue_words = 250  # ~40.5% shrinkage from 420 baseline → caught
 
         agents_dir = self._make_agents_dir(
             tmp_path, {"security-auditor": "word " * template_words}
@@ -455,7 +459,7 @@ class TestTemplateBaselineSeeding:
         seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
         baseline = get_prompt_baseline("security-auditor", state_dir=state_dir)
 
-        assert baseline == template_words
+        assert baseline == adjusted_baseline
 
         # First-issue prompt is already compressed — should be caught
         compressed_first_issue = " ".join(["word"] * first_issue_words)

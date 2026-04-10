@@ -522,7 +522,6 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
     # more headroom for legitimate prompt variation at the hook level.
     try:
         from prompt_integrity import (
-            get_agent_prompt_template,
             get_prompt_baseline,
             record_prompt_baseline,
             validate_prompt_word_count,
@@ -545,15 +544,16 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
                     f"to reload the full agent prompt from disk and reconstruct with complete context.",
                 )
         else:
-            # No baseline yet — seed from template so the first real issue is compared
-            # against the canonical template size, not the observed first invocation.
-            # Falls back to observed word count if template file is missing.
-            try:
-                template = get_agent_prompt_template(agent_type)
-                template_wc = len(template.split())
-                record_prompt_baseline(agent_type, issue_number=0, word_count=template_wc)
-            except FileNotFoundError:
-                record_prompt_baseline(agent_type, issue_number=0, word_count=word_count)
+            # No baseline yet — seed from OBSERVED word count (Issue #759).
+            # Template files (~2500 words) are far larger than task-specific
+            # prompts (~200-400 words) because templates contain the full agent
+            # definition while the coordinator sends focused task context.
+            # Even with a 0.70 slack factor, template-based seeding produced
+            # baselines of ~1700 words, blocking legitimate ~200-word prompts.
+            # The observed word count is the correct baseline for cross-issue
+            # shrinkage detection. The library's seed_baselines_from_templates()
+            # handles batch-mode seeding separately with appropriate slack.
+            record_prompt_baseline(agent_type, issue_number=0, word_count=word_count)
 
     except Exception:
         # Fail open: any error in baseline check must not block the agent
@@ -1856,6 +1856,67 @@ def _detect_settings_json_write(command: str) -> "Optional[str]":
     return None
 
 
+def _detect_realign_bypass(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
+    """Detect attempts to run raw mlx_lm scripts bypassing realign CLI (Issue #754).
+
+    RULE #1: Never run raw mlx.launch, mlx_lm.lora, or standalone scripts.
+    Users must use the realign CLI wrapper instead.
+
+    Only active when the current project contains realign markers.
+
+    Args:
+        tool_name: The Claude Code tool being invoked.
+        tool_input: The tool input dictionary (command key for Bash).
+
+    Returns:
+        Tuple of (decision, reason) where decision is "deny" or "allow".
+    """
+    # Only inspect Bash tool calls
+    if tool_name != "Bash":
+        return ("allow", "")
+
+    command = tool_input.get("command", "")
+    if not command:
+        return ("allow", "")
+
+    # Patterns that indicate direct mlx_lm/mlx.launch execution (not grep/search)
+    import re
+
+    # Only match execution patterns, not grep/search/cat/echo references
+    # Look for python -m mlx_lm.X or python -m mlx.launch
+    bypass_patterns = [
+        r"python[23]?\s+(?:-\w\s+)*-m\s+mlx_lm\.lora\b",
+        r"python[23]?\s+(?:-\w\s+)*-m\s+mlx_lm\.fuse\b",
+        r"python[23]?\s+(?:-\w\s+)*-m\s+mlx_lm\.generate\b",
+        r"python[23]?\s+(?:-\w\s+)*-m\s+mlx_lm\b",
+        r"python[23]?\s+(?:-\w\s+)*-m\s+mlx\.launch\b",
+    ]
+
+    # Exclude search/inspection commands that reference mlx_lm without executing it
+    search_prefixes = (
+        "grep ", "rg ", "ag ", "ack ", "find ", "cat ", "less ", "head ",
+        "tail ", "echo ", "printf ", "man ",
+    )
+    stripped = command.lstrip()
+    if any(stripped.startswith(prefix) for prefix in search_prefixes):
+        return ("allow", "")
+
+    for pattern in bypass_patterns:
+        if re.search(pattern, command):
+            reason = (
+                "BLOCKED: Direct use of mlx_lm/mlx.launch is not allowed. "
+                "The realign CLI wraps mlx_lm with correct configuration, logging, "
+                "and checkpoint management. "
+                "REQUIRED NEXT ACTION: Use 'realign train' instead of 'python -m mlx_lm.lora', "
+                "or 'realign generate' instead of 'python -m mlx_lm.generate'. "
+                "See 'realign --help' for available commands. "
+                "Do NOT run raw mlx_lm commands directly. (Issue #754)"
+            )
+            return ("deny", reason)
+
+    return ("allow", "")
+
+
 def _extract_bash_file_writes(command: str) -> list:
     """Extract file paths being written to by Bash command."""
     import re
@@ -2937,6 +2998,26 @@ def main():
                                         sys.exit(0)
                         except Exception:
                             pass  # Fail-open: don't block on errors
+
+                    # Issue #754: Detect raw mlx_lm bypass in realign projects
+                    try:
+                        cwd = os.getcwd()
+                        is_realign = (
+                            Path(cwd, "src", "realign").is_dir()
+                            or (Path(cwd, "pyproject.toml").exists()
+                                and "realign" in Path(cwd, "pyproject.toml").read_text(errors="ignore"))
+                        )
+                        if is_realign:
+                            rb_decision, rb_reason = _detect_realign_bypass(tool_name, tool_input)
+                            if rb_decision == "deny":
+                                _log_pretool_activity(tool_name, tool_input, "deny", rb_reason)
+                                output_decision(
+                                    "deny", rb_reason,
+                                    system_message="BLOCKED: Use 'realign train' or 'realign generate' instead of raw mlx_lm.",
+                                )
+                                sys.exit(0)
+                    except Exception:
+                        pass  # Fail-open: don't block on project detection errors
 
             # Issue #528: Block coordinator code writes when /implement explicitly active
             # This is CRITICAL for external repo coverage — native tools bypass all

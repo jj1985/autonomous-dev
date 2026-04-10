@@ -389,9 +389,37 @@ def _get_session_date(session_id: str) -> str:
 
 
 def _find_log_dir() -> Path:
-    """Find the .claude/logs/activity directory."""
-    # Walk up to find .claude directory
+    """Find the .claude/logs/activity directory.
+
+    When running in a git worktree, resolves to the PARENT repo's .claude
+    directory so all events (worktree and main) end up in the same log file.
+    This prevents the split-log problem where downstream agents' events
+    are written to the worktree's log and missed by post-session analysis.
+    Issue #755.
+    """
     cwd = Path.cwd()
+
+    # Worktree detection: if CWD is inside a .worktrees/ directory,
+    # resolve to the parent repo's .claude directory via git.
+    cwd_str = str(cwd)
+    if "/.worktrees/" in cwd_str or "\\.worktrees\\" in cwd_str:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                capture_output=True, text=True, timeout=5, cwd=str(cwd)
+            )
+            if result.returncode == 0:
+                common_dir = Path(result.stdout.strip())
+                # common_dir is the .git directory of the parent repo
+                parent_repo = common_dir.parent if common_dir.name == ".git" else common_dir
+                claude_dir = parent_repo / ".claude"
+                if claude_dir.exists():
+                    return claude_dir / "logs" / "activity"
+        except Exception:
+            pass  # Fall through to normal resolution
+
+    # Normal resolution: walk up to find .claude directory
     for parent in [cwd] + list(cwd.parents):
         claude_dir = parent / ".claude"
         if claude_dir.exists():
