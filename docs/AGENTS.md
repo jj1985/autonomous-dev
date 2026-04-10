@@ -395,7 +395,7 @@ These agents provide specialized functionality for alignment, git operations, pr
   - **Full mode** (10-15 tool calls): Comprehensive post-batch or standalone analysis
     - Parses session logs using `pipeline_intent_validator` library
     - Detects HARD GATE violations, missing agents, hook layer failures, rule bypasses
-    - Files deduped GitHub issues for actionable findings (severity >= warning)
+    - Routes each finding to the correct repo (`autonomous-dev`, `consumer`, or `both`) based on where the fix lives, then files deduped GitHub issues for actionable findings (severity >= warning)
 **Detection Coverage**:
   - Pipeline completeness (all required agents ran)
   - Gate integrity (test gates passed, no stubs)
@@ -406,6 +406,7 @@ These agents provide specialized functionality for alignment, git operations, pr
   - Test lifecycle health (pruning candidates, untraced tests, tier imbalance; check #12)
   - Token efficiency analysis (tokens-per-word ratio, per-invocation budget; check #13)
   - Pipeline efficiency analysis (cross-run model tier recommendations, token trend detection, IQR outlier detection via `pipeline_efficiency_analyzer.py`; check #14)
+  - Cross-repo finding routing (Issue #739): each finding is annotated with `target_repo: autonomous-dev | consumer | both` based on where the fix lives; issues are filed to the correct repo using `-R akaszubski/autonomous-dev` for framework findings or no `-R` flag for consumer findings; `both` findings produce two cross-referenced issues
 **Excluded**: Feature code quality, security vulnerabilities, documentation completeness (handled by other agents)
 **Mission**: "Is autonomous-dev's automation working correctly?"
 
