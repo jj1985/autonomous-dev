@@ -288,19 +288,25 @@ def record_prompt_baseline(
 def get_prompt_baseline(
     agent_type: str,
     *,
+    issue_number: Optional[int] = None,
     state_dir: Optional[Path] = None,
 ) -> Optional[int]:
-    """Get the baseline word count (from first recorded issue) for an agent.
+    """Get the baseline word count for an agent.
 
-    The baseline is the word count from the issue with the lowest number,
-    representing the first issue processed in the batch.
+    When issue_number is provided, returns the baseline for THAT specific issue
+    only (per-issue isolation for batch mode — Issue #764). When issue_number is
+    None, falls back to the original behavior: returns the word count from the
+    issue with the lowest number (first issue in batch).
 
     Args:
         agent_type: Agent name to look up.
+        issue_number: Specific issue to get baseline for. When provided, only
+            returns the baseline recorded for this exact issue. When None,
+            returns the baseline from the lowest-numbered issue (backward compat).
         state_dir: Optional override for state directory.
 
     Returns:
-        Word count from the first issue, or None if no baseline exists.
+        Word count baseline, or None if no baseline exists.
     """
     baselines_path = _get_baselines_path(state_dir)
 
@@ -317,7 +323,18 @@ def get_prompt_baseline(
     if not agent_data:
         return None
 
-    # Find entry with lowest issue number (first issue in batch)
+    # Per-issue lookup (Issue #764): return baseline for this specific issue only
+    if issue_number is not None:
+        issue_key = str(issue_number)
+        baseline = agent_data.get(issue_key)
+        if baseline is not None:
+            logger.debug(
+                "Per-issue baseline lookup: %s issue #%s = %d words",
+                agent_type, issue_key, baseline,
+            )
+        return baseline
+
+    # Backward compat: find entry with lowest issue number (first issue in batch)
     try:
         lowest_issue = min(agent_data.keys(), key=lambda k: int(k))
         return agent_data[lowest_issue]

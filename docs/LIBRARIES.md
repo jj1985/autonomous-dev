@@ -16065,7 +16065,7 @@ result = check_ordering_prerequisites(
 - v1.1.0 (2026-04-07) - Defense-in-depth: `launched_agents` parameter blocks parallel mode bypass when prerequisite not launched; `GateResult.warning` field for observability; fail-open logging in `unified_pre_tool.py` (Issue #669)
 - v1.0.0 (2026-03-30) - Initial release for hook-level pipeline ordering enforcement (Issues #625, #629, #632)
 
-## 176+4. pipeline_completion_state.py (289 lines, v1.1.0 - Issues #625, #629, #632, #686)
+## 176+4. pipeline_completion_state.py (v1.2.0 - Issues #625, #629, #632, #686, #712, #786)
 
 **Purpose**: Shared state for agent ordering enforcement. Manages a per-session JSON state file that tracks which pipeline agents have completed and which have been launched. Written by `unified_session_tracker.py` (SubagentStop for completions) and `unified_pre_tool.py` (PreToolUse for launches), read by `unified_pre_tool.py` to enforce ordering.
 
@@ -16104,10 +16104,12 @@ launched = get_launched_agents(session_id="abc123", issue_number=42)
 - **`record_agent_launch(session_id, agent_type, *, issue_number=0) -> None`** — Record that an agent has been launched (started) for a given session and issue. Called by `unified_pre_tool.py` in PreToolUse BEFORE the agent runs. Used by the parallel-mode defense-in-depth guard to distinguish "running concurrently" from "skipped entirely". (Issue #686)
 - **`get_launched_agents(session_id, *, issue_number=0) -> set[str]`** — Get the set of agents that have been launched for a session/issue. Returns empty set on any read error. (Issue #686)
 - **`record_prompt_baseline(agent_type, issue_number, word_count, *, state_dir=None) -> None`** — Record baseline prompt word count for an agent. Persists to `.claude/logs/prompt_baselines.json`. Hook uses `issue_number=0` as a sentinel when seeding from the prompt integrity gate (Issue #723).
-- **`get_prompt_baseline(agent_type, *, state_dir=None) -> Optional[int]`** — Get the baseline word count (from the first recorded issue) for an agent. Returns `None` if no baseline exists (fail-open).
+- **`get_prompt_baseline(agent_type, *, issue_number=None, state_dir=None) -> Optional[int]`** — Get the baseline word count for an agent. When `issue_number` is provided, returns the baseline for that specific issue only (per-issue isolation for batch mode — Issue #764). When `issue_number` is `None`, falls back to the word count from the lowest-numbered issue (backward-compatible behavior). Returns `None` if no baseline exists (fail-open).
 - **`set_validation_mode(session_id, mode) -> None`** — Set ordering enforcement mode (`"sequential"` or `"parallel"`).
 - **`get_validation_mode(session_id) -> str`** — Get ordering enforcement mode (default: `"sequential"`).
 - **`clear_session(session_id) -> None`** — Remove the state file for a session (called at pipeline cleanup).
+- **`verify_batch_cia_completions(session_id) -> tuple[bool, list[int], list[int]]`** — Verify `continuous-improvement-analyst` completed for all batch issues. Returns `(all_passed, issues_with_cia, issues_missing_cia)`. Skips issue key `"0"` (non-batch). Fails open on any error or missing state. Bypass via `SKIP_BATCH_CIA_GATE=1`. Called by `unified_pre_tool.py` before allowing git commit in batch mode. (Issue #712)
+- **`verify_batch_doc_master_completions(session_id) -> tuple[bool, list[int], list[int]]`** — Verify `doc-master` completed for all batch issues. Returns `(all_passed, issues_with_doc_master, issues_missing_doc_master)`. Skips issue key `"0"` (non-batch). Fails open on any error or missing state. Bypass via `SKIP_BATCH_DOC_MASTER_GATE=1`. Called by `unified_pre_tool.py` before allowing git commit in batch mode. Mirrors CIA gate design. (Issue #786)
 
 ### State File Format
 
@@ -16131,6 +16133,7 @@ launched = get_launched_agents(session_id="abc123", issue_number=42)
 - `tests/unit/lib/test_pipeline_completion_state.py` — unit tests
 
 **Version History**:
+- v1.2.0 (2026-04-12) - Added `verify_batch_doc_master_completions()` batch commit gate mirroring `verify_batch_cia_completions()`; `unified_pre_tool.py` blocks git commit in batch worktrees when doc-master has not run for all issues (Issue #786)
 - v1.1.0 (2026-04-07) - Added `record_agent_launch()` and `get_launched_agents()` for parallel-mode defense-in-depth; `unified_pre_tool.py` now passes `launched_agents` to ordering gate (Issue #686)
 - v1.0.0 (2026-03-30) - Initial release for pipeline ordering state management (Issues #625, #629, #632)
 

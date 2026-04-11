@@ -50,12 +50,16 @@ class TestFirstIssueCompressionCaught:
     """
 
     def test_first_issue_compressed_implementer_46pct_caught(self, tmp_path: Path) -> None:
-        """Template baseline catches 46% compression on the very first implementer invocation.
+        """Template baseline catches compression on the very first implementer invocation.
 
         Without template seeding the first issue's compressed prompt sets the baseline,
         making all subsequent detections useless.
+
+        Note: seed_baselines_from_templates applies a 0.70 slack factor (Issue #759)
+        so the baseline is int(template_words * 0.70), not template_words directly.
         """
         template_words = 235
+        expected_baseline = int(template_words * 0.70)  # 164 after slack factor
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "implementer.md").write_text("word " * template_words, encoding="utf-8")
@@ -67,10 +71,10 @@ class TestFirstIssueCompressionCaught:
         seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
 
         baseline = get_prompt_baseline("implementer", state_dir=state_dir)
-        assert baseline == template_words, f"Expected template baseline {template_words}, got {baseline}"
+        assert baseline == expected_baseline, f"Expected template baseline {expected_baseline} (with 0.70 slack), got {baseline}"
 
-        # First issue prompt is 46% smaller than template (the exact bug scenario)
-        first_issue_words = int(template_words * 0.54)  # ~127 words, ~46% shrinkage
+        # First issue prompt is significantly smaller than baseline
+        first_issue_words = int(expected_baseline * 0.54)  # ~88 words, ~46% shrinkage from baseline
         compressed_prompt = " ".join(["word"] * first_issue_words)
         result = validate_prompt_word_count(
             "implementer", compressed_prompt, baseline, max_shrinkage=0.25
@@ -83,12 +87,15 @@ class TestFirstIssueCompressionCaught:
     def test_first_issue_compressed_security_auditor_49pct_caught(
         self, tmp_path: Path
     ) -> None:
-        """Template baseline catches 49% compression on first security-auditor invocation.
+        """Template baseline catches compression on first security-auditor invocation.
 
         Mirrors the implementer scenario for security-auditor — the other agent
         explicitly mentioned in the issue description.
+
+        Note: seed_baselines_from_templates applies a 0.70 slack factor (Issue #759).
         """
         template_words = 300
+        expected_baseline = int(template_words * 0.70)  # 210 after slack factor
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "security-auditor.md").write_text(
@@ -101,10 +108,10 @@ class TestFirstIssueCompressionCaught:
         seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
 
         baseline = get_prompt_baseline("security-auditor", state_dir=state_dir)
-        assert baseline == template_words
+        assert baseline == expected_baseline
 
-        # First issue: ~49% shrinkage
-        first_issue_words = int(template_words * 0.51)
+        # First issue: ~49% shrinkage from the slack-adjusted baseline
+        first_issue_words = int(expected_baseline * 0.51)
         compressed_prompt = " ".join(["word"] * first_issue_words)
         result = validate_prompt_word_count(
             "security-auditor", compressed_prompt, baseline, max_shrinkage=0.25
@@ -117,16 +124,15 @@ class TestFirstIssueCompressionCaught:
     def test_progressive_compression_across_batch(self, tmp_path: Path) -> None:
         """Template baseline prevents progressive compression from going undetected.
 
-        Without template seeding:
-          - Issue 1: 300 words (baseline = 300)
-          - Issue 2: 280 words (7% shrinkage — passes 25% threshold)
-          - Issue 3: 200 words (33% from issue 1 — caught, but only if issue 1 wasn't already compressed)
-          - If issue 1 was 200 words, issue 3 at 150 words looks like only 25% shrinkage
+        With template seeding (600-word template, 0.70 slack = 420 baseline):
+          - Issue 1 at 300 words: 28.6% shrinkage from 420 → caught (>25%)
+          - Issue 2 at 280 words: 33.3% shrinkage from 420 → caught
+          - Issue 3 at 200 words: 52.4% shrinkage from 420 → caught
 
-        With template seeding (600-word template):
-          - Issue 1 at 300 words: 50% shrinkage → caught immediately
+        Note: seed_baselines_from_templates applies a 0.70 slack factor (Issue #759).
         """
         template_words = 600
+        expected_baseline = int(template_words * 0.70)  # 420 after slack factor
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "reviewer.md").write_text("word " * template_words, encoding="utf-8")
@@ -137,19 +143,19 @@ class TestFirstIssueCompressionCaught:
         seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
 
         baseline = get_prompt_baseline("reviewer", state_dir=state_dir)
-        assert baseline == template_words
+        assert baseline == expected_baseline
 
         # Simulate progressive compression across 3 issues
         issue_word_counts = [300, 280, 200]  # Progressive shrinkage
 
-        # All three issues should fail against the 600-word template baseline
+        # All three issues should fail against the 420-word baseline (with slack)
         for issue_num, wc in enumerate(issue_word_counts, start=1):
             prompt = " ".join(["word"] * wc)
-            shrinkage = round((1.0 - wc / template_words) * 100, 1)
+            shrinkage = round((1.0 - wc / expected_baseline) * 100, 1)
             result = validate_prompt_word_count(
                 "reviewer", prompt, baseline, max_shrinkage=0.25
             )
-            # All are >25% smaller than template — all should fail
+            # All are >25% smaller than slack-adjusted baseline — all should fail
             if shrinkage > 25.0:
                 assert result.passed is False, (
                     f"Issue {issue_num} ({wc} words, {shrinkage:.1f}% shrinkage) "

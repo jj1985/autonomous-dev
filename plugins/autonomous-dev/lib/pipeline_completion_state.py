@@ -391,6 +391,76 @@ def verify_batch_cia_completions(session_id: str) -> tuple[bool, list[int], list
         return (True, [], [])
 
 
+def verify_batch_doc_master_completions(session_id: str) -> tuple[bool, list[int], list[int]]:
+    """Verify doc-master completed for all batch issues.
+
+    Checks the completion state for a given session and verifies that
+    'doc-master' has been recorded as completed for every tracked issue.
+    Designed to be called from the unified_pre_tool hook before allowing
+    git commit in batch mode.
+
+    Fail-open: returns (True, [], []) on any error to avoid blocking
+    legitimate commits due to state file issues.
+
+    Args:
+        session_id: The pipeline session identifier.
+
+    Returns:
+        Tuple of (all_passed, issues_with_doc_master, issues_missing_doc_master).
+        all_passed is True when every tracked issue has doc-master completion.
+        issues_with_doc_master lists issue numbers that have doc-master.
+        issues_missing_doc_master lists issue numbers missing doc-master.
+
+    Issues: #786
+    """
+    # Escape hatch: skip gate entirely if env var set
+    if os.environ.get("SKIP_BATCH_DOC_MASTER_GATE", "").strip().lower() in ("1", "true", "yes"):
+        return (True, [], [])
+
+    try:
+        state = _read_state(session_id)
+        if not state:
+            # No state file — fail-open (nothing to enforce)
+            return (True, [], [])
+
+        completions = state.get("completions", {})
+        if not completions:
+            # No completions tracked — fail-open
+            return (True, [], [])
+
+        issues_with_doc_master: list[int] = []
+        issues_missing_doc_master: list[int] = []
+
+        for issue_key, issue_completions in completions.items():
+            # Skip the "0" key (non-batch single-issue pipeline)
+            if issue_key == "0":
+                continue
+
+            try:
+                issue_num = int(issue_key)
+            except (ValueError, TypeError):
+                continue
+
+            if not isinstance(issue_completions, dict):
+                continue
+
+            if issue_completions.get("doc-master"):
+                issues_with_doc_master.append(issue_num)
+            else:
+                issues_missing_doc_master.append(issue_num)
+
+        # If no batch issues found (only "0" key or empty), fail-open
+        if not issues_with_doc_master and not issues_missing_doc_master:
+            return (True, [], [])
+
+        all_passed = len(issues_missing_doc_master) == 0
+        return (all_passed, sorted(issues_with_doc_master), sorted(issues_missing_doc_master))
+
+    except Exception:
+        # Fail-open: any error returns pass
+        return (True, [], [])
+
+
 def clear_session(session_id: str) -> None:
     """Remove the state file for a session.
 

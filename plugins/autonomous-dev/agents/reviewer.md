@@ -276,7 +276,7 @@ Map taxonomy groups to concrete review checks:
 
 - **Functionality**: Type hints on public APIs, no bare except, no NotImplementedError in production paths, correct defaults
 - **Security**: No hardcoded secrets, parameterized queries, input validation on boundaries, auth checks on all paths
-- **Testing**: Tests exist for new code, edge cases covered, no zero-assertion tests, no mocking the subject under test
+- **Testing**: Tests exist for new code, edge cases covered, no zero-assertion tests, no mocking the subject under test. Scan for `assert True` tautological assertions — a test whose only assertion is `assert True` can never fail and provides zero verification value. The import-as-test pattern does not need `assert True`; let the import failure be the test.
 - **Silent Failure**: Exceptions not swallowed (BLOCKING — see Observability BLOCKING tier above), errors not silently filtered, metrics incremented, alerts wired
 - **Concurrency**: Race conditions on shared state, atomic updates, lock ordering, cache invalidation
 - **Wiring**: New classes/hooks registered and imported, dispatch tables updated, config keys consumed

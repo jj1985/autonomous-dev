@@ -4,7 +4,7 @@ Integration-style tests for pipeline ordering enforcement (Layer 4) in unified_p
 Tests mock the hook flow to verify that Agent tool calls during active pipeline
 sessions are subject to ordering checks.
 
-Issues: #625, #629, #632, #636
+Issues: #625, #629, #632, #636, #786
 """
 
 import json
@@ -519,3 +519,86 @@ class TestIssue686LaunchedAgentsWiring:
             mock_record_launch.assert_called_once_with(
                 "test-session", "security-auditor", issue_number=42
             )
+
+
+class TestIssue786ReviewerSecurityAuditorOrdering:
+    """Regression tests for Issue #786: reviewer→security-auditor ordering.
+
+    Verifies that:
+    - ("reviewer", "security-auditor") is in SEQUENTIAL_REQUIRED
+    - ("reviewer", "security-auditor") is in MODE_DEPENDENT_PAIRS
+    - Sequential mode blocks security-auditor when reviewer not complete
+    - Parallel mode blocks security-auditor when reviewer not launched
+    """
+
+    def test_reviewer_security_auditor_in_sequential_required(self):
+        """Issue #786: ('reviewer', 'security-auditor') must be in SEQUENTIAL_REQUIRED."""
+        from agent_ordering_gate import SEQUENTIAL_REQUIRED
+
+        pair = ("reviewer", "security-auditor")
+        assert pair in SEQUENTIAL_REQUIRED, (
+            f"Expected {pair} in SEQUENTIAL_REQUIRED, got: {SEQUENTIAL_REQUIRED}"
+        )
+
+    def test_reviewer_security_auditor_in_mode_dependent_pairs(self):
+        """Issue #786: ('reviewer', 'security-auditor') must be in MODE_DEPENDENT_PAIRS."""
+        from agent_ordering_gate import MODE_DEPENDENT_PAIRS
+
+        pair = ("reviewer", "security-auditor")
+        assert pair in MODE_DEPENDENT_PAIRS, (
+            f"Expected {pair} in MODE_DEPENDENT_PAIRS, got: {MODE_DEPENDENT_PAIRS}"
+        )
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_sequential_mode_blocks_security_auditor_without_reviewer(
+        self, mock_mode, mock_completed
+    ):
+        """Issue #786: Sequential mode blocks security-auditor when reviewer not completed."""
+        mock_completed.return_value = {"planner", "implementer"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit security"}
+            )
+            assert decision == "deny"
+            assert "reviewer" in reason.lower()
+
+    @patch("pipeline_completion_state.get_launched_agents")
+    @patch("pipeline_completion_state.record_agent_launch")
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_parallel_mode_blocks_security_auditor_when_reviewer_not_launched(
+        self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
+    ):
+        """Issue #786: Parallel mode blocks security-auditor when reviewer not launched."""
+        mock_completed.return_value = {"planner", "implementer"}
+        mock_mode.return_value = "parallel"
+        # reviewer NOT in launched set
+        mock_get_launched.return_value = {"planner", "implementer", "security-auditor"}
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit security"}
+            )
+            assert decision == "deny"
+            assert "reviewer" in reason.lower()
+
+    @patch("pipeline_completion_state.get_completed_agents")
+    @patch("pipeline_completion_state.get_validation_mode")
+    def test_sequential_mode_allows_security_auditor_after_reviewer(
+        self, mock_mode, mock_completed
+    ):
+        """Issue #786: Sequential mode allows security-auditor when reviewer has completed."""
+        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_mode.return_value = "sequential"
+
+        with patch.object(hook, "_is_pipeline_active", return_value=True), \
+             patch.object(hook, "_session_id", "test-session"):
+            decision, reason = hook.validate_pipeline_ordering(
+                "Agent", {"subagent_type": "security-auditor", "prompt": "Audit security"}
+            )
+            assert decision == "allow"
