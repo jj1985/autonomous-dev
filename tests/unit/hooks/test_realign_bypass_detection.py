@@ -126,6 +126,67 @@ class TestRealignBypassAllowed:
         assert decision == "allow"
 
 
+class TestGhCommandsAreAllowed:
+    """gh CLI commands should not trigger bypass detection (Issue #763).
+
+    The gh CLI is a reporting/collaboration tool, not an execution environment.
+    Commands like 'gh issue create' and 'gh pr create' may contain mlx_lm
+    references in their --body text as documentation examples, not as actual
+    execution commands.
+    """
+
+    def test_gh_issue_create_with_mlx_reference_in_body_is_allowed(self):
+        """gh issue create with mlx_lm in --body should be allowed.
+
+        This is the exact false positive from Issue #763: filing a GitHub issue
+        whose body text contains 'python -m mlx_lm.lora' as an example should
+        not be blocked by bypass detection.
+        """
+        decision, reason = _detect_realign_bypass(
+            "Bash",
+            {"command": 'gh issue create --title "test" --body "python -m mlx_lm.lora --model foo"'},
+        )
+        assert decision == "allow", f"gh issue create with mlx_lm in body was blocked: {reason}"
+
+    def test_gh_pr_create_with_mlx_reference_in_body_is_allowed(self):
+        """gh pr create with mlx_lm in --body should be allowed.
+
+        Generalizes the fix to other gh commands that accept --body arguments
+        with code examples referencing mlx_lm.
+        """
+        decision, reason = _detect_realign_bypass(
+            "Bash",
+            {"command": 'gh pr create --title "test" --body "example: python -m mlx_lm.generate --model bar"'},
+        )
+        assert decision == "allow", f"gh pr create with mlx_lm in body was blocked: {reason}"
+
+    def test_gh_issue_create_body_file_with_mlx_reference_is_allowed(self):
+        """gh issue create with --body-file should be allowed.
+
+        The --body-file workaround should also pass (it already did before the
+        fix since the file path doesn't contain mlx_lm patterns, but this pins
+        the expected behavior).
+        """
+        decision, reason = _detect_realign_bypass(
+            "Bash",
+            {"command": 'gh issue create --title "test" --body-file /tmp/issue_body.txt'},
+        )
+        assert decision == "allow", f"gh issue create with --body-file was blocked: {reason}"
+
+    def test_direct_mlx_lm_execution_still_blocked_after_gh_fix(self):
+        """Direct python -m mlx_lm.lora execution must still be blocked.
+
+        Verifies the gh prefix fix does NOT weaken bypass detection for actual
+        mlx_lm execution commands.
+        """
+        decision, reason = _detect_realign_bypass(
+            "Bash",
+            {"command": "python -m mlx_lm.lora --model foo --data train.jsonl"},
+        )
+        assert decision == "deny", "Direct mlx_lm execution should still be blocked"
+        assert "BLOCKED" in reason
+
+
 class TestFunctionImportable:
     """Verify the function exists and is importable."""
 

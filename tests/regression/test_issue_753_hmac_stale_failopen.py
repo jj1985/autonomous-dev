@@ -23,7 +23,9 @@ if str(_lib_path) not in sys.path:
     sys.path.insert(0, str(_lib_path))
 
 from pipeline_state import (
+    LEGACY_SENTINEL_PATH,
     _compute_state_hmac,
+    get_state_path,
     sign_state,
     verify_state_hmac,
 )
@@ -150,4 +152,82 @@ class TestStaleStateFailOpen:
         assert result is False, (
             "Forged session_start with fresh file mtime should NOT fail-open. "
             "The mtime-based check prevents this attack vector."
+        )
+
+
+class TestIssue761SentinelPathPinning:
+    """Verify that the legacy sentinel path is documented, pinned, and distinct
+    from the HMAC state path (Issue #761).
+
+    These tests prevent silent breakage if a future refactor changes the
+    sentinel path without updating the constant or the stale fail-open logic.
+    """
+
+    def test_legacy_sentinel_path_constant_exists(self):
+        """LEGACY_SENTINEL_PATH constant must equal the known sentinel path.
+
+        This pins the value so any change is caught automatically by the
+        test suite, preventing silent divergence from unified_pre_tool.py.
+        """
+        assert LEGACY_SENTINEL_PATH == Path("/tmp/implement_pipeline_state.json"), (
+            f"LEGACY_SENTINEL_PATH changed unexpectedly: {LEGACY_SENTINEL_PATH}. "
+            "If intentional, update unified_pre_tool.py PIPELINE_STATE_FILE and "
+            "pre_compact_batch_saver.sh to match."
+        )
+
+    def test_legacy_sentinel_path_is_not_hmac_state_path(self):
+        """LEGACY_SENTINEL_PATH must be distinct from per-run HMAC state paths.
+
+        The sentinel and the HMAC state file serve different purposes:
+        - Sentinel: activity indicator, touched on every hook call
+        - HMAC state: signed pipeline state with nonce and HMAC fields
+
+        If they ever collide, the stale fail-open logic would check the
+        wrong file's mtime, breaking security guarantees.
+        """
+        # Test against several representative run_id values
+        for run_id in ["test-run", "batch-20260412-015602", "issue-761-fix", "abc123"]:
+            hmac_path = get_state_path(run_id)
+            assert LEGACY_SENTINEL_PATH != hmac_path, (
+                f"LEGACY_SENTINEL_PATH collides with HMAC state path for "
+                f"run_id={run_id!r}: {hmac_path}"
+            )
+
+    @patch("pipeline_state._read_pipeline_secret", return_value=None)
+    def test_verify_state_hmac_checks_legacy_sentinel_path(self, mock_secret):
+        """verify_state_hmac() must check LEGACY_SENTINEL_PATH for stale detection.
+
+        This test patches Path() construction to track which path strings are
+        used, then verifies that the stale fail-open section references the
+        sentinel path (not the HMAC state path or an arbitrary path).
+        """
+        state = _make_state(session_start="")
+
+        # Track which paths have exists() called on them
+        original_exists = Path.exists
+        checked_paths: list[str] = []
+
+        def tracking_exists(self):
+            checked_paths.append(str(self))
+            # Return True only for the sentinel path so stale check proceeds
+            if str(self) == str(LEGACY_SENTINEL_PATH):
+                return True
+            return False
+
+        # Make the sentinel appear stale so the function returns True via fail-open
+        old_mtime = time.time() - 7200  # 2 hours ago
+        mock_stat = MagicMock()
+        mock_stat.st_mtime = old_mtime
+
+        with patch.object(Path, "exists", tracking_exists), \
+             patch.object(Path, "stat", return_value=mock_stat):
+            result = verify_state_hmac(state, "different-session")
+
+        assert str(LEGACY_SENTINEL_PATH) in checked_paths, (
+            f"verify_state_hmac() did not check LEGACY_SENTINEL_PATH "
+            f"({LEGACY_SENTINEL_PATH}). Paths checked: {checked_paths}"
+        )
+        assert result is True, (
+            "Stale sentinel should trigger fail-open (confirms the sentinel "
+            "path is actually used for stale detection, not just constructed)"
         )

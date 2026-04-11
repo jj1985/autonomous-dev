@@ -22,6 +22,25 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 # =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Legacy sentinel file path used by unified_pre_tool.py (via PIPELINE_STATE_FILE
+# env var) and other hooks. This file is touched on every hook invocation during
+# active pipeline runs, making its mtime a reliable indicator of recent pipeline
+# activity. It is distinct from the HMAC-signed per-run state file created by
+# get_state_path(run_id) at /tmp/pipeline_state_{run_id}.json.
+#
+# Used by verify_state_hmac() for stale-state fail-open detection (Issue #753):
+# if this sentinel's mtime is >1 hour old, the pipeline is considered stale and
+# HMAC verification fails open to avoid blocking subsequent sessions.
+#
+# Cross-reference: unified_pre_tool.py PIPELINE_STATE_FILE env var,
+#                  pre_compact_batch_saver.sh, implement-fix.md
+LEGACY_SENTINEL_PATH: Path = Path("/tmp/implement_pipeline_state.json")
+
+
+# =============================================================================
 # ENUMS
 # =============================================================================
 
@@ -301,12 +320,19 @@ def verify_state_hmac(state: dict, session_id: str) -> bool:
     if _hmac.compare_digest(stored_hmac, expected):
         return True
 
-    # Stale state fail-open (Issue #753): use file mtime for stale detection
-    # (not session_start from state dict, which is attacker-controlled).
-    # File mtime cannot be forged by editing JSON content.
+    # Stale state fail-open (Issue #753): checks the LEGACY SENTINEL file
+    # (/tmp/implement_pipeline_state.json), NOT the HMAC-signed per-run state
+    # file (/tmp/pipeline_state_{run_id}.json). The legacy sentinel is touched
+    # on every hook invocation during active pipeline runs (see
+    # unified_pre_tool.py PIPELINE_STATE_FILE env var). Its mtime is used as a
+    # proxy for "was the pipeline recently active?" — if >1 hour old, the
+    # pipeline is considered stale and HMAC verification fails open. This
+    # coupling is intentional: the sentinel mtime cannot be forged by editing
+    # JSON content (unlike session_start in the state dict).
+    # Cross-reference: LEGACY_SENTINEL_PATH constant (this module).
     import time as _time
 
-    state_path = Path("/tmp/implement_pipeline_state.json")
+    state_path = LEGACY_SENTINEL_PATH
     if state_path.exists():
         try:
             mtime = state_path.stat().st_mtime
