@@ -32,6 +32,7 @@ DEFAULT_REQUIRED_AGENTS = [
     "researcher",
     "planner",
     "implementer",
+    "spec-validator",
     "reviewer",
     "security-auditor",
     "doc-master",

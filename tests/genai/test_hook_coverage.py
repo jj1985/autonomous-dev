@@ -228,6 +228,55 @@ class TestHookQuality:
         )
         assert result["score"] >= 2, f"Hook logging inconsistency: {result['reasoning']}"
 
+    def test_hook_quality_analytic(self, genai):
+        """Analytic rubric evaluation of hook quality."""
+        hooks = _active_hook_files()
+        hook_summaries = {}
+        for hook in hooks[:10]:
+            content = hook.read_text(errors="ignore")
+            has_docstring = bool(re.search(r'"""[\s\S]+?"""', content[:2000]))
+            has_try = "try:" in content
+            has_except = "except" in content
+            uses_stderr = "sys.stderr" in content
+            hook_summaries[hook.stem] = {
+                "has_docstring": has_docstring,
+                "has_error_handling": has_try and has_except,
+                "uses_stderr": uses_stderr,
+            }
+
+        context = "Hook quality summary:\n" + "\n".join(
+            f"  {name}: {info}" for name, info in hook_summaries.items()
+        )
+
+        result = genai.judge_analytic(
+            question="Evaluate the overall quality of these hooks",
+            context=context,
+            criteria=[
+                {
+                    "name": "Docstring coverage",
+                    "description": "Most hooks (>70%) have module-level docstrings "
+                    "explaining purpose and behavior.",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Error handling",
+                    "description": "Most hooks (>70%) have try/except blocks to prevent "
+                    "crashing Claude Code on errors.",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Logging consistency",
+                    "description": "Hooks use stderr for diagnostic output rather than "
+                    "stdout, which is reserved for hook response JSON.",
+                    "max_points": 1,
+                },
+            ],
+        )
+        assert result["total_score"] >= 1, (
+            f"Hook quality analytic: {result['total_score']}/{result['max_score']} - "
+            f"{result['reasoning']}"
+        )
+
     def test_pre_commit_references_only_existing_hooks(self, genai):
         """Pre-commit config should only reference hooks that exist."""
         pre_commit = PROJECT_ROOT / ".pre-commit-config.yaml"

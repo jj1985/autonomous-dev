@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 14 agents (18 archived), 17 skills, 22 active commands, 190 libraries, 28 active hooks (62 archived).
+**Component Counts**: 15 agents (18 archived), 17 skills, 22 active commands, 190 libraries, 28 active hooks (62 archived).
 
 ---
 
@@ -28,7 +28,7 @@ Specialized agents with skill integration for autonomous development. See [docs/
 
 ## Model Tier Strategy
 
-Agent model assignments optimized for cost-performance balance (14 active agents):
+Agent model assignments optimized for cost-performance balance (15 active agents):
 
 **Tier 1 (Haiku)** - Fast, cost-effective for pattern matching
 - researcher-local - Search codebase patterns
@@ -49,6 +49,7 @@ Agent model assignments optimized for cost-performance balance (14 active agents
 - planner - Architecture planning
 - implementer - Code implementation
 - test-master - Quality Diamond test generation
+- spec-validator - Spec-blind behavioral validation (STEP 8.5)
 
 **Performance Impact**: Optimized tier assignments reduce costs by 40-60% while maintaining quality.
 
@@ -126,10 +127,13 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - Default mode: validation-first approach (specification → acceptance tests → implementation)
    - Optional `--tdd-first` flag reverts to legacy TDD-first (failing unit tests first)
 7. **Implementation**: implementer makes tests pass
-7.5. **E2E UI Testing** (STEP 9.7, Issue #656, optional): ui-tester writes Playwright MCP browser tests
+7.5. **Spec-Blind Validation** (STEP 8.5, HARD GATE): spec-validator writes behavioral tests from acceptance criteria only — without seeing implementation details — and validates the implementation against them
+   - Strict context boundary: spec-validator receives ONLY acceptance criteria, feature description, and changed file paths (no implementer output, no code diffs, no research)
+   - PASS → proceed to E2E testing / validation; FAIL → implementer remediation (max 2 cycles)
+7.6. **E2E UI Testing** (STEP 9.7, Issue #656, optional): ui-tester writes Playwright MCP browser tests
    - Only invoked when changed files include frontend patterns AND Playwright MCP is available
    - Advisory only — PASS or SKIP, never blocks the pipeline
-7.6. **Mobile E2E Testing** (STEP 9.8, Issue #657, optional): mobile-tester runs Appium MCP + Maestro YAML + native build checks
+7.7. **Mobile E2E Testing** (STEP 9.8, Issue #657, optional): mobile-tester runs Appium MCP + Maestro YAML + native build checks
    - Only invoked when changed files include mobile patterns AND Appium MCP or Maestro CLI is available
    - Advisory only — PASS or SKIP, never blocks the pipeline
 8. **Validation** (implement.md STEP 10) — mode selected based on changeset risk:

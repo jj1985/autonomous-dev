@@ -49,3 +49,27 @@ class TestPipelineCompleteness:
             "code review, security audit, and documentation. Score by coverage of these roles.",
         )
         assert result["score"] >= 7, f"Agent SDLC coverage gap: {result['reasoning']}"
+
+    def test_pipeline_completeness_consistent(self, genai):
+        """Consistency check for pipeline completeness (high-stakes)."""
+        implement_md = (PLUGIN_ROOT / "commands" / "implement.md").read_text()
+
+        agents_dir = PLUGIN_ROOT / "agents"
+        agent_names = sorted(
+            f.stem for f in agents_dir.glob("*.md")
+            if "archived" not in str(f)
+        )
+
+        result = genai.judge_consistent(
+            question="Does implement.md define a complete SDLC pipeline with all necessary steps?",
+            context=f"implement.md content:\n{implement_md[:6000]}\n\nAvailable agents: {agent_names}",
+            criteria="The implement command should define a clear multi-step pipeline "
+            "(research, plan, test, implement, review, security, docs, etc). "
+            "Each step should reference a specific agent. "
+            "Score 10 = all steps clearly defined with agent refs, 7 = mostly complete, 4 = missing steps.",
+            rounds=3,
+        )
+        assert result["final_score"] >= 7, (
+            f"Pipeline completeness consistency check: median={result['final_score']}, "
+            f"agreement={result['agreement']}, scores={result['scores']}"
+        )

@@ -93,6 +93,54 @@ class TestErrorHandling:
         )
         assert result["score"] >= 6, f"Silent failure risk: {result['reasoning']}"
 
+    def test_error_handling_analytic(self, genai):
+        """Analytic rubric evaluation of error handling practices."""
+        files = _sample_python_files(10)
+        assert len(files) > 0, "No Python files found to sample"
+
+        import re as _re
+
+        samples = []
+        for f in files:
+            content = f.read_text()[:1500]
+            rel = f.relative_to(PLUGIN_ROOT)
+            samples.append(f"--- {rel} ---\n{content}")
+
+        # Detect patterns for context
+        has_bare_except = any("except:" in open(f).read() for f in files)
+        has_context_msgs = any("f\"" in open(f).read() or "f'" in open(f).read() for f in files)
+
+        context = "\n\n".join(samples)[:8000]
+
+        result = genai.judge_analytic(
+            question="Evaluate error handling quality",
+            context=context,
+            criteria=[
+                {
+                    "name": "No bare except",
+                    "description": "Files do not use bare 'except:' or 'except Exception: pass' "
+                    "patterns that silently swallow all errors.",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Contextual error messages",
+                    "description": "Error messages include context about what went wrong, "
+                    "not just generic 'Error occurred' messages.",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Try/except around I/O",
+                    "description": "File I/O and external calls are wrapped in try/except "
+                    "blocks with appropriate error handling.",
+                    "max_points": 1,
+                },
+            ],
+        )
+        assert result["total_score"] >= 1, (
+            f"Error handling analytic: {result['total_score']}/{result['max_score']} - "
+            f"{result['reasoning']}"
+        )
+
     def test_no_finally_return_suppression(self, genai):
         """Files should not use return/break/continue inside finally blocks.
 

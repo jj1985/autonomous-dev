@@ -177,6 +177,21 @@ If fixing a bug, at least one NEW test must be added that would FAIL without the
 - Claiming "the fix is obvious and doesn't need a test"
 - Adding a test that passes both with and without the fix (that's not a regression test)
 
+### STEP F3.5: Spec-Blind Validation — HARD GATE
+
+**Progress**: Output step banner (STEP F3.5/5 — Spec-Blind Validation, Agent: spec-validator (Opus)). Output verdict after.
+
+Same context boundary as STEP 8.5 in the full pipeline. Pass ONLY:
+- Bug description / fix description (from user input)
+- Changed file paths (from `git diff --name-only`)
+- PROJECT.md scope sections
+
+**FORBIDDEN**: Passing implementer output, code diffs, reviewer feedback, or any implementation details to the spec-validator.
+
+**Agent**(subagent_type="spec-validator", model="opus") — Pass bug description + changed file paths ONLY.
+
+Parse verdict: `SPEC-VALIDATOR-VERDICT: PASS` or `SPEC-VALIDATOR-VERDICT: FAIL`. On FAIL, re-invoke implementer with failing test names only (max 2 cycles). Block if still failing after 2 cycles.
+
 ### STEP F4: Reviewer + Doc-master (parallel)
 
 **Progress**: Output step banner (STEP F4/5 — Review + Docs, Agents: reviewer (Sonnet), doc-master (Sonnet)). Output each agent completion. Then output Final Summary table.

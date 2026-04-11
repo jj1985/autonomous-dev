@@ -383,7 +383,7 @@
       }
     },
     "full_pipeline": {
-      "required_agents": ["researcher-local", "researcher", "planner", "implementer", "reviewer", "security-auditor", "doc-master", "continuous-improvement-analyst"],
+      "required_agents": ["researcher-local", "researcher", "planner", "implementer", "spec-validator", "reviewer", "security-auditor", "doc-master", "continuous-improvement-analyst"],
       "optional_agents_by_mode": {"--tdd-first": ["test-master"]},
       "required_actions": ["test_run", "git_commit"],
       "conditional_actions": {
@@ -392,7 +392,7 @@
       }
     },
     "batch-issues": {
-      "required_agents": ["researcher-local", "researcher", "planner", "implementer", "reviewer", "security-auditor", "doc-master", "continuous-improvement-analyst"],
+      "required_agents": ["researcher-local", "researcher", "planner", "implementer", "spec-validator", "reviewer", "security-auditor", "doc-master", "continuous-improvement-analyst"],
       "optional_agents_by_mode": {"--tdd-first": ["test-master"]},
       "required_actions": ["test_run", "git_commit", "git_push", "issue_close"],
       "conditional_actions": {},
@@ -400,7 +400,7 @@
       "per_issue": true
     },
     "batch": {
-      "required_agents": ["researcher-local", "researcher", "planner", "implementer", "reviewer", "security-auditor", "doc-master", "continuous-improvement-analyst"],
+      "required_agents": ["researcher-local", "researcher", "planner", "implementer", "spec-validator", "reviewer", "security-auditor", "doc-master", "continuous-improvement-analyst"],
       "optional_agents_by_mode": {"--tdd-first": ["test-master"]},
       "required_actions": ["test_run", "git_commit", "git_push"],
       "conditional_actions": {}

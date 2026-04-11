@@ -38,6 +38,7 @@ user-invocable: true
 - ❌ You MUST NOT paraphrase, summarize, or condense agent output when passing it to the next stage. Pass the FULL agent output text verbatim. If output exceeds context limits, pass the first 2000 words plus the final summary/conclusion section — never your own restatement. The anti-pattern: "The implementer changed X, Y, Z" instead of the implementer's actual output. STEP 10 agents (reviewer, security-auditor) need the real output to do real reviews.
 - ❌ You MUST NOT skip validation agents (reviewer, security-auditor, doc-master) under context pressure — BLOCK the pipeline instead and suggest `/clear` then `/implement --resume $RUN_ID`
 - ❌ You MUST NOT pass fewer than 50% of the implementer's output words to the reviewer — if you must truncate, include the first 3000 words plus the full summary/conclusion. Log the word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)"
+- ❌ You MUST NOT leak implementer output, code diffs, reviewer feedback, research findings, or planner rationale to the spec-validator agent (STEP 8.5 context boundary violation)
 
 ### Pipeline Progress Protocol
 
@@ -93,6 +94,7 @@ Step   Description                  Agent(s)                     Time     Status
 6      Acceptance tests             —                            18s      done
 8      Implementation               implementer                  3:45     done
 8      Test gate                    —                            12s      PASS
+8.5    Spec-blind validation        spec-validator               30s      done
 9      Hook registration            —                            2s       PASS
 10     Validation                   reviewer, security, docs     52s      done
 11     Remediation gate             —                            0s       PASS
@@ -189,7 +191,7 @@ with open('/tmp/implement_pipeline_state.json', 'w') as f:
 
 # FULL PIPELINE MODE (Default)
 
-Execute steps IN ORDER. Default mode uses acceptance-first testing (7 agents). TDD-first mode (`--tdd-first`) adds test-master (8 agents).
+Execute steps IN ORDER. Default mode uses acceptance-first testing (8 agents). TDD-first mode (`--tdd-first`) adds test-master (9 agents).
 
 ### STEP 1: Pre-Staged Files Check — HARD GATE
 
@@ -516,6 +518,36 @@ which test covers it and the gate passes automatically.
 - ❌ Claiming "the fix is obvious and doesn't need a test"
 - ❌ Adding a test that passes both with and without the fix (not a real regression test)
 
+### STEP 8.5: Spec-Blind Validation — HARD GATE
+
+**Progress**: Output step banner (STEP 8.5/15 — Spec-Blind Validation, Agent: spec-validator (Opus)). Output agent completion and verdict after.
+
+**Context Boundary** — The spec-validator operates with strict isolation. You MUST pass ONLY the following to this agent:
+- Acceptance criteria from STEP 6
+- Feature description (from user input)
+- Changed file paths (from `git diff --name-only`)
+- PROJECT.md scope sections
+
+**FORBIDDEN** — You MUST NOT pass any of the following to the spec-validator:
+- Implementer output or summary
+- Code diffs or patch content
+- Reviewer feedback
+- Security-auditor findings
+- Research findings from STEP 4
+- Planner rationale or design decisions
+- Any coordinator commentary on implementation quality
+
+**Agent**(subagent_type="spec-validator", model="opus") — Pass acceptance criteria + feature description + changed file paths ONLY.
+
+**Verdict Parsing**: Parse the agent output for `SPEC-VALIDATOR-VERDICT: PASS` or `SPEC-VALIDATOR-VERDICT: FAIL`.
+
+- If **PASS**: proceed to STEP 9.
+- If **FAIL**: Re-invoke the implementer in REMEDIATION MODE with ONLY the failing test names from the spec-validator output. Do NOT pass the spec-validator's test code or implementation suggestions. Maximum 2 remediation cycles. After remediation, re-run the spec-validator. If it still fails after 2 cycles, BLOCK the pipeline:
+```
+BLOCKED: Spec-validator failed after 2 remediation cycles.
+Failing criteria: [list from spec-validator output]
+```
+
 ### STEP 9: Hook Registration Check — HARD GATE
 
 **Progress**: Output step banner (STEP 9/15 — Hook Registration). Output gate result after.
@@ -531,8 +563,9 @@ Before proceeding to validation, verify that the minimum required specialist age
 - researcher (STEP 4) — unless research cache hit
 - planner (STEP 5)
 - implementer (STEP 8)
+- spec-validator (STEP 8.5)
 
-**Minimum count**: 4 agents (or 2 if research was cached). Count the distinct `subagent_type` values you have invoked so far in this pipeline run.
+**Minimum count**: 5 agents (or 3 if research was cached). Count the distinct `subagent_type` values you have invoked so far in this pipeline run.
 
 **HARD GATE**: If agent count < minimum:
 ```
@@ -787,7 +820,7 @@ If skills were modified:
 
 **Progress**: Output step banner (STEP 12/15 — Final Verification + Doc-Drift Gate). Output result after.
 
-Verify all required agents ran. Default: 7 (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master). TDD-first: 8 (add test-master). If ANY of the 7 (or 8) required agents are missing, you MUST invoke them NOW. Do NOT proceed to STEP 13 with missing agents. If context pressure prevents invoking them, BLOCK the pipeline and output:
+Verify all required agents ran. Default: 8 (researcher-local, researcher, planner, implementer, spec-validator, reviewer, security-auditor, doc-master). TDD-first: 9 (add test-master). If ANY of the 8 (or 9) required agents are missing, you MUST invoke them NOW. Do NOT proceed to STEP 13 with missing agents. If context pressure prevents invoking them, BLOCK the pipeline and output:
 ```
 BLOCKED: Context limit reached. Required agents missing: [list missing agents].
 Run: /clear then /implement --resume $RUN_ID to complete validation.
@@ -888,7 +921,7 @@ After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -
 
 # LIGHT PIPELINE MODE (`--light`)
 
-Fast pipeline for low-risk changes: markdown, config, docs, simple edits, renames. 5 steps, 4 agents. Skips research, acceptance tests, security audit, and reviewer.
+Fast pipeline for low-risk changes: markdown, config, docs, simple edits, renames. 6 steps, 5 agents. Skips research, acceptance tests, security audit, and reviewer.
 
 **When to use**: `--light` flag, or coordinator MAY suggest it when the feature description clearly involves only markdown/config/docs/typos/renames and no new logic or security-sensitive code.
 
@@ -923,6 +956,21 @@ pytest --tb=short -q
 Loop until **0 failures, 0 errors**.
 
 Coverage check: `pytest tests/ --cov=plugins --cov-report=term-missing -q 2>&1 | tail -5` — must be >= baseline - 0.5%.
+
+### STEP L3.5: Spec-Blind Validation — HARD GATE
+
+**Progress**: Output step banner (STEP 3.5/6 — Spec-Blind Validation, Agent: spec-validator (Opus)).
+
+Same context boundary as STEP 8.5 in the full pipeline. Pass ONLY:
+- Feature description
+- Changed file paths
+- PROJECT.md scope sections
+
+**FORBIDDEN**: Passing implementer output, code diffs, or any implementation details to the spec-validator.
+
+**Agent**(subagent_type="spec-validator", model="opus") — Pass feature description + changed file paths ONLY.
+
+Parse verdict: `SPEC-VALIDATOR-VERDICT: PASS` or `SPEC-VALIDATOR-VERDICT: FAIL`. On FAIL, re-invoke implementer with failing test names only (max 2 cycles). Block if still failing.
 
 ### STEP L4: Doc-master (1 agent)
 
@@ -978,6 +1026,7 @@ L1    Alignment           —                     Xs      PASS
 L2    Planning            planner (Sonnet)      Xs      done
 L3    Implementation      implementer (model)   Xs      done
 L3    Test gate           —                     Xs      PASS
+L3.5  Spec-blind valid.   spec-validator        Xs      done
 L4    Documentation       doc-master (Sonnet)   Xs      done
 ========================================
 Total: Xs | Files changed: N | Tests: N passed, M failed
@@ -1001,6 +1050,6 @@ After confirming the analyst task ID is valid: Cleanup: `rm -f /tmp/implement_pi
 
 ---
 
-**Agents (full)**: researcher-local (Haiku), researcher (Sonnet), planner (Opus), test-master (Opus, `--tdd-first` only), implementer (per planner recommendation, default Opus), reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet), continuous-improvement-analyst (Sonnet). Default: 7 agents. TDD-first: 8 agents.
+**Agents (full)**: researcher-local (Haiku), researcher (Sonnet), planner (Opus), test-master (Opus, `--tdd-first` only), implementer (per planner recommendation, default Opus), spec-validator (Opus), reviewer (Sonnet), security-auditor (Sonnet), doc-master (Sonnet), continuous-improvement-analyst (Sonnet). Default: 8 agents. TDD-first: 9 agents.
 
 **Issue**: #203, #444 | **Version**: 3.48.0

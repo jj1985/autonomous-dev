@@ -31,6 +31,7 @@
         "plugins/autonomous-dev/agents/retrospective-analyst.md",
         "plugins/autonomous-dev/agents/reviewer.md",
         "plugins/autonomous-dev/agents/security-auditor.md",
+        "plugins/autonomous-dev/agents/spec-validator.md",
         "plugins/autonomous-dev/agents/test-coverage-auditor.md",
         "plugins/autonomous-dev/agents/test-master.md",
         "plugins/autonomous-dev/agents/ui-tester.md",
