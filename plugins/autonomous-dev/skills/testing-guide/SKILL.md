@@ -52,6 +52,59 @@ def test_implement_and_implementer_share_forbidden_list(self, genai):
     assert result["score"] >= 5
 ```
 
+### Analytic Rubric Pattern (decomposed per-criterion evaluation)
+
+More reliable than holistic scoring. Each criterion is evaluated independently with a binary MET/UNMET judgment. Use for: security posture, enforcement quality, multi-faceted assessments.
+
+```python
+def test_security_posture_analytic(self, genai):
+    result = genai.judge_analytic(
+        question="Evaluate the security posture of this codebase",
+        context=f"Hook samples:\n{hook_content[:5000]}",
+        criteria=[
+            {"name": "No hardcoded secrets", "description": "No real API keys or tokens in source", "max_points": 1},
+            {"name": "Named exit codes", "description": "Hooks use named constants, not bare numbers", "max_points": 1},
+            {"name": "Path validation", "description": "File operations validate paths", "max_points": 1},
+        ],
+    )
+    assert result["total_score"] >= 2, f"{result['total_score']}/{result['max_score']}: {result['reasoning']}"
+```
+
+**Return value**: `{"criteria_results": [...], "total_score": N, "max_score": N, "pass": bool, "band": str, "reasoning": str}`
+
+**When to use**: Multi-faceted evaluations where you need to know which specific criteria passed or failed. Each criterion gets its own LLM call for independent judgment.
+
+### Consistency Check Pattern (multi-round agreement)
+
+For high-stakes judgments where a single LLM evaluation might be unreliable. Runs multiple rounds and checks for agreement. Uses median score as the final result.
+
+```python
+def test_pipeline_completeness_consistent(self, genai):
+    result = genai.judge_consistent(
+        question="Does implement.md define a complete SDLC pipeline?",
+        context=f"implement.md:\n{content[:6000]}",
+        criteria="Pipeline should have research, plan, test, implement, review, security, docs steps.",
+        rounds=3,
+    )
+    assert result["final_score"] >= 7, f"median={result['final_score']}, agreement={result['agreement']}"
+```
+
+**Return value**: `{"rounds": [...], "agreement": bool, "scores": [...], "final_score": median, "pass": bool, "band": str, "reasoning": str}`
+
+**When to use**: Critical assessments where false positives/negatives are costly. Agreement=False signals the evaluation needs human review.
+
+### Temperature Guidance
+
+All `ask()` calls default to `temperature=0` for deterministic, reproducible judging. Override only when you need creative/diverse outputs:
+
+```python
+# Default: temperature=0 (deterministic judging)
+response = genai.ask("Evaluate this code", temperature=0)
+
+# Override for creative tasks like edge case generation
+response = genai.ask("Generate unusual test inputs", temperature=0.7)
+```
+
 ### 3. Cross-Validation Pattern (two sources that must match)
 
 No LLM needed. When two configs/files must stay in sync, read both and compare directly. Catches the #1 recurring bug class: adding something to one place but not the other.
@@ -274,6 +327,29 @@ print(report.format_table())
 ```
 
 Run via `/audit --test-tracing` for a full tracing report.
+
+---
+
+## Spec-Blind Validation Pattern
+
+An independent agent writes behavioral tests from the spec/acceptance criteria ONLY, without seeing the implementation code or implementer output. This catches cases where the implementation satisfies its own tests but drifts from the original specification.
+
+**Isolation rules**:
+- The spec-validator receives ONLY: acceptance criteria, feature description, changed file paths, PROJECT.md scope
+- The spec-validator MUST NOT receive: implementer output, code diffs, reviewer feedback, research findings, planner rationale
+- Tests are placed in `tests/spec_validation/` (separate from unit tests in `tests/unit/`)
+
+**Test placement**: `tests/spec_validation/test_spec_{feature_name}.py`
+
+**Complementarity with other test types**:
+- **Unit tests** (implementer): Test internal logic, edge cases, error paths
+- **Spec-validation tests** (spec-validator): Test observable behavior against spec criteria
+- **Mutation testing**: Tests whether test suite catches code mutations (code quality)
+- **GenAI tests**: Semantic evaluation using LLM-as-Judge
+
+The spec-validator adds value because it is structurally blind to implementation details. Even if the implementer writes comprehensive unit tests, those tests are influenced by HOW the code was written. The spec-validator tests WHAT the spec requires.
+
+**Verdict**: Binary only. `SPEC-VALIDATOR-VERDICT: PASS` or `SPEC-VALIDATOR-VERDICT: FAIL`. No partial credit.
 
 ---
 

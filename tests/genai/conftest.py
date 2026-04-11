@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import statistics
 import time
 from pathlib import Path
 from typing import Optional
@@ -234,8 +235,8 @@ class GenAIClient:
         except ImportError:
             raise pytest.skip("openai package not installed (needed for OpenRouter)")
 
-    def _cache_key(self, prompt: str, system: str = "") -> str:
-        content = f"{self.model}:{system}:{prompt}"
+    def _cache_key(self, prompt: str, system: str = "", temperature: float = 0) -> str:
+        content = f"{self.model}:{system}:{prompt}:t={temperature}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def _get_cached(self, key: str) -> Optional[str]:
@@ -253,9 +254,16 @@ class GenAIClient:
             json.dumps({"response": response, "timestamp": time.time(), "model": self.model})
         )
 
-    def ask(self, prompt: str, system: str = "", max_tokens: int = 1024) -> str:
-        """Send prompt to LLM via OpenRouter with caching."""
-        cache_key = self._cache_key(prompt, system)
+    def ask(self, prompt: str, system: str = "", max_tokens: int = 1024, *, temperature: float = 0) -> str:
+        """Send prompt to LLM via OpenRouter with caching.
+
+        Args:
+            prompt: User prompt to send
+            system: Optional system prompt
+            max_tokens: Maximum response tokens
+            temperature: Sampling temperature (default 0 for deterministic judging)
+        """
+        cache_key = self._cache_key(prompt, system, temperature)
         cached = self._get_cached(cache_key)
         if cached is not None:
             return cached
@@ -273,6 +281,7 @@ class GenAIClient:
             model=self.model,
             max_tokens=max_tokens,
             messages=messages,
+            temperature=temperature,
         )
 
         text = response.choices[0].message.content
@@ -332,6 +341,188 @@ Respond with JSON: {{"pass": true/false, "score": 0-10, "reasoning": "brief expl
             result["band"] = "pass"
 
         return result
+
+    def judge_analytic(
+        self,
+        question: str,
+        context: str,
+        criteria: list[dict],
+        *,
+        category: str = "default",
+    ) -> dict:
+        """Evaluate content using an analytic rubric with per-criterion binary scoring.
+
+        Each criterion is evaluated independently with a MET/UNMET judgment,
+        producing a decomposed score that is more reliable than holistic scoring.
+
+        Args:
+            question: What to evaluate
+            context: Content to evaluate
+            criteria: List of dicts, each with 'name', 'description', 'max_points'
+            category: Threshold category for band classification
+
+        Returns:
+            dict with 'criteria_results', 'total_score', 'max_score', 'pass',
+            'band', 'reasoning'
+        """
+        criteria_results = []
+        total_score = 0
+        max_score = 0
+        reasoning_parts = []
+
+        for criterion in criteria:
+            name = criterion["name"]
+            description = criterion["description"]
+            max_points = criterion.get("max_points", 1)
+            max_score += max_points
+
+            prompt = f"""Evaluate the following content against ONE specific criterion.
+Respond with ONLY valid JSON.
+
+**Question**: {question}
+
+**Content to evaluate**:
+```
+{context}
+```
+
+**Criterion**: {name} - {description}
+
+Is this criterion MET or UNMET? Respond with JSON:
+{{"met": true/false, "reasoning": "brief explanation"}}"""
+
+            response = self.ask(prompt, max_tokens=256)
+
+            try:
+                result = _extract_json_from_response(response)
+                met = bool(result.get("met", False))
+                reason = result.get("reasoning", "No reasoning provided")
+            except (json.JSONDecodeError, IndexError, ValueError):
+                met = False
+                reason = f"Failed to parse response: {response[:100]}"
+
+            points = max_points if met else 0
+            total_score += points
+            criteria_results.append({
+                "name": name,
+                "met": met,
+                "points": points,
+                "max_points": max_points,
+                "reasoning": reason,
+            })
+            reasoning_parts.append(f"{name}: {'MET' if met else 'UNMET'} - {reason}")
+
+        # Convert to 0-10 scale for band classification
+        normalized_score = (total_score / max_score * 10) if max_score > 0 else 0
+
+        # Classify band
+        thresholds = _load_thresholds()
+        cats = thresholds.get("categories", {})
+        t = cats.get(category, thresholds.get("default", {"hard_fail": 4, "soft_fail": 6, "pass": 7}))
+        if normalized_score < t["hard_fail"]:
+            band = "hard_fail"
+        elif normalized_score < t["pass"]:
+            band = "soft_fail"
+        else:
+            band = "pass"
+
+        return {
+            "criteria_results": criteria_results,
+            "total_score": total_score,
+            "max_score": max_score,
+            "pass": band == "pass",
+            "band": band,
+            "reasoning": "; ".join(reasoning_parts),
+        }
+
+    def judge_consistent(
+        self,
+        question: str,
+        context: str,
+        criteria: str,
+        *,
+        category: str = "default",
+        rounds: int = 3,
+    ) -> dict:
+        """Multi-round consistency check for high-stakes judgments.
+
+        Calls the LLM multiple times with cache-busting and checks for
+        agreement across rounds. Uses median score as the final result.
+
+        Args:
+            question: What to evaluate
+            context: Content to evaluate
+            criteria: Evaluation criteria
+            category: Threshold category for band classification
+            rounds: Number of evaluation rounds (default 3)
+
+        Returns:
+            dict with 'rounds', 'agreement', 'scores', 'final_score',
+            'pass', 'band', 'reasoning'
+        """
+        round_results = []
+        scores = []
+
+        for i in range(rounds):
+            # Cache-bust by appending round number to prompt
+            prompt = f"""Evaluate the following against the criteria. Respond with ONLY valid JSON.
+
+**Question**: {question}
+
+**Content to evaluate**:
+```
+{context}
+```
+
+**Criteria**: {criteria}
+
+[Evaluation round {i + 1} of {rounds}]
+
+Respond with JSON: {{"pass": true/false, "score": 0-10, "reasoning": "brief explanation"}}"""
+
+            response = self.ask(prompt, max_tokens=512)
+
+            try:
+                result = _extract_json_from_response(response)
+            except (json.JSONDecodeError, IndexError, ValueError):
+                result = {"pass": False, "score": 0, "reasoning": f"Failed to parse response: {response[:200]}"}
+
+            round_results.append(result)
+            scores.append(result.get("score", 0))
+
+        # Calculate median score
+        final_score = statistics.median(scores)
+
+        # Check agreement: all rounds agree on pass/fail
+        pass_votes = [r.get("pass", False) for r in round_results]
+        agreement = len(set(pass_votes)) == 1
+
+        # Classify band using median score
+        thresholds = _load_thresholds()
+        cats = thresholds.get("categories", {})
+        t = cats.get(category, thresholds.get("default", {"hard_fail": 4, "soft_fail": 6, "pass": 7}))
+        if final_score < t["hard_fail"]:
+            band = "hard_fail"
+        elif final_score < t["pass"]:
+            band = "soft_fail"
+        else:
+            band = "pass"
+
+        # Combine reasoning from all rounds
+        reasoning_parts = [
+            f"Round {i+1}: score={r.get('score', 0)}, {r.get('reasoning', 'N/A')}"
+            for i, r in enumerate(round_results)
+        ]
+
+        return {
+            "rounds": round_results,
+            "agreement": agreement,
+            "scores": scores,
+            "final_score": final_score,
+            "pass": band == "pass",
+            "band": band,
+            "reasoning": "; ".join(reasoning_parts),
+        }
 
     def generate_edge_cases(self, description: str, count: int = 5) -> list:
         """Generate edge case inputs for testing."""

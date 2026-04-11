@@ -14,9 +14,9 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-14 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+15 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, mobile-tester, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, test-coverage-auditor, test-master, ui-tester
+**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, mobile-tester, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, spec-validator, test-coverage-auditor, test-master, ui-tester
 
 **Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
 
@@ -24,7 +24,7 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Model Tier Strategy (Issue #108, Updated #147)
 
-Agent model assignments optimized for cost-performance balance (14 active agents):
+Agent model assignments optimized for cost-performance balance (15 active agents):
 
 ### Tier 1: Haiku (3 agents)
 
@@ -47,13 +47,14 @@ Balanced reasoning for judgment tasks:
 - **ui-tester**: E2E browser testing via Playwright MCP (optional, frontend only)
 - **mobile-tester**: iOS/Android E2E testing via Appium MCP + Maestro (optional, mobile only)
 
-### Tier 3: Opus (3 agents)
+### Tier 3: Opus (4 agents)
 
 Deep reasoning for complex synthesis:
 
 - **planner**: Architecture planning
 - **implementer**: Code implementation
 - **test-master**: Quality Diamond test generation
+- **spec-validator**: Spec-blind behavioral validation (STEP 8.5) — validates implementation against acceptance criteria without seeing implementation details
 
 ### Rationale
 
@@ -71,8 +72,8 @@ Deep reasoning for complex synthesis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Active Agents**: 14
-**Note**: 14 active agents, all under 3,000 token target
+**Total Active Agents**: 15
+**Note**: 15 active agents, all under 3,000 token target
 
 ### Agents by Token Count
 
@@ -93,7 +94,7 @@ Deep reasoning for complex synthesis:
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 14 active agents under 3,000 token target
+- All 15 active agents under 3,000 token target
 
 ---
 

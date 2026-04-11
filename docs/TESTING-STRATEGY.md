@@ -108,9 +108,15 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 **Runs**: Pre-release, nightly, or on-demand (`pytest --genai`)
 
 **autonomous-dev components**:
-- `tests/genai/` — 16+ test files with LLM-as-judge
+- `tests/genai/` — LLM-as-judge test files for semantic validation
 - `GenAIClient` in `conftest.py` — OpenRouter-backed, dual model (Gemini Flash + Haiku 4.5)
 - 24h response caching, ~$0.02/run
+
+**GenAIClient judge methods** (see `SKILL.md` for usage patterns):
+- `judge()` — holistic 0-10 scoring against criteria
+- `judge_analytic()` — per-criterion binary MET/UNMET scoring; more reliable for multi-faceted assessments
+- `judge_consistent()` — multi-round consensus check using median score; use for high-stakes evaluations
+- `ask()` — raw LLM call, defaults to `temperature=0` for deterministic judging
 
 **Evaluation types**:
 - **Congruence**: Do file pairs agree? (`implement.md` ↔ `implementer.md`)
@@ -126,8 +132,9 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 
 **Best practices**:
 - Few-shot examples increase consistency 65% → 77.5%
-- Majority voting (3 runs, take consensus) for critical decisions
-- Rubric-based scoring (0-10), not binary pass/fail
+- Analytic rubrics (`judge_analytic`) outperform holistic scoring for multi-criterion evaluations
+- Consistency checks (`judge_consistent`, 3 rounds) for high-stakes judgments where false positives are costly
+- Temperature=0 default ensures reproducible judging; override only for creative/diverse generation tasks
 - Cache responses to eliminate redundant API costs
 
 ### Layer 6: Acceptance Criteria (Top)

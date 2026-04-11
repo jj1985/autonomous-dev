@@ -40,3 +40,42 @@ class TestHardGateEnforcement:
             "(fix, skip, adjust). Score 10 = comprehensive, 8 = solid, 5 = weak.",
         )
         assert result["score"] >= 8, f"Implementer hard gate weak: {result['reasoning']}"
+
+    def test_hard_gate_enforcement_analytic(self, genai):
+        """Analytic rubric evaluation of hard gate enforcement quality."""
+        implement_md = (PLUGIN_ROOT / "commands" / "implement.md").read_text()
+        implementer_md = (PLUGIN_ROOT / "agents" / "implementer.md").read_text()
+
+        context = (
+            f"implement.md:\n{implement_md[:5000]}\n\n"
+            f"implementer.md:\n{implementer_md[:5000]}"
+        )
+
+        result = genai.judge_analytic(
+            question="Evaluate the hard gate enforcement quality",
+            context=context[:10000],
+            criteria=[
+                {
+                    "name": "FORBIDDEN lists present",
+                    "description": "Both implement.md and implementer.md contain explicit "
+                    "FORBIDDEN behavior lists that enumerate what the model must NOT do.",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Resolution options defined",
+                    "description": "There are clear resolution options for failing tests "
+                    "(fix it, skip it, or adjust expectations).",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Hard gate blocking language",
+                    "description": "HARD GATE sections use explicit blocking language that "
+                    "prevents progression until conditions are met.",
+                    "max_points": 1,
+                },
+            ],
+        )
+        assert result["total_score"] >= 2, (
+            f"Hard gate enforcement analytic: {result['total_score']}/{result['max_score']} - "
+            f"{result['reasoning']}"
+        )

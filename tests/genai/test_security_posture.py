@@ -84,3 +84,60 @@ class TestSecurityPosture:
             "Score 10 = explicit validation, 5 = implicit safety, 0 = no validation.",
         )
         assert result["score"] >= 5, f"Path traversal risk: {result['reasoning']}"
+
+    def test_security_posture_analytic(self, genai):
+        """Analytic rubric evaluation of overall security posture."""
+        hook_samples = []
+        hooks_dir = PLUGIN_ROOT / "hooks"
+        if hooks_dir.exists():
+            for f in sorted(hooks_dir.glob("*.py"))[:6]:
+                content = f.read_text(errors="ignore")[:1500]
+                hook_samples.append(f"--- {f.name} ---\n{content}")
+
+        suspicious = []
+        secret_patterns = [
+            r'(?:api[_-]?key|token|password|secret)\s*=\s*["\'][^"\']{8,}',
+            r'sk-[a-zA-Z0-9]{20,}',
+            r'ghp_[a-zA-Z0-9]{20,}',
+        ]
+        for f in PROJECT_ROOT.rglob("*.py"):
+            if any(x in str(f) for x in ["archived", "__pycache__", ".genai_cache", "venv"]):
+                continue
+            content = f.read_text(errors="ignore")
+            for pattern in secret_patterns:
+                for match in re.finditer(pattern, content, re.IGNORECASE):
+                    line_no = content[: match.start()].count("\n") + 1
+                    suspicious.append(f"{f.relative_to(PROJECT_ROOT)}:{line_no}: {match.group()[:40]}...")
+
+        context = "\n\n".join(hook_samples) + "\n\nSuspicious secret matches: " + (
+            "\n".join(suspicious[:10]) if suspicious else "None found"
+        )
+
+        result = genai.judge_analytic(
+            question="Evaluate the security posture of this codebase",
+            context=context[:8000],
+            criteria=[
+                {
+                    "name": "No hardcoded secrets",
+                    "description": "Source files contain no real API keys, tokens, or passwords. "
+                    "Test fixtures with obvious fake values are OK.",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Named exit codes",
+                    "description": "Hooks use named constants or documented exit codes, "
+                    "not bare magic numbers like sys.exit(1).",
+                    "max_points": 1,
+                },
+                {
+                    "name": "Path validation",
+                    "description": "Hooks that perform file operations validate paths "
+                    "against traversal or use safe path patterns.",
+                    "max_points": 1,
+                },
+            ],
+        )
+        assert result["total_score"] >= 1, (
+            f"Security posture analytic failed: {result['total_score']}/{result['max_score']} - "
+            f"{result['reasoning']}"
+        )
