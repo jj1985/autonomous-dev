@@ -43,6 +43,7 @@ After all agents complete:
 - Code is committed with a descriptive message
 - Changes are pushed to your branch
 - The GitHub issue is closed with a summary
+- A continuous improvement analyst examines the session for drift, bypasses, and pipeline health
 
 **One command. Full software development lifecycle. Aligned to your project.**
 
@@ -98,7 +99,7 @@ The solution is **deterministic rails**: a software layer that gates and validat
 | 8 | **Context Management** | Progressive skill injection loads domain knowledge per-step. `/clear` between features. Agent isolation prevents context rot |
 | 9 | **Deterministic Ordering** | `agent_ordering_gate.py` enforces pipeline sequence. "You MUST NOT run STEP 10 before STEP 8 test gate passes" |
 | 10 | **Output Validation** | Parallel reviewer + security-auditor in STEP 10. `genai_validate.py` for LLM-as-judge tests. `completion_verifier.py` |
-| 11 | **Observability** | `session_activity_logger.py`, `pipeline_timing_analyzer.py`, `token_tracker.py`. Structured JSONL to `.claude/logs/activity/` |
+| 11 | **Observability** | `session_activity_logger.py`, `conversation_archiver.py`, `pipeline_timing_analyzer.py`. Structured JSONL + SQLite for long-term analytics |
 | 12 | **Error Recovery** | `failure_analyzer.py`, `batch_retry_manager.py`, `stuck_detector.py`, `qa_self_healer.py`. Automatic retry with consent |
 
 ---
@@ -242,8 +243,9 @@ For existing projects, use:
 /audit                   # Quality audit (--quick, --security, --docs, --code, --tests)
 /skill-eval              # Measure skill effectiveness via behavioral delta scoring (--quick, --skill, --update)
 /advise                  # Critical thinking analysis
-/improve                 # Automation health analysis
+/improve                 # Automation health analysis (--auto-file to create GitHub issues)
 /retrospective           # Session drift detection and alignment updates
+/autoresearch            # Autonomous experiment loop — hypothesize, modify, benchmark, commit or revert
 ```
 
 ### Other Commands
@@ -289,6 +291,8 @@ Implementation (Opus) -> HARD GATE: 0 test failures
 Git Operations (commit, push, close issue)
      |
 Continuous Improvement (background analysis)
+     |
+Session Archive (transcript + SQLite index)
 ```
 
 ### PROJECT.md Alignment
@@ -305,6 +309,35 @@ As the context window fills up, models exhibit *context anxiety* — they rush t
 
 Batch processing handles this automatically with worktree isolation and checkpoint/resume.
 
+### Session Analytics & Self-Improvement
+
+autonomous-dev doesn't just run pipelines — it learns from them.
+
+**Long-term session analytics**: Every conversation is archived to `~/.claude/archive/` with full transcripts and a SQLite index. Query your usage patterns across months of sessions:
+
+```sql
+sqlite3 ~/.claude/archive/sessions.db \
+  "SELECT project, COUNT(*) sessions, SUM(total_output_tokens) tokens
+   FROM sessions GROUP BY project ORDER BY tokens DESC;"
+```
+
+**Closed-loop improvement**: The system detects its own weaknesses and fixes them:
+
+```
+pipeline runs → session logs → /improve detects drift → files GitHub issues
+     ↓                                                        ↓
+/autoresearch picks up issues → hypothesize → modify → benchmark → deploy if better
+     ↑                                                              ↓
+     └──────────────────────────────────────────────────────────────┘
+```
+
+- `/improve` analyzes recent sessions for bypasses, test drift, and pipeline degradation — auto-files issues
+- `/autoresearch` runs autonomous experiments: modifies agent prompts, benchmarks the change, commits if it improves quality or reverts if it doesn't
+- `/retrospective` detects intent evolution and proposes alignment updates
+- `/skill-eval` measures whether skill injections actually change agent behavior (behavioral delta scoring)
+
+**The result**: The harness gets better every week without anyone thinking about it.
+
 ---
 
 ## What You Get
@@ -313,9 +346,9 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 |-----------|-------|---------|
 | Commands | 22 | Slash commands for workflows |
 | Agents | 14 | Specialized AI for each SDLC stage |
-| Skills | 17 | Domain knowledge (progressive disclosure) |
-| Hooks | 25 | Automatic validation and enforcement |
-| Libraries | 185 | Python utilities |
+| Skills | 20 | Domain knowledge (progressive disclosure) |
+| Hooks | 28 | Automatic validation and enforcement |
+| Libraries | 174 | Python utilities |
 
 ---
 
@@ -333,7 +366,7 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 ### Reference
 - [Commands](plugins/autonomous-dev/commands/) - All 22 commands
 - [Hooks](docs/HOOKS.md) - 28 active hooks
-- [Libraries](docs/LIBRARIES.md) - 190 Python utilities
+- [Libraries](docs/LIBRARIES.md) - 174 Python utilities
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model
 
 ### Troubleshooting
