@@ -6,9 +6,9 @@
 """
 Conversation Archiver - Archive full conversation transcripts for long-term analytics.
 
-Stop hook that copies conversation transcripts to ~/.claude/archive/ with a
-queryable JSONL index for session analytics, DuckDB queries, and long-term
-pattern analysis.
+Stop hook that copies conversation transcripts to ~/.claude/archive/ with
+queryable JSONL and SQLite indexes for session analytics, DuckDB queries, and
+long-term pattern analysis.
 
 Hook: Stop (after every assistant response)
 
@@ -18,6 +18,7 @@ Captures:
 
 Archive location: ~/.claude/archive/conversations/{YYYY-MM}/{session_id}.jsonl
 Index location: ~/.claude/archive/index.jsonl
+SQLite index: ~/.claude/archive/sessions.db
 
 Environment Variables:
     CONVERSATION_ARCHIVE=true/false (default: true)
@@ -32,6 +33,7 @@ Exit codes:
 import fcntl
 import json
 import os
+import sqlite3
 import shutil
 import sys
 import tempfile
@@ -263,6 +265,81 @@ def _update_index(
         pass
 
 
+def _update_sqlite_index(db_path: Path, metadata: dict[str, Any]) -> None:
+    """Write session metadata to SQLite index for fast queryable access.
+
+    Creates the sessions table on first use. Upserts the row identified by
+    session_id, preserving the original first_seen value from a previous write
+    so repeated Stop events do not reset the session start time.
+
+    Args:
+        db_path: Path to the SQLite database file (e.g. archive/sessions.db).
+        metadata: Session metadata dict containing all 15 column values.
+    """
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY,
+                    project TEXT,
+                    cwd TEXT,
+                    archive_path TEXT,
+                    first_seen TEXT,
+                    last_updated TEXT,
+                    message_count INTEGER,
+                    user_messages INTEGER,
+                    assistant_messages INTEGER,
+                    tool_calls INTEGER,
+                    total_input_tokens INTEGER,
+                    total_output_tokens INTEGER,
+                    transcript_bytes INTEGER,
+                    model TEXT,
+                    first_user_prompt TEXT
+                )
+                """
+            )
+            # Preserve first_seen from an existing row
+            session_id = metadata.get("session_id")
+            row = conn.execute(
+                "SELECT first_seen FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            first_seen = row[0] if row else metadata.get("first_seen")
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO sessions (
+                    session_id, project, cwd, archive_path,
+                    first_seen, last_updated,
+                    message_count, user_messages, assistant_messages, tool_calls,
+                    total_input_tokens, total_output_tokens,
+                    transcript_bytes, model, first_user_prompt
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    metadata.get("project"),
+                    metadata.get("cwd"),
+                    metadata.get("archive_path"),
+                    first_seen,
+                    metadata.get("last_updated"),
+                    metadata.get("message_count"),
+                    metadata.get("user_messages"),
+                    metadata.get("assistant_messages"),
+                    metadata.get("tool_calls"),
+                    metadata.get("total_input_tokens"),
+                    metadata.get("total_output_tokens"),
+                    metadata.get("transcript_bytes"),
+                    metadata.get("model"),
+                    metadata.get("first_user_prompt"),
+                ),
+            )
+    except Exception:
+        pass
+
+
 def main() -> None:
     """Entry point: read stdin, check env, orchestrate archive and index."""
     # Env var toggle (default: true)
@@ -346,6 +423,7 @@ def main() -> None:
         # Update index
         index_path = archive_base / "index.jsonl"
         _update_index(index_path, index_entry)
+        _update_sqlite_index(archive_base / "sessions.db", index_entry)
 
     except Exception as e:
         # Non-blocking: never crash Claude Code

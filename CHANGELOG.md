@@ -1,6 +1,8 @@
 ## [Unreleased]
 
 ### Added
+- **SQLite index for conversation archiver** (Issue #773): `conversation_archiver.py` now writes session metadata to `~/.claude/archive/sessions.db` (Python stdlib `sqlite3`) alongside the existing JSONL index at `~/.claude/archive/index.jsonl`. The SQLite index provides the same 15-column session record (session_id, project, cwd, archive_path, first_seen, last_updated, message counts, token totals, model, first_user_prompt) with upsert-on-session_id semantics that preserve the original `first_seen` timestamp across repeated Stop events. The JSONL index is preserved unchanged for jq/grep compatibility. No new external dependencies. 6 unit tests in `tests/unit/hooks/test_conversation_archiver.py` (`TestSqliteIndex`) cover happy path, upsert preserving first_seen, table auto-creation, error resilience, queryability, and end-to-end integration through `main()`. `docs/HOOKS.md` and `docs/HOOK-REGISTRY.md` updated to document both index paths.
+
 - **Global Stop hook archives conversation transcripts for pattern analysis** (Issue #773): New `conversation_archiver.py` Stop hook writes complete Claude Code conversation transcripts to `~/.claude/archive/` on every Stop event, enabling long-term pattern analysis across sessions. Pure Python stdlib, non-blocking, always exits 0. Registered in `global_settings_template.json` and all six settings templates. Sidecar `conversation_archiver.hook.json` declares Stop lifecycle registration. 38 unit tests in `tests/unit/hooks/test_conversation_archiver.py`.
 
 ### Fixed

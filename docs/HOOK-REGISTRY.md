@@ -43,7 +43,7 @@ The plugin uses 28 active hooks (files on disk in `plugins/autonomous-dev/hooks/
 | enforce_tdd | PreCommit | Opt-in | Enforce TDD workflow (tests before code) |
 | security_scan | PreCommit | Enabled | Security scanning |
 | stop_quality_gate | Stop | Enabled | Quality checks after each turn |
-| conversation_archiver | Stop | Enabled | Archive complete conversation transcripts to ~/.claude/archive/ for long-term pattern analysis. Pure Python stdlib, non-blocking, always exits 0. (Issue #773) |
+| conversation_archiver | Stop | Enabled | Archive complete conversation transcripts to ~/.claude/archive/ for long-term pattern analysis. Writes JSONL index at ~/.claude/archive/index.jsonl and SQLite index at ~/.claude/archive/sessions.db (queryable via Python sqlite3 or DuckDB). Pure Python stdlib, non-blocking, always exits 0. (Issue #773) |
 | validate_command_file_ops | PreToolUse | Enabled | Validate command file operations |
 | validate_project_alignment | PreCommit | Enabled | Validate PROJECT.md alignment |
 | validate_session_quality | Stop | Enabled | Validate session quality and completeness |
@@ -139,7 +139,7 @@ Runs after every turn/response completes (cannot block, informational only).
 | Hook | Status | Key Env Vars | Purpose |
 |------|--------|--------------|---------|
 | stop_quality_gate | Enabled | ENFORCE_QUALITY_GATE (default: true) | Run quality checks and provide feedback; stricter enforcement in autonomous-dev (#271) |
-| conversation_archiver | Enabled | CONVERSATION_ARCHIVE (default: true) | Archive complete conversation transcripts to ~/.claude/archive/ for long-term pattern analysis. Pure Python stdlib, non-blocking, always exits 0. (Issue #773) |
+| conversation_archiver | Enabled | CONVERSATION_ARCHIVE (default: true) | Archive complete conversation transcripts to ~/.claude/archive/ for long-term pattern analysis. Writes JSONL index at ~/.claude/archive/index.jsonl and SQLite index at ~/.claude/archive/sessions.db. Pure Python stdlib, non-blocking, always exits 0. (Issue #773) |
 
 ### TaskCompleted Hooks
 

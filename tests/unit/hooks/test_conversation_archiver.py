@@ -6,6 +6,7 @@ env var toggle, size thresholds, error resilience, monthly routing, and dedup.
 
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -740,3 +741,191 @@ class TestStderrLogging:
         captured = capsys.readouterr()
         assert "[conversation_archiver] unexpected error" in captured.err
         assert "simulated unexpected error" in captured.err
+
+
+# ---------------------------------------------------------------------------
+# Test: SQLite index
+# ---------------------------------------------------------------------------
+
+def _make_index_entry(
+    session_id: str = "test_session",
+    project: str = "myproject",
+    cwd: str = "/Users/dev/myproject",
+    archive_path: str = "/archive/2026-04/test_session.jsonl",
+    first_seen: str = "2026-04-11T10:00:00+00:00",
+    last_updated: str = "2026-04-11T10:00:00+00:00",
+    message_count: int = 8,
+    user_messages: int = 2,
+    assistant_messages: int = 2,
+    tool_calls: int = 2,
+    total_input_tokens: int = 1300,
+    total_output_tokens: int = 550,
+    transcript_bytes: int = 1024,
+    model: str = "claude-opus-4-6",
+    first_user_prompt: str = "How do I implement a retry pattern in Python?",
+) -> dict:
+    """Build a complete index entry dict for SQLite tests."""
+    return {
+        "session_id": session_id,
+        "project": project,
+        "cwd": cwd,
+        "archive_path": archive_path,
+        "first_seen": first_seen,
+        "last_updated": last_updated,
+        "message_count": message_count,
+        "user_messages": user_messages,
+        "assistant_messages": assistant_messages,
+        "tool_calls": tool_calls,
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "transcript_bytes": transcript_bytes,
+        "model": model,
+        "first_user_prompt": first_user_prompt,
+    }
+
+
+class TestSqliteIndex:
+    """Test the _update_sqlite_index function."""
+
+    def test_sqlite_happy_path(self, tmp_path):
+        """Write a row and verify all column values are stored correctly."""
+        db_path = tmp_path / "sessions.db"
+        entry = _make_index_entry()
+
+        conversation_archiver._update_sqlite_index(db_path, entry)
+
+        assert db_path.exists()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE session_id = ?", ("test_session",)
+        ).fetchone()
+        conn.close()
+
+        assert row is not None
+        col_names = [
+            "session_id", "project", "cwd", "archive_path",
+            "first_seen", "last_updated",
+            "message_count", "user_messages", "assistant_messages", "tool_calls",
+            "total_input_tokens", "total_output_tokens",
+            "transcript_bytes", "model", "first_user_prompt",
+        ]
+        row_dict = dict(zip(col_names, row))
+
+        assert row_dict["session_id"] == "test_session"
+        assert row_dict["project"] == "myproject"
+        assert row_dict["cwd"] == "/Users/dev/myproject"
+        assert row_dict["message_count"] == 8
+        assert row_dict["user_messages"] == 2
+        assert row_dict["assistant_messages"] == 2
+        assert row_dict["tool_calls"] == 2
+        assert row_dict["total_input_tokens"] == 1300
+        assert row_dict["total_output_tokens"] == 550
+        assert row_dict["transcript_bytes"] == 1024
+        assert row_dict["model"] == "claude-opus-4-6"
+        assert row_dict["first_user_prompt"] == "How do I implement a retry pattern in Python?"
+        assert row_dict["first_seen"] == "2026-04-11T10:00:00+00:00"
+
+    def test_sqlite_upsert_preserves_first_seen(self, tmp_path):
+        """Second write with same session_id preserves first_seen from first write."""
+        db_path = tmp_path / "sessions.db"
+
+        entry_v1 = _make_index_entry(
+            first_seen="2026-04-11T10:00:00+00:00",
+            last_updated="2026-04-11T10:00:00+00:00",
+            message_count=10,
+        )
+        conversation_archiver._update_sqlite_index(db_path, entry_v1)
+
+        entry_v2 = _make_index_entry(
+            first_seen="2026-04-11T12:00:00+00:00",
+            last_updated="2026-04-11T12:00:00+00:00",
+            message_count=25,
+        )
+        conversation_archiver._update_sqlite_index(db_path, entry_v2)
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute("SELECT first_seen, last_updated, message_count FROM sessions").fetchall()
+        conn.close()
+
+        assert len(rows) == 1
+        first_seen, last_updated, message_count = rows[0]
+        # first_seen preserved from first write
+        assert first_seen == "2026-04-11T10:00:00+00:00"
+        # message_count updated to second write
+        assert message_count == 25
+
+    def test_sqlite_table_auto_creation(self, tmp_path):
+        """Fresh db_path: file does not exist, function creates it with sessions table."""
+        db_path = tmp_path / "subdir" / "sessions.db"
+        assert not db_path.exists()
+
+        entry = _make_index_entry()
+        conversation_archiver._update_sqlite_index(db_path, entry)
+
+        assert db_path.exists()
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute("SELECT session_id FROM sessions").fetchall()
+        conn.close()
+        assert len(rows) == 1
+
+    def test_sqlite_error_resilience(self, tmp_path):
+        """Passing a directory as db_path should not raise any exception."""
+        # A directory cannot be opened as a SQLite file — this tests the try/except
+        db_path = tmp_path / "i_am_a_directory"
+        db_path.mkdir()
+
+        # Must not raise
+        entry = _make_index_entry()
+        conversation_archiver._update_sqlite_index(db_path, entry)
+
+    def test_sqlite_queryable(self, tmp_path):
+        """Write two rows with different session_ids and verify both are readable."""
+        db_path = tmp_path / "sessions.db"
+
+        entry_a = _make_index_entry(session_id="session_a", message_count=5)
+        entry_b = _make_index_entry(session_id="session_b", message_count=15)
+
+        conversation_archiver._update_sqlite_index(db_path, entry_a)
+        conversation_archiver._update_sqlite_index(db_path, entry_b)
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT session_id, message_count FROM sessions ORDER BY session_id"
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert rows[0] == ("session_a", 5)
+        assert rows[1] == ("session_b", 15)
+
+    def test_sqlite_main_integration(self, sample_transcript, tmp_path):
+        """Run main() via stdin and verify both sessions.db and index.jsonl are created."""
+        archive_base = tmp_path / "archive"
+
+        hook_input = json.dumps({
+            "hook_event_name": "Stop",
+            "transcript_path": str(sample_transcript),
+            "session_id": "integration_session",
+            "cwd": "/Users/dev/project",
+        })
+
+        with patch.dict(os.environ, {
+            "CONVERSATION_ARCHIVE": "true",
+            "CONVERSATION_ARCHIVE_DIR": str(archive_base),
+        }, clear=False):
+            with patch("sys.stdin") as mock_stdin:
+                mock_stdin.read.return_value = hook_input
+                with pytest.raises(SystemExit) as exc_info:
+                    conversation_archiver.main()
+                assert exc_info.value.code == 0
+
+        assert (archive_base / "index.jsonl").exists(), "index.jsonl not created"
+        db_path = archive_base / "sessions.db"
+        assert db_path.exists(), "sessions.db not created"
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT session_id FROM sessions WHERE session_id = 'integration_session'"
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 1
