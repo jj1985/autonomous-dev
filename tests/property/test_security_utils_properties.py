@@ -50,6 +50,18 @@ invalid_agent_name_chars = st.from_regex(
 # System paths that should be rejected in production mode
 system_path_prefixes = ["/etc/", "/usr/", "/bin/", "/sbin/", "/var/log/"]
 
+# Strategy for system path prefix
+system_path_prefix_strategy = st.sampled_from(system_path_prefixes)
+
+# Filename suffix for path tests
+filename_suffix = st.from_regex(r"[a-zA-Z0-9_.-]{1,50}", fullmatch=True)
+
+# Prefix/suffix for pytest path tests
+pytest_path_part = st.from_regex(r"[a-z_]{1,20}", fullmatch=True)
+
+# Module name for valid pytest paths
+pytest_module_name = st.from_regex(r"[a-z][a-z0-9_]{0,20}", fullmatch=True)
+
 
 # ---------------------------------------------------------------------------
 # Property Tests
@@ -74,6 +86,7 @@ class TestPathTraversalInvariant:
 class TestMaxPathLengthInvariant:
     """Paths exceeding MAX_PATH_LENGTH must be rejected."""
 
+    @example("a" * (MAX_PATH_LENGTH + 1))
     @given(path_str=long_path)
     @settings(max_examples=200, suppress_health_check=[HealthCheck.large_base_example])
     def test_long_paths_always_rejected(self, path_str: str) -> None:
@@ -86,7 +99,7 @@ class TestMaxPathLengthInvariant:
 class TestSystemPathRejection:
     """System paths must be rejected when test_mode=False."""
 
-    @given(suffix=st.from_regex(r"[a-zA-Z0-9_.-]{1,50}", fullmatch=True))
+    @given(suffix=filename_suffix)
     @example("passwd")
     @example("shadow")
     @example("hosts")
@@ -97,9 +110,10 @@ class TestSystemPathRejection:
         with pytest.raises(ValueError):
             validate_path(path_str, "system path test", test_mode=False)
 
+    @example("/usr/", "bin")
     @given(
-        prefix=st.sampled_from(system_path_prefixes),
-        suffix=st.from_regex(r"[a-zA-Z0-9_.-]{1,50}", fullmatch=True),
+        prefix=system_path_prefix_strategy,
+        suffix=filename_suffix,
     )
     @settings(max_examples=200)
     def test_system_paths_rejected_in_production(self, prefix: str, suffix: str) -> None:
@@ -143,8 +157,8 @@ class TestPytestPathTraversal:
     """validate_pytest_path() must reject paths containing '..'."""
 
     @given(
-        prefix=st.from_regex(r"[a-z_]{1,20}", fullmatch=True),
-        suffix=st.from_regex(r"[a-z_]{1,20}", fullmatch=True),
+        prefix=pytest_path_part,
+        suffix=pytest_path_part,
     )
     @example("tests", "test_foo")
     @example("src", "module")
@@ -155,8 +169,9 @@ class TestPytestPathTraversal:
         with pytest.raises(ValueError, match="[Pp]ath traversal|[Pp]aths containing"):
             validate_pytest_path(path_str)
 
+    @example("foo")
     @given(
-        module=st.from_regex(r"[a-z][a-z0-9_]{0,20}", fullmatch=True),
+        module=pytest_module_name,
     )
     @settings(max_examples=200)
     def test_valid_pytest_paths_accepted(self, module: str) -> None:

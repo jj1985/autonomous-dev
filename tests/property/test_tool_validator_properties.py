@@ -102,6 +102,35 @@ unknown_tool_names = st.from_regex(r"[A-Z][a-zA-Z]{3,20}", fullmatch=True).filte
     and t not in ("Bash", "Read", "Write", "Edit", "Grep", "Glob", "Fetch", "WebFetch", "WebSearch")
 )
 
+# Safe command prefixes for injection testing
+safe_command_prefix = st.sampled_from(["git status", "ls", "echo hello"])
+
+# Injection patterns to append
+injection_pattern = st.sampled_from([
+    "; rm /tmp/x",
+    "; sudo reboot",
+    "; eval bad",
+    "; exec bad",
+    "; chmod stuff",
+    "; chown stuff",
+    "&& rm /tmp/x",
+    "&& sudo reboot",
+    "|| rm /tmp/x",
+    "|| sudo reboot",
+    "| bash",
+    "| sh",
+    "| zsh",
+])
+
+# Random safe-looking commands for security risk testing
+random_command = st.from_regex(r"[a-zA-Z0-9 /_.-]{1,100}", fullmatch=True)
+
+# Suffix for whitelisted command testing
+whitelist_suffix = st.from_regex(r"[a-zA-Z0-9/_. -]{0,50}", fullmatch=True)
+
+# Simple command prefix for null/CR byte injection
+simple_command_prefix = st.sampled_from(["ls", "cat", "echo"])
+
 
 # ---------------------------------------------------------------------------
 # Property Tests
@@ -123,6 +152,7 @@ class TestBlacklistInvariant:
         result = validator.validate_bash_command(command)
         assert result.approved is False, f"Blacklisted command was approved: {command}"
 
+    @example("rm -rf", " /home")
     @given(prefix=blacklisted_prefixes, suffix=command_suffix)
     @settings(max_examples=200)
     def test_blacklisted_commands_are_security_risk(self, prefix: str, suffix: str) -> None:
@@ -136,23 +166,10 @@ class TestBlacklistInvariant:
 class TestInjectionPatternInvariant:
     """Command injection patterns must always produce approved=False."""
 
+    @example("git status", "; rm /tmp/x")
     @given(
-        safe_prefix=st.sampled_from(["git status", "ls", "echo hello"]),
-        injection=st.sampled_from([
-            "; rm /tmp/x",
-            "; sudo reboot",
-            "; eval bad",
-            "; exec bad",
-            "; chmod stuff",
-            "; chown stuff",
-            "&& rm /tmp/x",
-            "&& sudo reboot",
-            "|| rm /tmp/x",
-            "|| sudo reboot",
-            "| bash",
-            "| sh",
-            "| zsh",
-        ]),
+        safe_prefix=safe_command_prefix,
+        injection=injection_pattern,
     )
     @settings(max_examples=200)
     def test_injection_patterns_denied(self, safe_prefix: str, injection: str) -> None:
@@ -163,30 +180,22 @@ class TestInjectionPatternInvariant:
         assert result.approved is False, f"Injection was approved: {command}"
         assert result.security_risk is True, f"Injection not flagged as risk: {command}"
 
-    @given(data=st.data())
-    @example(data=None)
+    @example(prefix="git status")
+    @given(prefix=simple_command_prefix)
     @settings(max_examples=200)
-    def test_null_byte_injection_denied(self, data) -> None:
+    def test_null_byte_injection_denied(self, prefix: str) -> None:
         """Commands with null bytes are always denied."""
-        if data is None:
-            command = "git status\x00; rm -rf /"
-        else:
-            prefix = data.draw(st.sampled_from(["ls", "cat", "echo"]))
-            command = f"{prefix}\x00malicious"
+        command = f"{prefix}\x00malicious"
         validator = _make_validator()
         result = validator.validate_bash_command(command)
         assert result.approved is False, f"Null byte injection approved: {command!r}"
 
-    @given(data=st.data())
-    @example(data=None)
+    @example(prefix="git log")
+    @given(prefix=simple_command_prefix)
     @settings(max_examples=200)
-    def test_carriage_return_injection_denied(self, data) -> None:
+    def test_carriage_return_injection_denied(self, prefix: str) -> None:
         """Commands with carriage returns are always denied."""
-        if data is None:
-            command = "git log\rmalicious"
-        else:
-            prefix = data.draw(st.sampled_from(["ls", "cat", "echo"]))
-            command = f"{prefix}\rinjected"
+        command = f"{prefix}\rinjected"
         validator = _make_validator()
         result = validator.validate_bash_command(command)
         assert result.approved is False, f"CR injection approved: {command!r}"
@@ -195,8 +204,9 @@ class TestInjectionPatternInvariant:
 class TestSecurityRiskConsistency:
     """If security_risk=True then approved must be False (invariant)."""
 
+    @example("ls /tmp")
     @given(
-        command=st.from_regex(r"[a-zA-Z0-9 /_.-]{1,100}", fullmatch=True),
+        command=random_command,
     )
     @settings(max_examples=200)
     def test_security_risk_implies_denied(self, command: str) -> None:
@@ -243,8 +253,9 @@ class TestUnknownToolsDenied:
 class TestWhitelistApproval:
     """Commands matching whitelist patterns must be approved (if not blacklisted)."""
 
+    @example(" tests/unit/")
     @given(
-        suffix=st.from_regex(r"[a-zA-Z0-9/_. -]{0,50}", fullmatch=True),
+        suffix=whitelist_suffix,
     )
     @settings(max_examples=200)
     def test_whitelisted_commands_approved(self, suffix: str) -> None:

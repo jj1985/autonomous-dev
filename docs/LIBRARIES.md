@@ -99,7 +99,8 @@ The autonomous-dev plugin includes shared libraries organized into the following
 
 80. **skill_change_detector.py** - Detect which skills were modified in a changeset and check evaluation readiness. `detect_skill_changes(file_paths)` extracts skill names from paths matching `skills/*/SKILL.md`. `get_eval_status(skill_name, *, repo_root)` checks for eval prompts (`tests/genai/skills/eval_prompts/{name}.json`) and baseline data (`tests/genai/skills/baselines/effectiveness.json`), returning `{skill_name, has_eval_prompts, baseline, evaluable}`. `format_skill_eval_report(results)` formats per-skill results with PASS/WARNING/BLOCK verdicts (delta < -0.10 triggers BLOCK). `get_weak_skills(baselines_path, *, min_delta, min_pass_rate, stale_days)` identifies skills with weak delta, low pass rate, or stale baselines — used by `/improve` STEP 2.5 to surface skill health. Used by STEP 11.5 (Skill Effectiveness Gate) in `/implement` and by `/improve`. (v1.0.0, Issue #643)
 
-81. **covers_index.py** - Pre-computed source-path to doc-file mapping for doc-master optimization. `build_covers_index(docs_dir)` scans all `*.md` files for `covers:` YAML frontmatter and returns a dict mapping each source path (or pattern) to the sorted list of doc files that cover it. `get_affected_docs(changed_files, index)` matches changed paths against index keys using exact match, prefix match (keys ending in `/`), and glob match (keys containing `*`), returning a deduplicated sorted list of affected doc paths. `save_covers_index(index, output_path)` writes the index as formatted JSON with `_generated` and `_doc_count` metadata keys. `load_covers_index(index_path)` reads the JSON and strips metadata keys. Eliminates doc-master's per-invocation 23-file scan; the index is pre-built by `scripts/build_covers_index.py` and stored at `docs/covers_index.json`. (v1.0.0, Issue #713)
+81. **covers_index.py** - Pre-computed source-path to doc-file mapping for doc-master optimization.
+88. **dependabot_tracker.py** - Dependabot security issue tracker — queries GitHub Dependabot API for open vulnerability alerts, creates deduplicated tracking issues for critical/high severity alerts individually and weekly batch issues for medium severity. Non-blocking STEP 13 integration. (v1.0.0, Issue #767) `build_covers_index(docs_dir)` scans all `*.md` files for `covers:` YAML frontmatter and returns a dict mapping each source path (or pattern) to the sorted list of doc files that cover it. `get_affected_docs(changed_files, index)` matches changed paths against index keys using exact match, prefix match (keys ending in `/`), and glob match (keys containing `*`), returning a deduplicated sorted list of affected doc paths. `save_covers_index(index, output_path)` writes the index as formatted JSON with `_generated` and `_doc_count` metadata keys. `load_covers_index(index_path)` reads the JSON and strips metadata keys. Eliminates doc-master's per-invocation 23-file scan; the index is pre-built by `scripts/build_covers_index.py` and stored at `docs/covers_index.json`. (v1.0.0, Issue #713)
 
 82. **pipeline_efficiency_analyzer.py** - Cross-run pipeline efficiency analysis for the continuous-improvement-analyst (check #14, Issue #714). Analyzes historical timing data from `timing_history.jsonl` to surface agent optimization opportunities. Three analysis functions: `detect_model_tier_recommendations(agent_entries, agent_type)` flags agents with stable quality (CV < 0.3) and efficient token usage (median tokens/word < 100) as downgrade candidates, and warns on prompt bloat (tokens/word > 500); `detect_token_trends(agent_entries, agent_type)` uses simple linear regression to detect rising token usage over sequential runs (flagged when slope > 0 and R² > 0.5); `compute_iqr_outliers(values)` returns values outside the standard IQR fences (Q1 − 1.5×IQR, Q3 + 1.5×IQR). Main entry point: `analyze_efficiency(observations, *, min_observations=5)` groups by agent_type, runs all three analyses, and returns a list of `EfficiencyFinding` dataclasses capped at 5 per report (circuit breaker). `format_efficiency_report(findings)` renders a Markdown summary. Consumes data from `load_full_timing_history()` in `pipeline_timing_analyzer.py`. Advisory only — never blocks the pipeline. (v1.0.0, Issue #714)
 
@@ -16404,3 +16405,41 @@ result = analyzer.prune_tests(dry_run=False)
 - `tests/unit/lib/test_covers_index.py` — 24 tests covering build, query (exact/prefix/glob), save/load round-trip, metadata stripping, and error handling
 
 **Version History**: v1.0.0 (2026-04-08) - Initial release for doc-master covers index optimization (Issue #713)
+
+## 176+10. dependabot_tracker.py (v1.0.0 - Issue #767)
+
+**Purpose**: Queries the GitHub Dependabot API and auto-creates deduplicated security tracking issues in the repository. Invoked non-blocking at STEP 13 of `/implement` (after `git push`, before `gh issue close`). Any failure is logged with a `[dependabot-tracker]` prefix and the pipeline continues without interruption.
+
+**Location**: `plugins/autonomous-dev/lib/dependabot_tracker.py`
+
+**Key Features**:
+- SSH and HTTPS remote URL parsing via `parse_owner_repo()` using a single regex covering `git@github.com:owner/repo.git` and `https://github.com/owner/repo` formats
+- Subprocess wrapper `_gh()` runs `gh` CLI with `shell=False`, parses JSON output, and returns `None` on any error (timeout, missing binary, bad JSON, non-zero exit)
+- GHSA ID validation via `_validate_ghsa_id()` — enforces `GHSA-xxxx-xxxx-xxxx` lowercase alphanumeric format before any issue creation
+- `get_open_alerts(owner, repo)` — queries `gh api repos/{owner}/{repo}/dependabot/alerts` filtered to `state=open` alerts
+- `issue_exists_for_ghsa(owner, repo, ghsa_id)` — searches existing issues for a deduplication HTML comment marker (`<!-- dependabot-ghsa: GHSA-... -->`) to prevent duplicate tracking issues
+- `create_individual_issue(owner, repo, alert)` — creates a GitHub issue titled `[Security] Dependabot: {package} {GHSA_ID}` with severity label (`critical` or `high`) and the deduplication marker; only fires for `critical` and `high` severity alerts
+- `_maybe_create_medium_batch(owner, repo, medium_alerts)` — creates one batch issue per ISO calendar week for medium severity alerts; deduplicates via `<!-- dependabot-medium-batch: YYYY-WNN -->` marker
+- `run_dependabot_tracker(owner, repo)` — non-blocking entry point: fetches alerts, partitions by severity, calls individual and batch creators, returns `{"created": N}` dict
+
+### Public API
+
+**Functions**:
+- `parse_owner_repo(remote_url: str) -> Optional[Tuple[str, str]]` — parse GitHub owner and repo from SSH or HTTPS remote URL
+- `get_open_alerts(owner: str, repo: str) -> List[Dict]` — fetch open Dependabot vulnerability alerts via `gh` CLI
+- `issue_exists_for_ghsa(owner: str, repo: str, ghsa_id: str) -> bool` — check whether a deduplication marker already exists in any open or closed issue
+- `create_individual_issue(owner: str, repo: str, alert: Dict) -> bool` — create a labeled tracking issue for a single critical/high alert; returns True on success
+- `run_dependabot_tracker(owner: str, repo: str) -> Dict[str, int]` — orchestrate full tracker run, returns `{"created": N}`
+
+### Integration
+
+- Called from `plugins/autonomous-dev/commands/implement.md` STEP 13 after `git push`, in a `try/except` block with `2>/dev/null || true` shell suppression
+- Entry point pattern: import `run_dependabot_tracker` and `parse_owner_repo`, obtain remote URL via `git remote get-url origin`, call `parse_owner_repo`, then `run_dependabot_tracker(*parsed)`
+- Non-blocking contract: all exceptions are caught; pipeline proceeds regardless of tracker outcome
+
+### Testing
+
+- `tests/unit/lib/test_dependabot_tracker.py` — 34 unit tests across 10 test classes covering URL parsing, GHSA validation, alert fetching, issue deduplication, issue creation, medium batch handling, entry point orchestration, and a security invariant check (shell=False enforcement)
+- `tests/unit/lib/test_acceptance_dependabot_tracker.py` — 16 static file inspection acceptance tests verifying all feature deliverables
+
+**Version History**: v1.0.0 (2026-04-11) - Initial release, Dependabot security tracking at STEP 13 (Issue #767)

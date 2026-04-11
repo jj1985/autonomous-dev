@@ -1,9 +1,20 @@
 """Shared fixtures for property-based tests."""
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, settings
+
+# ---------------------------------------------------------------------------
+# Hypothesis profile configuration
+# ---------------------------------------------------------------------------
+settings.register_profile(
+    "ci", max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+)
+settings.register_profile("default", max_examples=50)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 # Add plugins lib to sys.path for direct imports
 _lib_path = str(Path(__file__).parent.parent.parent / "plugins" / "autonomous-dev" / "lib")
