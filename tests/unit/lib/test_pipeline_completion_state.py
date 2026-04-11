@@ -39,9 +39,15 @@ def session_id():
 
 @pytest.fixture(autouse=True)
 def cleanup_state(session_id):
-    """Clean up state file after each test."""
+    """Clean up state file after each test.
+
+    Also clears the 'unknown' session to prevent cross-test contamination
+    from the merge logic added in Issue #777.
+    """
+    clear_session("unknown")
     yield
     clear_session(session_id)
+    clear_session("unknown")
 
 
 class TestRecordAndRead:

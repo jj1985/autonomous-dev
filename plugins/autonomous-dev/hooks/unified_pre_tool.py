@@ -1895,7 +1895,7 @@ def _detect_realign_bypass(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
     # Exclude search/inspection commands that reference mlx_lm without executing it
     search_prefixes = (
         "grep ", "rg ", "ag ", "ack ", "find ", "cat ", "less ", "head ",
-        "tail ", "echo ", "printf ", "man ",
+        "tail ", "echo ", "printf ", "man ", "gh ",
     )
     stripped = command.lstrip()
     if any(stripped.startswith(prefix) for prefix in search_prefixes):

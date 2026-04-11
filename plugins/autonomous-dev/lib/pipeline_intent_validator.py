@@ -785,9 +785,15 @@ def detect_ghost_invocations(
     """
     findings: List[Finding] = []
 
+    # Filter to completion events only. Invocation events (pipeline_action=
+    # 'agent_invocation') always have result_word_count=0 and duration_ms=1
+    # because the agent hasn't run yet, producing false-positive ghost
+    # findings. Issue #781.
     agent_events = [
         e for e in events
-        if e.tool in AGENT_TOOL_NAMES and e.subagent_type
+        if e.tool in AGENT_TOOL_NAMES
+        and e.subagent_type
+        and e.pipeline_action == "agent_completion"
     ]
 
     for event in agent_events:

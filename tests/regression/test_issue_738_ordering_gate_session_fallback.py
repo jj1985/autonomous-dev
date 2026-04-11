@@ -84,26 +84,32 @@ class TestSessionFallback:
 
         assert "planner" in result
 
-    def test_primary_session_takes_precedence_over_unknown(self) -> None:
-        """If primary session has completions, 'unknown' session is NOT consulted.
+    def test_primary_and_unknown_sessions_are_merged(self) -> None:
+        """Completions from both primary and 'unknown' sessions are merged.
 
-        This ensures the fallback only triggers when needed.
+        Issue #777: When some agents complete before CLAUDE_SESSION_ID is set
+        (recorded under 'unknown') and others complete after (recorded under
+        the real session ID), both sets must be visible to the ordering gate.
+        The old fallback-only approach missed agents when the primary session
+        had SOME completions but was missing agents from 'unknown'.
         """
         real_sid = self._real_session_id()
 
-        # Primary session has its own completions
+        # Primary session has its own completions (recorded after session ID set)
         record_agent_completion(real_sid, "implementer", issue_number=0)
 
-        # 'unknown' session has different completions
+        # 'unknown' session has completions from before session ID was set
         record_agent_completion("unknown", "planner", issue_number=0)
 
         result = get_completed_agents(real_sid, issue_number=0)
 
-        # Should use primary session only — implementer present, planner absent
-        assert "implementer" in result
-        assert "planner" not in result, (
-            "Primary session completions should take precedence over 'unknown' "
-            "session when primary is non-empty (Issue #738)"
+        # Both must be present — merged, not fallback
+        assert "implementer" in result, (
+            "Primary session completion should be present"
+        )
+        assert "planner" in result, (
+            "Completion from 'unknown' session should be merged into result "
+            "even when primary session has other completions (Issue #777)"
         )
 
     def test_launched_agents_fallback_to_unknown_session(self) -> None:

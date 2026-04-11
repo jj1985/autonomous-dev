@@ -153,18 +153,19 @@ def get_completed_agents(
     Returns:
         Set of agent type strings that completed successfully.
     """
+    result = set()
     state = _read_state(session_id)
     if state:
         completions = state.get("completions", {})
         issue_key = str(issue_number)
         issue_completions = completions.get(issue_key, {})
         result = {k for k, v in issue_completions.items() if v}
-        if result:
-            return result
 
-    # Fallback: if the primary session returned no completions, check the
-    # 'unknown' session. The coordinator may have written state before
-    # CLAUDE_SESSION_ID was available. Issue #738.
+    # Merge completions from the 'unknown' session. The coordinator may have
+    # recorded some agent completions before CLAUDE_SESSION_ID was available,
+    # writing them under session_id='unknown'. We MERGE (not fallback) because
+    # the primary session may have SOME completions but be MISSING agents that
+    # were recorded under 'unknown'. Issues #738, #777.
     if session_id != "unknown":
         fallback_state = _read_state("unknown")
         if fallback_state:
@@ -172,16 +173,18 @@ def get_completed_agents(
             issue_key = str(issue_number)
             issue_completions = completions.get(issue_key, {})
             fallback_result = {k for k, v in issue_completions.items() if v}
-            if fallback_result:
+            if fallback_result - result:
                 import logging
                 logging.getLogger("pipeline_completion_state").info(
-                    "Falling back to session_id='unknown' state for ordering check "
-                    "(primary session_id=%r returned no completions). Issue #738.",
+                    "Merging completions from session_id='unknown' (%s) into "
+                    "primary session_id=%r (%s). Issues #738, #777.",
+                    fallback_result - result,
                     session_id,
+                    result,
                 )
-                return fallback_result
+                result |= fallback_result
 
-    return set()
+    return result
 
 
 def record_agent_launch(
@@ -231,17 +234,16 @@ def get_launched_agents(
 
     Issues: #686, #738
     """
+    result = set()
     state = _read_state(session_id)
     if state:
         launches = state.get("launches", {})
         issue_key = str(issue_number)
         issue_launches = launches.get(issue_key, {})
         result = {k for k, v in issue_launches.items() if v}
-        if result:
-            return result
 
-    # Fallback: if the primary session returned no launches, check the
-    # 'unknown' session. Issue #738.
+    # Merge launches from 'unknown' session (same rationale as
+    # get_completed_agents — see Issues #738, #777).
     if session_id != "unknown":
         fallback_state = _read_state("unknown")
         if fallback_state:
@@ -249,10 +251,9 @@ def get_launched_agents(
             issue_key = str(issue_number)
             issue_launches = launches.get(issue_key, {})
             fallback_result = {k for k, v in issue_launches.items() if v}
-            if fallback_result:
-                return fallback_result
+            result |= fallback_result
 
-    return set()
+    return result
 
 
 def record_prompt_baseline(

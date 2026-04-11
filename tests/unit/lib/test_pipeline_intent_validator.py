@@ -519,7 +519,7 @@ class TestDetectGhostInvocations:
                 tool="Agent",
                 agent="main",
                 subagent_type="researcher",
-                pipeline_action="agent_invocation",
+                pipeline_action="agent_completion",
                 duration_ms=5000,
                 result_word_count=10,
             ),
@@ -538,7 +538,7 @@ class TestDetectGhostInvocations:
                 tool="Agent",
                 agent="main",
                 subagent_type="researcher",
-                pipeline_action="agent_invocation",
+                pipeline_action="agent_completion",
                 duration_ms=15000,
                 result_word_count=10,
             ),
@@ -554,7 +554,7 @@ class TestDetectGhostInvocations:
                 tool="Agent",
                 agent="main",
                 subagent_type="implementer",
-                pipeline_action="agent_invocation",
+                pipeline_action="agent_completion",
                 duration_ms=5000,
                 result_word_count=200,
             ),
@@ -570,7 +570,7 @@ class TestDetectGhostInvocations:
                 tool="Agent",
                 agent="main",
                 subagent_type="researcher",
-                pipeline_action="agent_invocation",
+                pipeline_action="agent_completion",
                 duration_ms=0,
                 result_word_count=10,
             ),
@@ -586,7 +586,7 @@ class TestDetectGhostInvocations:
                 tool="Agent",
                 agent="main",
                 subagent_type="planner",
-                pipeline_action="agent_invocation",
+                pipeline_action="agent_completion",
                 duration_ms=3000,
                 result_word_count=30,
             ),
@@ -598,21 +598,42 @@ class TestDetectGhostInvocations:
         findings = detect_ghost_invocations(events, max_duration_ms=2000, max_result_words=20)
         assert len(findings) == 0
 
+    def test_invocation_events_not_flagged_as_ghost(self):
+        """Invocation events (pipeline_action='agent_invocation') must NOT be
+        flagged as ghost invocations. They always have result_word_count=0 and
+        duration_ms=1 because the agent hasn't run yet. Issue #781."""
+        events = [
+            PipelineEvent(
+                timestamp="2026-04-11T09:20:23+00:00",
+                tool="Agent",
+                agent="main",
+                subagent_type="reviewer",
+                pipeline_action="agent_invocation",
+                duration_ms=1,
+                result_word_count=0,
+            ),
+        ]
+        findings = detect_ghost_invocations(events)
+        assert len(findings) == 0, (
+            "Invocation events should be filtered out — they always have "
+            "duration_ms=1 and result_word_count=0 (Issue #781)"
+        )
+
     def test_ghost_integrated_in_validate_pipeline_intent(self, tmp_path):
-        """Ghost detection runs as part of validate_pipeline_intent."""
+        """Ghost detection runs as part of validate_pipeline_intent.
+
+        Uses agent_completion (not agent_invocation) since invocation events
+        are filtered out by detect_ghost_invocations (Issue #781).
+        """
         log_file = tmp_path / "ghost.jsonl"
         entry = {
             "timestamp": "2026-02-28T10:00:00+00:00",
-            "tool": "Agent",
-            "input_summary": {
-                "subagent_type": "researcher",
-                "pipeline_action": "agent_invocation",
-                "prompt_word_count": 500,
-            },
-            "output_summary": {"success": True, "result_word_count": 5},
-            "session_id": "test-session",
-            "agent": "main",
+            "hook": "SubagentStop",
+            "subagent_type": "researcher",
             "duration_ms": 2000,
+            "result_word_count": 5,
+            "session_id": "test-session",
+            "success": True,
         }
         log_file.write_text(json.dumps(entry) + "\n")
         findings = validate_pipeline_intent(log_file, session_id="test-session")
