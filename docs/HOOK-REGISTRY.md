@@ -5,7 +5,7 @@ covers:
 
 # Hook Registry
 
-**Last Updated: 2026-02-16**
+**Last Updated: 2026-04-12**
 
 Quick-reference guide for all hooks in the autonomous-dev plugin, including activation status, trigger points, and controlling environment variables.
 
@@ -29,7 +29,7 @@ This registry provides a comprehensive view of:
 
 ### Unified Hooks
 
-The plugin uses 28 active hooks (files on disk in `plugins/autonomous-dev/hooks/`):
+The plugin uses 22 active hooks (files on disk in `plugins/autonomous-dev/hooks/`, 61 archived):
 
 | Hook File | Lifecycle/Trigger | Status | Purpose |
 |-----------|------------------|--------|---------|
@@ -59,6 +59,8 @@ The plugin uses 28 active hooks (files on disk in `plugins/autonomous-dev/hooks/
 ---
 
 ## Hooks by Lifecycle
+
+> **Note**: The per-lifecycle tables below include hooks that have since been archived/consolidated. The "Quick Reference / Unified Hooks" table above reflects the current active set. See `plugins/autonomous-dev/hooks/archived/` for consolidated hooks.
 
 ### PreToolUse Hooks
 

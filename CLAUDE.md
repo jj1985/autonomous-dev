@@ -31,11 +31,11 @@ pytest tests/genai/ --genai
 ## Architecture
 
 - **Pipeline**: 8-step SDLC (15 internal steps) — alignment → research → plan → acceptance tests → implement → validate → verify → git
-- **Enforcement**: 28 hooks with JSON `{"decision": "block"}` hard gates (not prompt-level nudges)
+- **Enforcement**: 22 hooks with JSON `{"decision": "block"}` hard gates (not prompt-level nudges)
 - **Agents**: 15 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
 - **Skills**: 17 domain packages, progressively injected per-step to prevent context bloat
 
-Component counts: 15 agents, 17 skills, 22 commands, 28 hooks, 186 libraries.
+Component counts: 15 agents, 17 skills, 22 commands, 22 hooks, 196 libraries.
 
 ## Commands
 
@@ -59,4 +59,4 @@ Component counts: 15 agents, 17 skills, 22 commands, 28 hooks, 186 libraries.
 
 `SessionStart-batch-recovery.sh` auto-restores batch state after `/clear` or auto-compact. Activity logged to `.claude/logs/activity/` by `session_activity_logger.py`.
 
-**Last Updated**: 2026-03-30
+**Last Updated**: 2026-04-12

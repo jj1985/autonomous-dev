@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-04-12
 **For**: Users and developers encountering common issues
 
 ---
@@ -313,7 +313,8 @@ cat ~/.claude/settings.json | python3 -m json.tool | head -20
 
 ## Version Info
 
-- **Current version**: v3.41.0+
-- **Agents**: 22 specialists
-- **Hooks**: 50 automation hooks
-- **Commands**: 7 active (`/implement`, `/implement --batch`, `/create-issue`, `/align`, `/setup`, `/sync`, `/health-check`)
+- **Agents**: 15 specialists
+- **Hooks**: 22 active hooks
+- **Commands**: 22 active (see CLAUDE.md for full list)
+- **Skills**: 17 domain packages
+- **Libraries**: 196 Python utilities

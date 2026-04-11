@@ -11,13 +11,13 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 15 agents (18 archived), 17 skills, 22 active commands, 191 libraries, 28 active hooks (62 archived).
+**Component Counts**: 15 agents (18 archived), 17 skills, 22 active commands, 196 libraries, 22 active hooks (61 archived).
 
 ---
 
 ## Agents
 
-Specialized agents with skill integration for autonomous development. See [docs/AGENTS.md](docs/AGENTS.md) for complete details. See component counts at the top of this file.
+Specialized agents with skill integration for autonomous development. See [AGENTS.md](AGENTS.md) for complete details. See component counts at the top of this file.
 
 **Key Features**:
 - Native skill integration (Issue #143): Agents declare skills via `skills:` frontmatter field - Claude Code 2.0 auto-loads skills when agent spawned
@@ -77,7 +77,7 @@ Specialized skill packages using progressive disclosure to prevent context bloat
 
 ## Libraries
 
-Reusable Python libraries for security, validation, automation, and more. See [docs/LIBRARIES.md](docs/LIBRARIES.md) for complete API documentation.
+Reusable Python libraries for security, validation, automation, and more. See [LIBRARIES.md](LIBRARIES.md) for complete API documentation.
 
 **Design Pattern**: Progressive enhancement, two-tier design (core logic + CLI), non-blocking enhancements
 
@@ -87,7 +87,7 @@ Reusable Python libraries for security, validation, automation, and more. See [d
 - **Automation**: unified_git_automation.py (git operations), batch_processor.py, session_tracker.py
 - **State Management**: session_state_manager.py (session persistence), batch_state_manager.py, user_state_manager.py, session_resource_manager.py (resource tracking), pipeline_state.py (pipeline progression tracking), pipeline_completion_state.py (agent ordering enforcement state — completions written by session tracker, launches written by pre-tool hook, both read by pre-tool hook for ordering decisions)
 - **Infrastructure**: path_utils.py, performance_timer.py, agent_tracker.py, pipeline_timing_analyzer.py, pipeline_efficiency_analyzer.py (cross-run efficiency analysis — model tier recommendations, token trend detection, IQR outlier detection; CIA check #14), test_pruning_analyzer.py (AST-based test hygiene — detects orphaned imports, archived refs, zero-assertion tests, duplicate coverage, and stale regressions; used by `/sweep --tests`), test_issue_tracer.py (test-to-issue traceability — maps tests to GitHub issues, flags untested issues, orphaned pairs, and untraced tests; used by `/audit --test-tracing` and STEP 13 non-blocking warning), test_lifecycle_manager.py (composition layer — orchestrates TestIssueTracer, TestPruningAnalyzer, tier_registry, and coverage_baseline into a unified `TestHealthReport`; used by `/improve` STEP 2.7 and continuous-improvement-analyst check #12), dependabot_tracker.py (Dependabot security issue tracker — queries GitHub Dependabot API for open vulnerability alerts and auto-creates deduplicated tracking issues for critical/high severity and weekly batch issues for medium severity; invoked non-blocking at STEP 13 in `/implement`; Issue #767)
-- **See**: [docs/LIBRARIES.md](docs/LIBRARIES.md) for complete API reference
+- **See**: [LIBRARIES.md](LIBRARIES.md) for complete API reference
 
 **Note on auto_git_workflow.py**: A backward compatibility shim exists at `.claude/hooks/auto_git_workflow.py` (56 lines) that redirects to `unified_git_automation.py`. The original hook was consolidated in Issue #144. Duplicate resolution completed in Issue #212. See `plugins/autonomous-dev/hooks/archived/README.md` for details.
 
@@ -95,20 +95,20 @@ Reusable Python libraries for security, validation, automation, and more. See [d
 
 ## Hooks
 
-Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.md](docs/HOOKS.md) for complete reference.
+Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](HOOKS.md) for complete reference.
 
-**Hook Registration**: Hooks declare lifecycle events and configurations via `.hook.json` sidecar files (Issue #551). See [docs/HOOK-SIDECAR-SCHEMA.md](docs/HOOK-SIDECAR-SCHEMA.md) for the declarative metadata schema (lifecycle events, matchers, timeouts, environment variables, type semantics).
+**Hook Registration**: Hooks declare lifecycle events and configurations via `.hook.json` sidecar files (Issue #551). See [HOOK-SIDECAR-SCHEMA.md](HOOK-SIDECAR-SCHEMA.md) for the declarative metadata schema (lifecycle events, matchers, timeouts, environment variables, type semantics).
 
 **Key Features**: Dispatcher pattern (env var control), graceful degradation (non-blocking), backward compatible
 
-**Hook Output Visibility** (Issue #660): `permissionDecisionReason` on deny is model-visible — block messages include `REQUIRED NEXT ACTION:` carrots that the model reads and acts on. `systemMessage` is user-visible (injected into the conversation). These are distinct channels: enforcement directives belong in `permissionDecisionReason`; user notifications belong in `systemMessage`. See [docs/HOOKS.md](docs/HOOKS.md) for full output format specification.
+**Hook Output Visibility** (Issue #660): `permissionDecisionReason` on deny is model-visible — block messages include `REQUIRED NEXT ACTION:` carrots that the model reads and acts on. `systemMessage` is user-visible (injected into the conversation). These are distinct channels: enforcement directives belong in `permissionDecisionReason`; user notifications belong in `systemMessage`. See [HOOKS.md](HOOKS.md) for full output format specification.
 
 **Active Hooks**:
 - **PreToolUse**: unified_pre_tool.py (4-layer MCP validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass MCP layers but Agent/Task tool calls also pass through the Pipeline Ordering Gate before extensions — Issues #625, #629, #632)
 - **PrePromptSubmit**: unified_prompt_validator.py (workflow enforcement)
 - **PostToolUse**: auto_format.py, auto_test.py, security_scan.py, auto_fix_docs.py
 - **PreCommit**: validate_project_alignment.py, enforce_orchestrator.py, enforce_tdd.py, validate_session_quality.py
-- **See**: [docs/HOOKS.md](docs/HOOKS.md) for complete hook reference
+- **See**: [HOOKS.md](HOOKS.md) for complete hook reference
 
 ---
 
@@ -172,7 +172,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 - 25-30% overall improvement from 28-44 min baseline
 - 50-100+ skills supported without context bloat
 
-**See**: [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for complete benchmarks
+**See**: [PERFORMANCE.md](PERFORMANCE.md) for complete benchmarks
 
 ---
 
@@ -200,9 +200,9 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
    - 4-layer permission architecture
 
 **See**:
-- [docs/SANDBOXING.md](docs/SANDBOXING.md) - Complete sandboxing guide
-- [docs/MCP-SECURITY.md](docs/MCP-SECURITY.md) - MCP security reference
-- [docs/SECURITY.md](docs/SECURITY.md) - Security audit guide
+- [SANDBOXING.md](SANDBOXING.md) - Complete sandboxing guide
+- [MCP-SECURITY.md](MCP-SECURITY.md) - MCP security reference
+- [SECURITY.md](SECURITY.md) - Security audit guide
 
 ---
 
@@ -228,9 +228,8 @@ Unified hooks using dispatcher pattern for quality enforcement. See [docs/HOOKS.
 ## Cross-References
 
 **Related Documentation**:
-- [docs/AGENTS.md](docs/AGENTS.md) - Complete agent reference
-
-- [docs/LIBRARIES.md](docs/LIBRARIES.md) - Library API documentation
-- [docs/HOOKS.md](docs/HOOKS.md) - Hook reference
-- [docs/PERFORMANCE.md](docs/PERFORMANCE.md) - Performance benchmarks
-- [docs/SECURITY.md](docs/SECURITY.md) - Security guide
+- [AGENTS.md](AGENTS.md) - Complete agent reference
+- [LIBRARIES.md](LIBRARIES.md) - Library API documentation
+- [HOOKS.md](HOOKS.md) - Hook reference
+- [PERFORMANCE.md](PERFORMANCE.md) - Performance benchmarks
+- [SECURITY.md](SECURITY.md) - Security guide
