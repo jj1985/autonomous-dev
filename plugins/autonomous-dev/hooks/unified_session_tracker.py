@@ -133,6 +133,49 @@ EXPECTED_PIPELINE_AGENTS: List[str] = [
 _SESSION_DATE_CACHE: dict = {}
 
 
+def _get_current_issue_number() -> int:
+    """Get the current pipeline issue number with file-based fallback.
+
+    Issue #779: Env vars set via ``export`` in one Bash tool call do NOT
+    persist to subsequent Bash calls.  The hook process inherits env from
+    the Claude Code parent process, not from a previous Bash session.
+
+    Resolution order:
+        1. ``PIPELINE_ISSUE_NUMBER`` env var
+        2. ``issue_number`` from pipeline state file
+        3. ``0`` as safe default
+
+    Returns:
+        The current issue number, or 0 if unavailable.
+    """
+    env_val = os.getenv("PIPELINE_ISSUE_NUMBER")
+    if env_val and env_val != "0":
+        try:
+            return int(env_val)
+        except (ValueError, TypeError):
+            pass
+
+    pipeline_state_file = os.getenv(
+        "PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json"
+    )
+    try:
+        state_path = Path(pipeline_state_file)
+        if state_path.exists():
+            import json as _json
+
+            with open(state_path) as f:
+                state = _json.load(f)
+            issue_num = state.get("issue_number", 0)
+            if isinstance(issue_num, int) and issue_num > 0:
+                return issue_num
+            if isinstance(issue_num, str) and issue_num.isdigit():
+                return int(issue_num)
+    except Exception:
+        pass
+
+    return 0
+
+
 def _find_log_dir() -> Path:
     """Find the .claude/logs/activity directory.
 
@@ -744,7 +787,7 @@ def main() -> int:
             record_agent_completion(
                 session_id=session_id,
                 agent_type=agent_name,
-                issue_number=int(os.environ.get("PIPELINE_ISSUE_NUMBER", "0")),
+                issue_number=_get_current_issue_number(),
                 success=success,
             )
         except Exception:

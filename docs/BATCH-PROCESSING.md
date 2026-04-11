@@ -229,7 +229,7 @@ The coordinator uses these functions for each agent in every batch issue:
 
 1. **Batch start**: Call `clear_prompt_baselines()` to reset state from any prior batch, then immediately call `seed_baselines_from_templates()` to pre-seed baselines from each critical agent's template `.md` file at `issue_number=0`. This provides a ground-truth floor — all issues (including the first) are compared against the canonical template size, not against a potentially already-compressed first observation (Issue #748 fix).
 2. **Every issue** (including the first): Before invoking each agent:
-   - Get baseline: `baseline = get_prompt_baseline(agent_type)`
+   - Get baseline: `baseline = get_prompt_baseline(agent_type, issue_number=current_issue_number)` where `current_issue_number` is resolved by `_get_current_issue_number()` in the hook — first from `PIPELINE_ISSUE_NUMBER` env var (set by the Claude Code parent process), then falling back to the `issue_number` field in `/tmp/implement_pipeline_state.json` when the env var is absent (Issue #779 fix: env vars set via `export` in a Bash tool call do not persist to subsequent hook invocations because each call gets a fresh shell); returns `0` if both sources are unavailable. Pass `None` outside batch mode for backward-compatible behavior
    - Validate: `result = validate_prompt_word_count(agent_type, constructed_prompt, baseline)`
    - If `result.should_reload` is True: re-read the agent source via `get_agent_prompt_template(agent_type)` and reconstruct the prompt from disk rather than context memory
 

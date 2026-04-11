@@ -52,9 +52,16 @@ class TestPromptIntegrityEnforcement:
             assert "40 words" in reason
 
     def test_critical_agent_allowed_outside_pipeline_when_adequate(self):
-        """Critical agent with adequate prompt allowed outside pipeline (Issue #716)."""
+        """Critical agent with adequate prompt allowed outside pipeline (Issue #716).
+
+        Patches get_prompt_baseline to return None so only the minimum word
+        count gate is tested — not the baseline shrinkage gate (Issue #784).
+        """
         long_prompt = _make_prompt(100)
-        with patch.object(hook, "_is_pipeline_active", return_value=False):
+        with (
+            patch.object(hook, "_is_pipeline_active", return_value=False),
+            patch("prompt_integrity.get_prompt_baseline", return_value=None),
+        ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
                 {"subagent_type": "security-auditor", "prompt": long_prompt},
@@ -194,3 +201,38 @@ class TestPromptIntegrityEnforcement:
             )
             assert decision == "deny"
             assert "BLOCKED" in reason
+
+    def test_baseline_isolation_prevents_false_denial(self):
+        """Regression: high on-disk baseline must not cause false denial (Issue #784).
+
+        Without mocking get_prompt_baseline, a 100-word prompt could be denied
+        if a prior session seeded a baseline of 763 words (86.9% shrinkage > 25%
+        threshold). This test proves the mock prevents that false denial by
+        explicitly setting a HIGH baseline that would trigger the shrinkage gate
+        if the mock were absent.
+        """
+        prompt = _make_prompt(100)
+        # With baseline=763, shrinkage = (763-100)/763 = 86.9% > 25% → would deny
+        # But mocking to None means no baseline check occurs → allow
+        with (
+            patch.object(hook, "_is_pipeline_active", return_value=False),
+            patch("prompt_integrity.get_prompt_baseline", return_value=None),
+        ):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "security-auditor", "prompt": prompt},
+            )
+            assert decision == "allow"
+            assert "Prompt integrity OK" in reason
+
+        # Verify that WITHOUT the mock isolation, a high baseline WOULD deny
+        with (
+            patch.object(hook, "_is_pipeline_active", return_value=False),
+            patch("prompt_integrity.get_prompt_baseline", return_value=763),
+        ):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "security-auditor", "prompt": prompt},
+            )
+            assert decision == "deny"
+            assert "shrank" in reason

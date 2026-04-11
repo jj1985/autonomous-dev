@@ -520,6 +520,10 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
     # Falls open (returns allow) when no baseline is recorded yet. Issue #723.
     # max_shrinkage is 0.25 (25%) instead of the library default of 15% to give
     # more headroom for legitimate prompt variation at the hook level.
+    #
+    # Issue #764: Use PIPELINE_ISSUE_NUMBER for per-issue baseline isolation.
+    # In batch mode, each issue gets its own baseline so cross-issue context
+    # pressure doesn't trigger false-positive shrinkage blocks.
     try:
         from prompt_integrity import (
             get_prompt_baseline,
@@ -527,16 +531,27 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
             validate_prompt_word_count,
         )
 
-        baseline_word_count = get_prompt_baseline(agent_type)
+        # Per-issue isolation (Issue #764): use current issue number for
+        # baseline lookup and seeding. When not in batch mode (no issue context),
+        # issue_number=None preserves backward-compatible behavior (lowest issue).
+        # Issue #779: Use file-based fallback when env var is missing.
+        current_issue_num_raw = _get_current_issue_number()
+        current_issue_num = current_issue_num_raw if current_issue_num_raw > 0 else None
+        current_issue_str = str(current_issue_num) if current_issue_num else None
+
+        baseline_word_count = get_prompt_baseline(
+            agent_type, issue_number=current_issue_num
+        )
 
         if baseline_word_count is not None:
             result = validate_prompt_word_count(
                 agent_type, prompt, baseline_word_count, max_shrinkage=0.25
             )
             if not result.passed:
+                issue_ctx = f" (issue #{current_issue_str})" if current_issue_str else ""
                 return (
                     "deny",
-                    f"BLOCKED: Prompt for '{agent_type}' shrank {result.shrinkage_pct:.1f}% "
+                    f"BLOCKED: Prompt for '{agent_type}'{issue_ctx} shrank {result.shrinkage_pct:.1f}% "
                     f"from baseline ({baseline_word_count} words → {word_count} words, "
                     f"threshold: 25%). "
                     f"The agent prompt is being compressed across invocations. "
@@ -553,7 +568,16 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
             # The observed word count is the correct baseline for cross-issue
             # shrinkage detection. The library's seed_baselines_from_templates()
             # handles batch-mode seeding separately with appropriate slack.
-            record_prompt_baseline(agent_type, issue_number=0, word_count=word_count)
+            #
+            # Issue #764: Use current issue number instead of hardcoded 0.
+            seed_issue = int(current_issue_str) if current_issue_str else 0
+            record_prompt_baseline(agent_type, issue_number=seed_issue, word_count=word_count)
+            import logging
+            _pi_logger = logging.getLogger("unified_pre_tool.prompt_integrity")
+            _pi_logger.debug(
+                "Seeded baseline from observation: %s issue #%d = %d words",
+                agent_type, seed_issue, word_count,
+            )
 
     except Exception:
         # Fail open: any error in baseline check must not block the agent
@@ -611,7 +635,7 @@ def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, s
         from agent_ordering_gate import check_ordering_prerequisites
 
         session_id = _session_id or os.getenv("CLAUDE_SESSION_ID", "unknown")
-        issue_number = int(os.getenv("PIPELINE_ISSUE_NUMBER", "0"))
+        issue_number = _get_current_issue_number()
 
         # Issue #686: Record agent launch BEFORE checking prerequisites.
         # This tracks that PreToolUse fired for this agent, enabling the
@@ -920,6 +944,55 @@ def _is_issue_command_active() -> bool:
         return True
     except Exception:
         return False  # Fail-closed on any error
+
+
+def _get_current_issue_number() -> int:
+    """Get the current pipeline issue number with file-based fallback.
+
+    Issue #779: Env vars set via ``export`` in one Bash tool call do NOT
+    persist to subsequent Bash calls because each invocation gets a fresh
+    shell.  The hook process inherits env from the Claude Code parent
+    process, not from a previous Bash session.
+
+    Resolution order:
+        1. ``PIPELINE_ISSUE_NUMBER`` env var (set by Claude Code process)
+        2. ``issue_number`` field in the pipeline state file
+           (``/tmp/implement_pipeline_state.json``, written by coordinator)
+        3. ``0`` as a safe default (no issue context)
+
+    Returns:
+        The current issue number, or 0 if unavailable.
+    """
+    # 1. Env var takes precedence when available
+    env_val = os.getenv("PIPELINE_ISSUE_NUMBER")
+    if env_val and env_val != "0":
+        try:
+            return int(env_val)
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Fall back to pipeline state file
+    pipeline_state_file = os.getenv(
+        "PIPELINE_STATE_FILE", "/tmp/implement_pipeline_state.json"
+    )
+    try:
+        state_path = Path(pipeline_state_file)
+        if state_path.exists():
+            import json as _json
+
+            with open(state_path) as f:
+                state = _json.load(f)
+            issue_num = state.get("issue_number", 0)
+            if isinstance(issue_num, int) and issue_num > 0:
+                return issue_num
+            # Also handle string values
+            if isinstance(issue_num, str) and issue_num.isdigit():
+                return int(issue_num)
+    except Exception:
+        pass  # Fail open — return 0
+
+    # 3. Default
+    return 0
 
 
 def _get_pipeline_mode_from_state() -> str:
@@ -1814,6 +1887,57 @@ def _check_batch_cia_completions(session_id: str) -> "Optional[str]":
         return None  # Fail-open
 
 
+def _check_batch_doc_master_completions(session_id: str) -> "Optional[str]":
+    """Check if all batch issues have doc-master completion.
+
+    Loads verify_batch_doc_master_completions from pipeline_completion_state and
+    returns a block reason string if any issues are missing doc-master, or None
+    if all passed (or on any error — fail-open).
+
+    Args:
+        session_id: The pipeline session identifier.
+
+    Returns:
+        Block reason string if doc-master missing for any issue, None otherwise.
+
+    Issues: #786
+    """
+    try:
+        hook_dir = Path(__file__).resolve().parent
+        lib_candidates = [
+            hook_dir.parent / "lib" / "pipeline_completion_state.py",
+            hook_dir.parents[2] / "lib" / "pipeline_completion_state.py",
+        ]
+        mod = None
+        for lib_path in lib_candidates:
+            if lib_path.exists():
+                spec = importlib.util.spec_from_file_location(
+                    "pipeline_completion_state", str(lib_path)
+                )
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                break
+
+        if mod is None or not hasattr(mod, "verify_batch_doc_master_completions"):
+            return None  # Fail-open
+
+        all_passed, with_doc_master, missing_doc_master = mod.verify_batch_doc_master_completions(session_id)
+        if all_passed:
+            return None
+
+        missing_str = ", ".join(f"#{n}" for n in missing_doc_master)
+        return (
+            f"BLOCKED: Batch doc-master gate — issues missing doc-master: "
+            f"{missing_str}. All batch issues MUST have doc-master completion before git commit. "
+            f"REQUIRED NEXT ACTION: Run the doc-master agent for "
+            f"the missing issues before committing. "
+            f"Set SKIP_BATCH_DOC_MASTER_GATE=1 to bypass. (Issue #786)"
+        )
+    except Exception:
+        return None  # Fail-open
+
+
 def _detect_settings_json_write(command: str) -> "Optional[str]":
     """Detect Bash commands that write to settings.json or settings.local.json.
 
@@ -1852,6 +1976,42 @@ def _detect_settings_json_write(command: str) -> "Optional[str]":
                 f"REQUIRED NEXT ACTION: Complete the current /implement pipeline first, "
                 f"then modify settings. Do NOT write settings during an active pipeline."
             )
+
+    # Detect Python -c inline commands that write to settings files (Issue #768)
+    # Catches variable-based bypasses like: python3 -c "p='settings.json'; json.dump(d, open(p,'w'))"
+    py_c_patterns = [
+        r'python3?\s+-c\s+"([^"]+)"',
+        r"python3?\s+-c\s+'([^']+)'",
+    ]
+    for py_c_pat in py_c_patterns:
+        for match in re.finditer(py_c_pat, command):
+            snippet = match.group(1)
+            has_settings_ref = any(
+                re.search(pat, snippet) for pat in settings_patterns
+            )
+            if not has_settings_ref:
+                continue
+            # Check for Python write patterns in the snippet
+            python_write_patterns = [
+                r'open\s*\(',         # open() call (could be write mode)
+                r'json\.dump\s*\(',   # json.dump()
+                r'\.write\s*\(',      # .write()
+                r'\.write_text\s*\(', # Path.write_text()
+                r'\.write_bytes\s*\(',# Path.write_bytes()
+                r'shutil\.',          # shutil operations
+                r'os\.rename\s*\(',   # os.rename()
+                r'os\.replace\s*\(',  # os.replace()
+            ]
+            has_write = any(
+                re.search(wp, snippet) for wp in python_write_patterns
+            )
+            if has_write:
+                return (
+                    f"BLOCKED: Python -c command writes to settings file during active pipeline. "
+                    f"Settings files are protected during /implement sessions. (Issue #768) "
+                    f"REQUIRED NEXT ACTION: Complete the current /implement pipeline first, "
+                    f"then modify settings. Do NOT write settings during an active pipeline."
+                )
 
     return None
 
@@ -2993,6 +3153,29 @@ def main():
                                                 "BLOCKED: Batch CIA gate — some issues are missing "
                                                 "continuous-improvement-analyst completion. "
                                                 "Run CIA for all issues before committing."
+                                            ),
+                                        )
+                                        sys.exit(0)
+                        except Exception:
+                            pass  # Fail-open: don't block on errors
+
+                    # Issue #786: Batch doc-master completion gate
+                    # Block git commit in batch worktrees when issues are missing doc-master
+                    if "git commit" in command or "git -c" in command and "commit" in command:
+                        try:
+                            cwd = os.getcwd()
+                            if ".worktrees/batch-" in cwd:
+                                if os.environ.get("SKIP_BATCH_DOC_MASTER_GATE", "").strip().lower() not in ("1", "true", "yes"):
+                                    _batch_dm_session_id = os.environ.get("CLAUDE_SESSION_ID", _session_id)
+                                    _batch_dm_result = _check_batch_doc_master_completions(_batch_dm_session_id)
+                                    if _batch_dm_result is not None:
+                                        _log_pretool_activity(tool_name, tool_input, "deny", _batch_dm_result)
+                                        output_decision(
+                                            "deny", _batch_dm_result,
+                                            system_message=(
+                                                "BLOCKED: Batch doc-master gate — some issues are missing "
+                                                "doc-master completion. "
+                                                "Run doc-master for all issues before committing."
                                             ),
                                         )
                                         sys.exit(0)
