@@ -199,6 +199,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 | Hook | Purpose | Key Env Vars |
 |------|---------|--------------|
 | **stop_quality_gate.py** | End-of-turn quality checks (pytest, ruff, mypy). Auto-detects tools, parallel execution, 60s timeout. Always non-blocking. | ENFORCE_QUALITY_GATE |
+| **conversation_archiver.py** | Archives complete Claude Code conversation transcripts to `~/.claude/archive/` on every Stop event for long-term pattern analysis. Pure Python stdlib, non-blocking, always exits 0. Enabled via `CONVERSATION_ARCHIVE=true` env var. (Issue #773) | CONVERSATION_ARCHIVE |
 
 ### Utility (not lifecycle-triggered)
 

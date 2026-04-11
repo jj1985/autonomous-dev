@@ -6609,8 +6609,8 @@ Build comprehensive deny list of dangerous operations.
 - **Destructive operations**: `Bash(rm:-rf*)`, `Bash(shred:*)`, `Bash(dd:*)`
 - **Privilege escalation**: `Bash(sudo:*)`, `Bash(chmod:*)`, `Bash(chown:*)`
 - **Code execution**: `Bash(eval:*)`, `Bash(exec:*)`, `Bash(*|*sh*)`
-- **Network tools**: `Bash(nc:*)`, `Bash(curl:*|*sh*)`
-- **Dangerous git**: `Bash(git:*--force*)`, `Bash(git:*reset*--hard*)`
+- **Network tools**: `Bash(nc:*)`, `Bash(*curl *|*sh*)`
+- **Dangerous git**: `Bash(*git *--force*)`, `Bash(*git *reset*--hard*)`
 - **Package publishing**: `Bash(npm:publish*)`, `Bash(pip:upload*)`
 - **Sensitive files**: `Read(./.env)`, `Read(~/.ssh/**)`, `Write(/etc/**)`
 

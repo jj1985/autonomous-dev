@@ -1,0 +1,17 @@
+{
+  "name": "conversation_archiver",
+  "type": "lifecycle",
+  "description": "Archive conversation transcripts for long-term session analytics",
+  "interpreter": "python3",
+  "active": true,
+  "env": {
+    "CONVERSATION_ARCHIVE": "true"
+  },
+  "registrations": [
+    {
+      "event": "Stop",
+      "matcher": "*",
+      "timeout": 10
+    }
+  ]
+}

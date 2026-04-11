@@ -170,6 +170,16 @@
             "timeout": 3
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CONVERSATION_ARCHIVE=true python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/conversation_archiver.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStop": [

@@ -90,7 +90,9 @@
         "plugins/autonomous-dev/hooks/auto_fix_docs.py",
         "plugins/autonomous-dev/hooks/auto_format.py",
         "plugins/autonomous-dev/hooks/auto_test.py",
+        "plugins/autonomous-dev/hooks/conversation_archiver.py",
         "plugins/autonomous-dev/hooks/enforce_orchestrator.py",
+        "plugins/autonomous-dev/hooks/enforce_regression_test.py",
         "plugins/autonomous-dev/hooks/enforce_tdd.py",
         "plugins/autonomous-dev/hooks/genai_prompts.py",
         "plugins/autonomous-dev/hooks/genai_utils.py",
@@ -108,8 +110,7 @@
         "plugins/autonomous-dev/hooks/validate_claude_md_size.py",
         "plugins/autonomous-dev/hooks/validate_command_file_ops.py",
         "plugins/autonomous-dev/hooks/validate_project_alignment.py",
-        "plugins/autonomous-dev/hooks/validate_session_quality.py",
-        "plugins/autonomous-dev/hooks/enforce_regression_test.py"
+        "plugins/autonomous-dev/hooks/validate_session_quality.py"
       ],
       "target": ".claude/hooks"
     },

@@ -147,6 +147,14 @@
         "added_issue": "#566",
         "location": "plugins/autonomous-dev/hooks/genai_utils.py"
       },
+      "conversation_archiver": {
+        "classification": "process-requirement",
+        "rationale": "Conversation archiving is an analytics and audit trail requirement independent of model behavior",
+        "removal_criteria": null,
+        "review_status": "initial",
+        "added_issue": "#773",
+        "location": "plugins/autonomous-dev/hooks/conversation_archiver.py"
+      },
       "setup": {
         "classification": "process-requirement",
         "rationale": "Setup hook is installation infrastructure",
