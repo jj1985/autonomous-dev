@@ -14,19 +14,34 @@ Development harness for Claude Code. Deterministic enforcement, specialist agent
 
 ## Build & Test
 
+Testing uses the **Diamond Model** (not traditional TDD pyramid). Acceptance criteria drive testing; unit tests are regression locks, not specifications. See [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md).
+
 ```bash
-# Run full test suite (from repo root)
+# Run full deterministic suite (unit + integration + regression + security + property)
 pytest --tb=short -q
 
 # Run specific test file
 pytest tests/unit/hooks/test_native_tool_auto_approval.py -v
 
-# Run with coverage
-pytest --cov=plugins/autonomous-dev/hooks --cov=plugins/autonomous-dev/lib --cov-report=term-missing
+# Run by layer
+pytest tests/unit/                    # Layer 2: Unit tests (regression locks)
+pytest tests/property/                # Layer 3: Property-based invariants (Hypothesis)
+pytest tests/integration/             # Layer 4: Integration & contract tests
+pytest tests/regression/smoke/        # Fast critical-path smoke tests
+pytest tests/security/                # Security-specific tests
 
-# GenAI tests (LLM-as-judge, not included in default runs)
-pytest tests/genai/ --genai
+# GenAI tests (LLM-as-judge, probabilistic — not in default runs)
+pytest tests/genai/ --genai           # Layer 5: Semantic validation (~$0.02/run)
+pytest tests/genai/ --genai --strict-genai  # Strict mode (no soft failures)
+
+# Property tests with CI thoroughness
+HYPOTHESIS_PROFILE=ci pytest tests/property/  # 200 examples per test (vs 50 default)
+
+# Coverage
+pytest --cov=plugins/autonomous-dev/hooks --cov=plugins/autonomous-dev/lib --cov-report=term-missing
 ```
+
+**Test directories → Diamond layers**: `tests/unit/` (L2), `tests/property/` (L3), `tests/integration/` + `tests/regression/` (L4), `tests/genai/` (L5), `tests/spec_validation/` (L5/L6).
 
 ## Architecture
 

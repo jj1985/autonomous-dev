@@ -154,6 +154,50 @@ Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](H
 
 ---
 
+## Testing Architecture
+
+autonomous-dev uses a **Diamond Model** — not the traditional TDD pyramid. Acceptance criteria drive testing; unit tests are regression locks, not specifications. See [TESTING-STRATEGY.md](TESTING-STRATEGY.md) for full details with research citations.
+
+### The Six Layers
+
+| Layer | What | Directory | Determinism | CI Gate? |
+|-------|------|-----------|-------------|----------|
+| 1. Type/Lint | Static analysis, formatting | Pre-commit hooks | 100% | Yes |
+| 2. Unit Tests | Individual functions in isolation | `tests/unit/`, `tests/regression/smoke/` | 100% | Yes |
+| 3. Property Invariants | Universal properties across all inputs (Hypothesis) | `tests/property/` (13 test files) | 100% | Yes |
+| 4. Integration/Contract | Components working together, API contracts | `tests/integration/`, `tests/regression/` | 100% | Yes |
+| 5. LLM-as-Judge | Semantic validation — does code match intent? | `tests/genai/` (55+ test files) | ~85% | Optional (`--genai`) |
+| 6. Acceptance Criteria | Business intent, user-defined "done" | PROJECT.md, issue criteria | Human-defined | Per feature |
+
+### Key Design Decisions
+
+- **Acceptance-first by default** (Issue #404): test-master writes specification-driven acceptance tests before implementation. `--tdd-first` flag reverts to legacy TDD.
+- **Spec-blind validation** (STEP 8.5, HARD GATE): spec-validator writes behavioral tests from acceptance criteria *without seeing the implementation*, then validates against it. Strict context boundary — no implementer output, no code diffs, no research.
+- **LLM-as-judge infrastructure**: `GenAIClient` in `tests/genai/conftest.py` — OpenRouter-backed, dual model (Gemini Flash + Haiku 4.5), 24h response caching, ~$0.02/run. Judge methods: `judge()` (holistic), `judge_analytic()` (per-criterion MET/UNMET), `judge_consistent()` (multi-round consensus).
+- **Property-based invariants**: Hypothesis library with profile-based example counts (50 default, 200 CI). Tier registry (`tier_registry.py`) is canonical source of truth for marker-to-directory mapping.
+- **Coverage Gap Assessment** (HARD GATE): test-master classifies changes into 8 categories, outputs gap summary showing required test types before writing any tests. Prevents over-testing and under-testing.
+- **Soft-failure thresholds**: `SoftFailureTracker` + `thresholds.json` + `--strict-genai` flag for GenAI tests (Issue #351).
+
+### GenAI Evaluation Types
+
+- **Congruence**: Do file pairs agree? (e.g., `implement.md` ↔ `implementer.md`)
+- **Architecture**: Do components match docs?
+- **Security posture**: No secrets, proper exit codes
+- **Doc completeness**: All components documented?
+- **Scaffold**: `/scaffold-genai-uat` generates LLM-as-judge test infrastructure for any repo
+
+### Why Not TDD?
+
+| Aspect | Traditional TDD (Pyramid) | Diamond Model |
+|--------|--------------------------|---------------|
+| Primary driver | Unit tests | Acceptance criteria |
+| Unit test role | Specification | Regression lock |
+| Generation order | Tests first → code | Criteria first → code + tests |
+| Agent gaming risk | High (agents game unit tests) | Low (can't game acceptance criteria) |
+| Determinism | 100% required | Mixed (deterministic floor + probabilistic middle) |
+
+---
+
 ## Performance Optimization
 
 **10 Phases Complete**:
