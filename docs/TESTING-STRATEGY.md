@@ -78,11 +78,21 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 - `tests/property/test_security_utils_properties.py` — path traversal, system path rejection, agent name validation invariants (Issue #509)
 - `tests/property/test_pipeline_state_properties.py` — state machine invariants: creation, re-entry prevention, skippable/non-skippable step enforcement, round-trip persistence (Issue #509)
 - `tests/property/test_tool_validator_properties.py` — blacklist, injection, always-allowed, unknown-tool classification invariants (Issue #509)
+- `tests/property/test_validation_properties.py` — validate_agent_name, validate_message, sanitize_path invariants (Issue #769)
+- `tests/property/test_failure_classifier_properties.py` — failure classification, severity normalization, roundtrip invariants (Issue #769)
+- `tests/property/test_prompt_integrity_properties.py` — shrinkage detection, baseline seeding, word-count monotonicity invariants (Issue #769)
+- `tests/property/test_tool_approval_audit_properties.py` — audit event structure, serialize/deserialize roundtrips (Issue #769)
+- `tests/property/test_quality_enforcer_properties.py` — circuit breaker threshold, denial count invariants (Issue #769)
+- `tests/property/test_runtime_aggregator_properties.py` — aggregation ordering, merge commutativity, data integrity invariants (Issue #769)
+- `tests/property/test_auto_approval_engine_properties.py` — policy evaluation invariants, tool classification monotonicity (Issue #769)
+- `tests/property/test_settings_generator_properties.py` — settings fix-then-validate roundtrips, deny-list structure invariants (Issue #769)
+- `tests/property/test_acceptance_criteria_parser_properties.py` — parser structural guarantees, extraction completeness (Issue #769)
+- `tests/property/test_math_utils_properties.py` — Fibonacci recurrence, scoring normalization, mathematical identities (Issue #769)
 - Hook exit code enforcement (hooks always exit 0 or 1, never hang)
 - Structure invariants (every hook in settings must exist on disk)
 - Manifest sync (install_manifest.json matches source files)
 
-**pytest integration**: `tests/property/` is auto-marked `property` + `slow` via `tests/conftest.py` directory markers. The marker-to-directory mapping is driven by `tier_registry.py` (Diamond Model tier registry — the canonical source of truth); `conftest.py` imports `build_directory_markers()` from it at startup. The `property` marker is registered in `pytest.ini`. Tests use `hypothesis` library with per-class `@settings(max_examples=200)`.
+**pytest integration**: `tests/property/` is auto-marked `property` + `slow` via `tests/conftest.py` directory markers. The marker-to-directory mapping is driven by `tier_registry.py` (Diamond Model tier registry — the canonical source of truth); `conftest.py` imports `build_directory_markers()` from it at startup. The `property` marker is registered in `pytest.ini`. Tests use `hypothesis` library with profile-based example counts: default profile (`max_examples=50` for fast local runs), CI profile (`max_examples=200`, `deadline=None` for thorough CI runs). Select via `HYPOTHESIS_PROFILE=ci pytest tests/property/`. Profiles registered in `tests/property/conftest.py`.
 
 **Research data**: Property-Generated Solver (PGS) framework shows +23-37% improvement in pass@1 over traditional TDD (arXiv 2506.18315). LLMs excel at discovering properties from function names, docstrings, and call patterns.
 

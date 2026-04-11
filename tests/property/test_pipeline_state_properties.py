@@ -119,6 +119,7 @@ class TestCreatePipelineInvariant:
 class TestPassedStepReentryInvariant:
     """PASSED steps cannot be re-entered via advance()."""
 
+    @example("reenter-01", Step.ALIGNMENT)
     @given(run_id=valid_run_id, step=all_steps)
     @settings(max_examples=200)
     def test_advance_after_passed_raises(self, run_id: str, step: Step) -> None:
@@ -202,6 +203,7 @@ class TestRunIdValidation:
         with pytest.raises(ValueError):
             get_state_path(run_id)
 
+    @example("valid-run-01")
     @given(run_id=valid_run_id)
     @settings(max_examples=200)
     def test_valid_run_id_accepted(self, run_id: str) -> None:
@@ -214,6 +216,7 @@ class TestRunIdValidation:
 class TestRoundTripInvariant:
     """save_pipeline() then load_pipeline() must preserve all fields."""
 
+    @example("roundtrip-01", "Test feature", "full")
     @given(run_id=valid_run_id, feature=feature_text, mode=pipeline_mode)
     @settings(max_examples=100)
     def test_save_load_roundtrip(self, run_id: str, feature: str, mode: str) -> None:

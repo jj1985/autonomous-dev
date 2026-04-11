@@ -873,6 +873,23 @@ finalize_to_session('$RUN_ID')
 
 # Git push (if AUTO_GIT_PUSH=true)
 git push origin $(git branch --show-current) 2>/dev/null || echo "Warning: Push failed"
+
+# Dependabot security tracking (non-blocking, Issue #767)
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+try:
+    from dependabot_tracker import run_dependabot_tracker, parse_owner_repo
+    import subprocess
+    remote = subprocess.check_output(['git', 'remote', 'get-url', 'origin'], text=True).strip()
+    parsed = parse_owner_repo(remote)
+    if parsed:
+        result = run_dependabot_tracker(*parsed)
+        if result['created'] > 0:
+            print(f'[dependabot-tracker] Created {result[\"created\"]} security tracking issue(s)')
+except Exception as e:
+    print(f'[dependabot-tracker] Skipped: {e}')
+" 2>/dev/null || true
+
 # Close GitHub issue (if feature references #NNN)
 COMMIT_SHA=$(git rev-parse --short HEAD)
 gh issue close <number> -c "Implemented in $COMMIT_SHA" 2>/dev/null || echo "Warning: Could not close issue"

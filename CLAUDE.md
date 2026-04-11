@@ -35,7 +35,7 @@ pytest tests/genai/ --genai
 - **Agents**: 15 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
 - **Skills**: 17 domain packages, progressively injected per-step to prevent context bloat
 
-Component counts: 15 agents, 17 skills, 22 commands, 28 hooks, 185 libraries.
+Component counts: 15 agents, 17 skills, 22 commands, 28 hooks, 186 libraries.
 
 ## Commands
 

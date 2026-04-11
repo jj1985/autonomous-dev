@@ -160,6 +160,43 @@ def test_config_roundtrip(config):
 **When to use**: Pure functions, roundtrips, idempotent operations, parsers.
 **When NOT to use**: Agent prompts (use GenAI judge), filesystem checks (use structural).
 
+#### PBT Candidate Selection — When to Use Property-Based Testing
+
+**Good candidates** (pure functions with testable invariants):
+- Input validation functions (validate_agent_name, validate_message, sanitize_*)
+- Scoring/normalization functions (normalize_severity, compute_priority)
+- Serialize/deserialize roundtrips (settings fix-then-validate, JSON encode/decode)
+- Set operations and state machines (circuit breaker threshold, denial counts)
+- Mathematical functions with known identities (Fibonacci recurrence)
+- Parsers with structural guarantees (acceptance criteria extraction)
+
+**Bad candidates** (avoid PBT for these):
+- Agent prompt behavior — use GenAI judge tests instead; Hypothesis cannot meaningfully generate LLM prompts
+- File system operations — use structural tests with tmp_path; filesystem side effects break Hypothesis shrinking
+- Config values with fixed schemas — use structural tests; config is a fixed schema, not a property space
+- Network/API calls — mock these in unit tests; PBT should test pure computation only
+
+**Strategy rules**:
+- Define all strategies as module-level constants (never inline in test functions)
+- Use `.filter()` instead of `assume()` for filtering invalid inputs
+- Always add `@example()` decorators with known edge cases alongside `@given()`
+
+#### Hypothesis Profile Configuration
+
+Configure profiles via `HYPOTHESIS_PROFILE` environment variable:
+
+```bash
+# Default (local development): 50 examples per test
+pytest tests/property/ -v
+
+# CI mode: 200 examples per test, no deadline
+HYPOTHESIS_PROFILE=ci pytest tests/property/ -v
+```
+
+Profiles are registered in `tests/property/conftest.py`:
+- `default`: `max_examples=50` (fast local iteration)
+- `ci`: `max_examples=200`, `deadline=None` (thorough CI runs)
+
 ---
 
 ## Anti-Patterns (NEVER do these)
@@ -350,6 +387,66 @@ An independent agent writes behavioral tests from the spec/acceptance criteria O
 The spec-validator adds value because it is structurally blind to implementation details. Even if the implementer writes comprehensive unit tests, those tests are influenced by HOW the code was written. The spec-validator tests WHAT the spec requires.
 
 **Verdict**: Binary only. `SPEC-VALIDATOR-VERDICT: PASS` or `SPEC-VALIDATOR-VERDICT: FAIL`. No partial credit.
+
+---
+
+## Mutation Testing
+
+Mutation testing validates that your tests actually catch real bugs, not just exercise code paths. Coverage metrics give false confidence; mutation testing proves test quality.
+
+### What It Is
+
+mutmut introduces small code changes (mutants) — flipping `<` to `<=`, `True` to `False`, `+` to `-` — and checks if your tests detect them. If a test suite still passes after a mutation, that mutant "survived" and your tests have a gap.
+
+### When to Use
+
+- After reaching 80%+ coverage on a module, to verify test quality
+- When reviewing critical security or state-management code
+- As a complement to the diamond test model (mutation testing measures test effectiveness, not code coverage)
+
+### How to Run
+
+```bash
+# Run against three critical files (default)
+bash scripts/run_mutation_tests.sh
+
+# Run against a single file
+bash scripts/run_mutation_tests.sh --file plugins/autonomous-dev/lib/pipeline_state.py
+
+# Run in CI mode (summary output, non-blocking)
+bash scripts/run_mutation_tests.sh --ci
+
+# Run against all of lib/
+bash scripts/run_mutation_tests.sh --all
+```
+
+### Score Targets
+
+- **70%+ mutation score** on critical files (`pipeline_state.py`, `tool_validator.py`, `settings_generator.py`)
+- Focus on killing conditional, arithmetic, and boolean mutants
+- Do NOT chase equivalent mutants (see below)
+
+### Equivalent Mutant Triage
+
+Not all surviving mutants indicate test gaps. Some mutations produce functionally equivalent code:
+
+**Low-value (skip these)**:
+- String literal changes (`"error"` to `"XXerrorXX"`) — rarely affects behavior
+- Magic number changes (unless they are thresholds)
+- Return value mutations on void-like functions
+
+**High-value (kill these)**:
+1. **Conditional mutations** (`<` to `<=`, `==` to `!=`) — missing boundary tests
+2. **Arithmetic mutations** (`+` to `-`, `*` to `/`) — missing calculation tests
+3. **Boolean mutations** (`True` to `False`, `and` to `or`) — missing logic tests
+
+### Integration with Diamond Test Model
+
+Mutation testing is orthogonal to the test tier system. It measures test quality (do tests catch bugs?) rather than test coverage (does code run?). Use it as a quality-of-tests metric:
+
+- **Unit tests** (T3): Primary targets for mutation testing — pure functions with clear boundaries
+- **Integration tests** (T1): Less useful for mutation testing — too slow per mutant
+- **GenAI tests** (T0): Not applicable — mutation testing targets deterministic logic only
 
 ---
 
