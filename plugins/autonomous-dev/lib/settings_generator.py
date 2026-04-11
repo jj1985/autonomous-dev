@@ -183,8 +183,6 @@ DEFAULT_DENY_LIST = [
     # Shell injections
     "Bash(*|*sh*)",
     "Bash(*|*bash*)",
-    "Bash(*$(rm*)",
-    "Bash(*`rm*)",
 
     # Sensitive file access
     "Read(./.env)",

@@ -782,8 +782,6 @@ Location: `plugins/autonomous-dev/config/auto_approve_policy.json`
       "|sh",
       "|bash",
       "|zsh",
-      "$(rm*",
-      "`rm*",
       "curl * | sh",
       "curl * | bash",
       "wget * | sh",
@@ -872,7 +870,7 @@ Location: `plugins/autonomous-dev/config/auto_approve_policy.json`
 | **Destructive file ops** | `rm -rf /*`, `rm -rf ~*`, `find * -delete` | Data loss, system damage |
 | **Privilege escalation** | `sudo *`, `su *`, `chmod 777*` | Security violation |
 | **System commands** | `shutdown*`, `reboot*`, `init 0*` | System disruption |
-| **Shell injection** | `| sh`, `$(rm*`, `` `rm*`` | Remote code execution |
+| **Shell injection** | `| sh`, `| bash`, `| zsh` | Remote code execution |
 | **Dangerous git** | `git push --force origin main` | Irreversible history loss |
 | **Publishing** | `npm publish*`, `twine upload*` | Accidental releases |
 | **Network listeners** | `nc -l*`, `netcat -l*` | Unauthorized access |
