@@ -171,7 +171,7 @@ autonomous-dev uses a **diamond testing model** — not the traditional testing 
 | Unit Tests | `tests/unit/`, `tests/regression/smoke/` | 100% | Yes |
 | Properties | `tests/property/` (Hypothesis), hook invariants, manifest sync, structure checks | 100% | Yes |
 | Integration | `tests/integration/`, hook wiring tests | 100% | Yes |
-| LLM-as-Judge | `tests/genai/` (16+ files) | ~85% | Optional |
+| LLM-as-Judge | `tests/genai/` (52 test files) | ~85% | Optional |
 | Acceptance | PROJECT.md, issue criteria, GenAI UAT | Human-defined | Per feature |
 
 ---

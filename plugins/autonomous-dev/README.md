@@ -1,67 +1,69 @@
 # autonomous-dev Plugin
 
-**AI-Powered Development Pipelines for Claude Code**
+**A Development Harness for Claude Code**
 
-Version 3.44.0 | 22 Agents | 28 Skills | 67 Hooks | 143 Libraries | 24 Commands
+15 Agents | 17 Skills | 22 Hooks | 196 Libraries | 22 Commands
 
-Stop writing buggy code. Start shipping production-ready features with autonomous development workflows that validate, test, and secure your code automatically.
+Deterministic enforcement, specialist agents, and alignment gates that wrap Claude Code with a full software development lifecycle.
 
 ---
 
-## Quick Start (5 Minutes)
+## Quick Start
 
 ```bash
 # Install
 bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/master/install.sh)
 
-# First install: Restart Claude Code (Cmd+Q / Ctrl+Q), wait 5 seconds, reopen
-# Subsequent updates: run /reload-plugins (reloads commands, agents, skills)
-# Note: /reload-plugins does NOT reload hooks or settings — use full restart for those
+# Restart Claude Code (Cmd+Q / Ctrl+Q), wait 5 seconds, reopen
 
 # Verify installation
 /health-check
 
-# Optional: Create PROJECT.md for goal alignment
+# Create PROJECT.md for goal alignment
 /setup
 ```
-
-**That's it.** You're ready to ship production code.
 
 ---
 
 ## What You Get
 
-### 8-Agent Development Pipeline
+### Acceptance-First Development Pipeline
 
 One command triggers a complete quality workflow:
 
 ```bash
-/implement Add user authentication with JWT tokens
+/implement "#72"              # From GitHub issue
+/implement "Add user auth"    # From description
 ```
 
 **The pipeline automatically:**
-1. **Validates alignment** against PROJECT.md goals
-2. **Researches patterns** in your codebase
+1. **Validates alignment** against PROJECT.md goals (blocks if misaligned)
+2. **Researches patterns** in your codebase and web (parallel)
 3. **Plans architecture** for the feature
-4. **Writes failing tests** first (TDD)
-5. **Implements code** to pass tests
-6. **Reviews code quality** (parallel)
-7. **Audits security** (parallel, OWASP CWE checks)
-8. **Updates documentation** (parallel)
-9. **Commits, pushes, creates PR** (optional, consent-based)
+4. **Writes acceptance tests** that define what "done" means
+5. **Implements code + unit tests** to satisfy acceptance criteria
+6. **Validates against spec** — spec-validator writes behavioral tests from criteria only, without seeing implementation (HARD GATE)
+7. **Reviews code quality** + **audits security** + **updates docs** (parallel or ordered)
+8. **Commits, pushes, closes issue** (consent-based)
 
-**Result**: Production-ready code in 15-25 minutes with 94% test coverage, 0.3% security issues, 2% documentation drift.
+**Result**: Production-ready code in 15-25 minutes.
 
-### Quality Metrics
+### Pipeline Modes
 
-| Metric | Without Pipeline | With `/implement` |
-|--------|-----------------|-------------------|
-| Bug rate | 23% | **4%** |
-| Security issues | 12% | **0.3%** |
-| Documentation drift | 67% | **2%** |
-| Test coverage | 43% | **94%** |
+```bash
+/implement "#72"              # Full pipeline (default) — acceptance-first
+/implement --light "#72"      # Light pipeline — docs/config/simple changes
+/implement --tdd-first "#72"  # TDD-first — unit tests before implementation
+/implement --fix "#72"        # Fix mode — minimal pipeline for test fixes
+```
 
-**85% of issues caught before commit.**
+### Batch Processing
+
+```bash
+/implement --issues 72 73 74 75    # Multiple GitHub issues with worktree isolation
+/implement --batch backlog.txt     # From a file (one feature per line)
+/implement --resume <batch-id>     # Resume after context reset
+```
 
 ---
 
@@ -74,16 +76,14 @@ bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/mas
 ```
 
 **What it installs:**
-- Global infrastructure: `~/.claude/hooks/` (67 files), `~/.claude/lib/` (143 files), `~/.claude/settings.json`
+- Global infrastructure: `~/.claude/hooks/` (22 hooks), `~/.claude/lib/` (196 libraries), `~/.claude/settings.json`
 - Project files: `.claude/commands/`, `.claude/agents/`, `.claude/skills/`
 - Git hooks: Pre-commit validation, auto-formatting
 
 **After installation:**
 ```bash
-# First install: Fully quit and restart Claude Code
+# Fully quit and restart Claude Code
 # Press Cmd+Q (Mac) or Ctrl+Q (Windows/Linux), wait 5 seconds before reopening
-# Subsequent updates: run /reload-plugins (reloads commands, agents, skills)
-# Note: /reload-plugins does NOT reload hooks or settings — use full restart for those
 
 # Verify
 /health-check
@@ -99,153 +99,138 @@ cd autonomous-dev
 # Run installation script
 bash install.sh
 
-# First install: Restart Claude Code (Cmd+Q / Ctrl+Q)
-# Subsequent updates: /reload-plugins (does NOT reload hooks/settings)
+# Restart Claude Code (Cmd+Q / Ctrl+Q)
+```
+
+### Update
+
+```bash
+/sync                  # Auto-detect context
+/sync --github         # Fetch from GitHub
 ```
 
 ### Uninstallation
 
 ```bash
-# Preview what will be removed
-/sync --uninstall
-
-# Remove with backup
-/sync --uninstall --force
-
-# Remove project files only (keep global ~/.claude/)
-/sync --uninstall --force --local-only
+/sync --uninstall              # Preview what will be removed
+/sync --uninstall --force      # Remove with backup
 ```
 
 ---
 
-## Core Commands
+## Commands
 
-### /implement - Full Pipeline
-
-Smart code implementation with three modes:
-
-**Full Pipeline (default)**: 8-agent workflow with validation, testing, security
-```bash
-/implement Add user authentication with JWT tokens
-```
-
-**Fix Mode**: Minimal pipeline for test-fixing tasks (implementer + reviewer + doc-master)
-```bash
-/implement --fix Fix failing test_authentication tests
-```
-
-**Batch Mode**: Process multiple features from file or GitHub issues
-```bash
-# From file
-/implement --batch features.txt
-
-# From GitHub issues
-/implement --issues 72 73 74
-
-# Resume after crash
-/implement --resume batch-20260110-143022
-```
-
-**Smart Features:**
-- Dependency analysis: Reorders features based on requirements
-- Crash recovery: Resume from exact failure point
-- Automatic retry: Transient errors (network, rate limits) retry automatically
-- Per-feature git: Each feature commits separately
-- Issue auto-close: GitHub issues closed with summary comment
-
-### /setup - Interactive PROJECT.md Creation
+### Implementation
 
 ```bash
-/setup
+/implement "#72"                    # Full pipeline (default)
+/implement --light "#72"            # Light mode for docs/config
+/implement --tdd-first "#72"        # Legacy TDD-first mode
+/implement --fix "#72"              # Minimal fix pipeline
+/implement --issues 72 73 74        # Batch from GitHub issues
+/implement --batch features.txt     # Batch from file
+/implement --resume <batch-id>      # Resume after crash/clear
 ```
 
-Creates `.claude/PROJECT.md` with guided wizard for defining:
-- **GOALS**: What you're building and why
-- **SCOPE**: What's included and excluded
-- **CONSTRAINTS**: Technical and business limits
-- **ARCHITECTURE**: High-level design decisions
-
-**Why this matters**: Every `/implement` validates alignment against PROJECT.md to prevent scope drift and feature misalignment.
-
-### /align - Validate Alignment
+### Project Management
 
 ```bash
-/align              # Check project goal alignment
-/align --claude     # Validate CLAUDE.md vs codebase
-/align --retrofit   # Generate PROJECT.md from existing code
+/status                  # View PROJECT.md goal progress
+/align                   # Check alignment (--project, --docs, --retrofit)
+/create-issue "..."      # Create GitHub issue with automated research (--quick)
+/plan-to-issues          # Batch-convert plan mode output into GitHub issues (--quick)
+/health-check            # Verify plugin installation
+/setup                   # Interactive PROJECT.md creation
 ```
 
-### /advise - Critical Analysis
+### Quality & Analysis
 
 ```bash
-/advise Should we migrate to microservices architecture?
+/audit                   # Quality audit (--quick, --security, --docs, --code, --tests)
+/refactor                # Code, docs, and test optimization (--tests, --docs, --code, --fix, --quick)
+/sweep                   # Quick codebase hygiene (alias for /refactor --quick); --tests for test pruning
+/advise                  # Critical thinking analysis — validates alignment, challenges assumptions
+/improve                 # Automation health analysis (--auto-file to create GitHub issues)
+/retrospective           # Session drift detection and alignment updates
+/skill-eval              # Measure skill effectiveness via behavioral delta scoring (--quick, --skill, --update)
+/autoresearch            # Autonomous experiment loop — hypothesize, modify, benchmark, commit or revert
 ```
 
-Provides critical thinking analysis:
-- Validates alignment with project goals
-- Challenges assumptions
-- Identifies risks and trade-offs
-- Recommends alternatives
-
-### /create-issue - Research-Backed Issues
+### Other
 
 ```bash
-/create-issue Add Redis caching layer
+/sync                    # Update plugin (--github, --env, --all, --uninstall)
+/worktree                # Git worktrees (--list, --status, --merge, --discard)
+/scaffold-genai-uat      # Scaffold LLM-as-judge tests into any repo
+/mem-search              # Search persistent memory
 ```
 
-Creates GitHub issues with:
-- Automatic research for similar patterns
-- Blocking duplicate detection
-- Architecture recommendations
-- Implementation guidance
+---
 
-### /audit-tests - Test Coverage Analysis
+## Architecture
 
-```bash
-/audit-tests
+### Three-Layer Harness
+
+autonomous-dev enforces process through three layers, each addressing a different failure mode:
+
+- **Hooks** (deterministic enforcement) — 22 hooks with JSON `{"decision": "block"}` hard gates. Run on every tool call, commit, and prompt. If the model tries to skip a step, it's physically blocked. Research-confirmed: prompt-level nudges produce unreliable compliance.
+
+- **Agents** (adversarial evaluation) — 15 specialist agents, each spawned with fresh context and constrained tools. The implementer never reviews its own work. A separate reviewer and security-auditor evaluate it. A spec-validator writes behavioral tests from acceptance criteria without seeing the implementation.
+
+- **Skills** (progressive context injection) — 17 domain knowledge packages injected only when relevant. Testing standards load during test writing. Security patterns load during security review. Prevents context bloat and drift.
+
+### Component Overview
+
+| Component | Count | Purpose |
+|-----------|-------|---------|
+| **Agents** | 15 | Specialist AI for each SDLC stage |
+| **Skills** | 17 | Domain expertise (progressive disclosure) |
+| **Hooks** | 22 | Deterministic enforcement and validation |
+| **Libraries** | 196 | Python utilities (security, validation, automation) |
+| **Commands** | 22 | Slash commands for workflows |
+
+### Agent Specialization
+
+**Model Tier Strategy (Cost-Optimized):**
+
+| Tier | Model | Agents | Purpose |
+|------|-------|--------|---------|
+| Tier 1 | Haiku | researcher-local, test-coverage-auditor, issue-creator | Fast pattern matching |
+| Tier 2 | Sonnet | researcher, reviewer, security-auditor, doc-master, continuous-improvement-analyst, retrospective-analyst, ui-tester, mobile-tester | Balanced reasoning |
+| Tier 3 | Opus | planner, implementer, test-master, spec-validator | Deep reasoning |
+
+### Hook Enforcement
+
+**22 hooks enforce quality without manual intervention:**
+
+| Hook Type | Trigger | What It Enforces |
+|-----------|---------|-----------------|
+| **PreToolUse** | Before tool execution | 4-layer MCP validation: Sandbox, MCP Security, Agent Auth, Batch Permission |
+| **PrePromptSubmit** | Before user prompt | Workflow discipline violations |
+| **PostToolUse** | After tool execution | Auto-format, auto-test, security scan, doc sync |
+| **PreCommit** | Before git commit | Project alignment, orchestrator enforcement, TDD, session quality |
+
+### Testing: The Diamond Model
+
+autonomous-dev uses a **diamond testing model** — not the traditional TDD pyramid. All 6 layers are implemented:
+
+```
+     /  Acceptance Criteria  \     Human-defined, LLM-as-judge evaluated
+    / LLM-as-Judge Eval Layer \    52 GenAI test files, ~85% human agreement
+   / Integration & Contract    \   Generated from acceptance criteria
+   \ Property-Based Invariants /   13 Hypothesis test files
+    \ Deterministic Unit Tests/    Regression locks, not specifications
+     \  Type System / Lints  /     Hard floor, zero tolerance
 ```
 
-Analyzes test coverage and identifies:
-- Untested code paths
-- Missing edge case tests
-- Low-coverage modules
-- Regression test opportunities
+**Key design decisions:**
+- **Acceptance-first by default** — acceptance tests define "done" before implementation starts
+- **Spec-blind validation** (HARD GATE) — spec-validator writes behavioral tests from criteria only, without seeing implementation
+- **Unit tests are regression locks**, not specifications — agents game unit tests; they can't game acceptance criteria
+- **Property-based invariants** catch bugs unit tests miss (+23-37% pass@1)
+- **LLM-as-judge evaluation** validates semantic intent
 
-### /sync - Plugin Updates
-
-```bash
-/sync              # Auto-detect context (GitHub or dev mode)
-/sync --github     # Fetch from GitHub marketplace
-/sync --plugin-dev # Sync local changes (for contributors)
-/sync --uninstall  # Remove plugin with backup
-```
-
-**Preserves repo-specific configs** (Issue #244):
-- All files in `.claude/local/` protected across sync operations
-- Use `.claude/local/OPERATIONS.md` for repo-specific procedures
-- Custom configurations never overwritten during updates
-
-### /worktree - Isolated Feature Development
-
-```bash
-/worktree create feature-auth    # Create isolated workspace
-/worktree list                   # Show all worktrees
-/worktree cleanup feature-auth   # Remove worktree
-```
-
-Batch mode uses worktrees automatically for isolation.
-
-### /health-check - Validate Installation
-
-```bash
-/health-check
-```
-
-Validates:
-- Plugin integrity (all components present)
-- Marketplace version (updates available)
-- Hook configuration
-- Library imports
+See [Testing Strategy](../../docs/TESTING-STRATEGY.md) for the full 6-layer model with research citations.
 
 ---
 
@@ -267,120 +252,19 @@ MCP_AUTO_APPROVE=true           # Auto-approve safe tool calls
 SANDBOX_ENABLED=true            # Command classification and sandboxing
 SANDBOX_PROFILE=development     # Options: development, testing, production
 
-# Model Configuration (default: tier-based)
-RESEARCHER_MODEL=claude-haiku-4.5      # Research agent (fast, cost-optimized)
-IMPLEMENTER_MODEL=claude-sonnet-4.5    # Implementation (balanced)
-SECURITY_MODEL=claude-opus-4.5         # Security audits (deep reasoning)
-
 # Observability (default: minimal)
 LOG_LEVEL=INFO                  # Options: DEBUG, INFO, WARNING, ERROR
-ENABLE_TELEMETRY=false          # Performance metrics
 ```
 
-### Git Automation Control
-
-**First-Run Consent**: Interactive prompt on first use (default: yes)
-
-**State Persistence**: User choice saved to `~/.autonomous-dev/user_state.json`
-
-**Workflow**: After `/implement` completes:
-```
-doc-master finishes → auto_git_workflow.py hook → commit-message-generator
-→ stage files → commit → push → create PR → close issue
-```
-
-**Disable git automation:**
-```bash
-# In .env
-AUTO_GIT_ENABLED=false
-
-# Or via environment variable
-export AUTO_GIT_ENABLED=false
-```
-
-### MCP Auto-Approval Control
-
-**What it does**: Automatically approves trusted tool operations (read files, run tests, format code)
+### MCP Auto-Approval
 
 **Impact**: Reduces permission prompts from 50+ to 8-10 (84% reduction)
 
 **4-Layer Security Architecture:**
 1. **Sandbox Enforcer**: Command classification (SAFE/BLOCKED/NEEDS_APPROVAL)
-2. **MCP Security Validator**: Path traversal, injection, SSRF prevention
+2. **MCP Security Validator**: Path traversal (CWE-22), injection (CWE-78), SSRF (CWE-918) prevention
 3. **Agent Authorization**: Pipeline agent detection
 4. **Batch Permission Approver**: Caches user consent for identical operations
-
-**Enable auto-approval:**
-```bash
-# In .env
-MCP_AUTO_APPROVE=true
-SANDBOX_ENABLED=true
-SANDBOX_PROFILE=development
-```
-
-**Security validations (always active):**
-- CWE-22: Path traversal prevention
-- CWE-78: Command injection blocking
-- CWE-918: SSRF prevention
-- Symlink rejection outside whitelist
-- Credential safety (never logged)
-- Audit logging to `logs/security_audit.log`
-
----
-
-## Architecture
-
-### Component Overview
-
-| Component | Count | Purpose |
-|-----------|-------|---------|
-| **Agents** | 22 | Specialized AI agents for development tasks |
-| **Skills** | 28 | Domain expertise (testing, security, python standards) |
-| **Hooks** | 66 | Automation triggers (pre-commit, pre-tool-use, etc.) |
-| **Libraries** | 122 | Reusable utilities (security, validation, automation) |
-| **Commands** | 24 | Slash commands for workflows |
-
-### Agent Specialization
-
-**Pipeline Agents (8):**
-- `researcher-local`: Pattern discovery in codebase
-- `planner`: Architecture design
-- `test-master`: TDD test generation
-- `implementer`: Code implementation
-- `reviewer`: Code quality analysis
-- `security-auditor`: OWASP vulnerability scanning
-- `doc-master`: Documentation synchronization
-- `issue-creator`: Research-backed GitHub issues
-
-**Utility Agents (14):**
-- Setup wizard, alignment checker, test auditor, git orchestrator, and more
-
-**Model Tier Strategy (Cost-Optimized):**
-| Tier | Model | Agents | Savings |
-|------|-------|--------|---------|
-| Tier 1 | Haiku | researcher, reviewer, doc-master | 40-60% cost reduction |
-| Tier 2 | Sonnet | implementer, test-master, planner | Balanced reasoning |
-| Tier 3 | Opus | security-auditor | Deep reasoning for security |
-
-### Automation Hooks
-
-**67 hooks enforce quality without manual intervention:**
-
-| Hook Type | Trigger | What It Prevents |
-|-----------|---------|------------------|
-| **PreToolUse** | Before tool execution | Path traversal, injection, SSRF attacks |
-| **PreCommit** | Before git commit | Failing tests, missing docs, security issues |
-| **SubagentStop** | After agent completes | Documentation drift from code changes |
-| **PrePromptSubmit** | Before user prompt | Workflow discipline violations |
-
-**Examples:**
-- Block commits with failing tests
-- Prevent `git push --force` to protected branches
-- Reject secrets accidentally staged
-- Validate CLAUDE.md alignment with codebase
-- Auto-format code before commit
-
-**Philosophy**: If you have to remember to check something, you'll eventually forget. Automate quality gates.
 
 ---
 
@@ -390,20 +274,19 @@ SANDBOX_PROFILE=development
 
 | Problem | Solution |
 |---------|----------|
-| Commands not appearing after install | Run `/reload-plugins`, or fully quit Claude Code (Cmd+Q / Ctrl+Q) if hooks/settings changed |
+| Commands not appearing after install | Fully quit Claude Code (Cmd+Q / Ctrl+Q) and reopen |
 | ModuleNotFoundError: autonomous_dev | Create symlink: `cd plugins && ln -s autonomous-dev autonomous_dev` |
 | Context budget exceeded | Run `/clear` after each feature |
-| Plugin changes not visible | Run `/sync --plugin-dev` then `/reload-plugins` (or full restart if hooks/settings changed) |
 | Hooks not running | Check `~/.claude/settings.json` for hook configuration |
 
 ### Installation Verification
 
 ```bash
 # Check what was installed
-echo "Hooks: $(ls ~/.claude/hooks/*.py 2>/dev/null | wc -l)"        # Should be ~66
-echo "Libs: $(ls ~/.claude/lib/*.py 2>/dev/null | wc -l)"           # Should be ~122
-echo "Commands: $(ls .claude/commands/*.md 2>/dev/null | wc -l)"    # Should be ~24
-echo "Agents: $(ls .claude/agents/*.md 2>/dev/null | wc -l)"        # Should be ~22
+echo "Hooks: $(ls ~/.claude/hooks/*.py 2>/dev/null | wc -l)"        # Should be ~22
+echo "Libs: $(ls ~/.claude/lib/*.py 2>/dev/null | wc -l)"           # Should be ~196
+echo "Commands: $(ls .claude/commands/*.md 2>/dev/null | wc -l)"    # Should be ~22
+echo "Agents: $(ls .claude/agents/*.md 2>/dev/null | wc -l)"        # Should be ~15
 
 # Test health check
 /health-check
@@ -412,9 +295,9 @@ echo "Agents: $(ls .claude/agents/*.md 2>/dev/null | wc -l)"        # Should be 
 ### Pipeline Issues
 
 **"/implement stops mid-way":**
-1. Check for test failures (step 4) - fix failing tests
-2. Check for security issues (step 6) - address vulnerabilities
-3. Context may be full - run `/clear` and retry
+1. Check for test failures (STEP 8 HARD GATE) — fix failing tests
+2. Check for security issues — address vulnerabilities
+3. Context may be full — run `/clear` and retry
 4. Check agent output for specific errors
 
 **"/implement --batch crashes":**
@@ -426,88 +309,42 @@ echo "Agents: $(ls .claude/agents/*.md 2>/dev/null | wc -l)"        # Should be 
 cat .claude/batch_state.json
 ```
 
-### Sync Issues
-
-**"/sync tries to fetch URL instead of executing":**
-```bash
-# Verify directive is in place
-grep "Do NOT fetch" .claude/commands/sync.md
-
-# Re-sync if missing
-/sync --plugin-dev
-
-# Run /reload-plugins (or full restart if hooks/settings changed)
-```
-
 ### Getting Help
 
 1. **Run health check**: `/health-check` validates plugin integrity
 2. **Check documentation**: See [full troubleshooting guide](docs/TROUBLESHOOTING.md)
 3. **Search issues**: [GitHub Issues](https://github.com/akaszubski/autonomous-dev/issues)
-4. **Open new issue**: Include error messages, OS, Python version, output of `/health-check`
 
 ---
 
 ## Best Practices
 
-### Context Management (CRITICAL!)
+### Context Management
 
-**Problem**: Without clearing context, token budget exceeds 50K+ after 3-4 features → System fails
-
-**Solution**: Clear context after each feature
+Run `/clear` after each feature to prevent context bloat:
 ```bash
-# Workflow
-/implement Add authentication    # Feature 1
-/clear                           # Clear context
-/implement Add notifications     # Feature 2
-/clear                           # Clear context
+/implement "#72"    # Feature 1
+/clear
+/implement "#73"    # Feature 2
+/clear
 ```
 
-**Why this matters**: Context stays under 8K tokens → Works for 100+ features
+Batch processing handles this automatically with worktree isolation and checkpoint/resume.
 
 ### Workflow Discipline
 
-**REQUIRED**: Use `/implement` for all code changes (not optional)
-
-**Exceptions** (direct implementation allowed):
+**Use `/implement` for all code changes.** Direct editing is only for:
 - Documentation updates (.md files only)
 - Config changes (.json, .yaml, .toml)
 - Typo fixes (1-2 lines, no logic changes)
 
-**Why this matters**: `/implement` catches 85% of issues before commit
-
 ### PROJECT.md-First Development
-
-**Define your intent once. Enforce it automatically.**
 
 Every `/implement` validates alignment against PROJECT.md:
 - Does this feature align with **GOALS**?
 - Is it within **SCOPE**?
 - Does it violate **CONSTRAINTS**?
 - Does it follow **ARCHITECTURE**?
-
-**Update PROJECT.md** when strategic direction changes (not for tactical tasks).
-
----
-
-## Contributing
-
-See [DEVELOPMENT.md](../../docs/DEVELOPMENT.md) for contributor setup and development workflow.
-
-**Quick start for contributors:**
-```bash
-# Clone repository
-git clone https://github.com/akaszubski/autonomous-dev.git
-cd autonomous-dev
-
-# Install in development mode
-bash install.sh
-
-# After making changes, resync
-./scripts/resync-dogfood.sh
-
-# Test changes immediately (no restart needed)
-```
 
 ---
 
@@ -517,10 +354,10 @@ bash install.sh
 |-------|-------------|
 | [CLAUDE.md](../../CLAUDE.md) | Project instructions and quick reference |
 | [Architecture](../../docs/ARCHITECTURE-OVERVIEW.md) | Technical architecture deep-dive |
-| [Agents](../../docs/AGENTS.md) | Agent pipeline and utility agents |
-| [Hooks](../../docs/HOOKS.md) | Automation hooks reference |
-| [Skills](../../docs/ARCHITECTURE-OVERVIEW.md) | Skills and agent integration |
-| [Workflow Discipline](../../docs/WORKFLOW-DISCIPLINE.md) | Why pipelines beat direct implementation |
+| [Testing Strategy](../../docs/TESTING-STRATEGY.md) | Diamond testing model (6 layers) |
+| [Agents](../../docs/AGENTS.md) | Agent pipeline and specialization |
+| [Hooks](../../docs/HOOKS.md) | 22 active hooks reference |
+| [Libraries](../../docs/LIBRARIES.md) | 196 Python utilities |
 | [Performance](../../docs/PERFORMANCE.md) | Benchmarks and optimization history |
 | [Git Automation](../../docs/GIT-AUTOMATION.md) | Zero manual git operations |
 | [Batch Processing](../../docs/BATCH-PROCESSING.md) | Multi-feature workflows |
@@ -534,7 +371,7 @@ bash install.sh
 - [Claude Code](https://claude.ai/code) 2.0+
 - macOS or Linux
 - Git
-- Python 3.8+
+- Python 3.9+
 - `gh` CLI (optional, for PR creation and issue management)
 
 ---
@@ -543,44 +380,30 @@ bash install.sh
 
 ### Automation > Reminders > Hope
 
-Quality should be automatic, not optional. autonomous-dev makes the right thing the easy thing:
+Quality should be automatic, not optional:
 
-- **Research** happens automatically before implementation
-- **Tests** are written first (TDD enforced)
+- **Acceptance criteria** define "done" before implementation starts
+- **Spec-blind validation** verifies behavior without seeing implementation
 - **Security** is scanned on every feature
 - **Documentation** stays in sync automatically
 - **Git operations** are orchestrated end-to-end
 - **Alignment** is validated against your stated intent
 
-You describe what you want. The pipeline handles the rest.
+### Three-Layer Enforcement
 
-### The 4-Layer Consistency Architecture
+| Layer | Mechanism | Purpose |
+|-------|-----------|---------|
+| **Hooks** | JSON `{"decision": "block"}` hard gates | Deterministic enforcement — can't be argued with |
+| **Agents** | Adversarial evaluation (generator/evaluator) | Independent review — implementer never self-approves |
+| **Skills** | Progressive context injection | Right knowledge at the right time — no context bloat |
 
-| Layer | Weight | Purpose |
-|-------|--------|---------|
-| **Hooks** | 10% | Deterministic blocking (secrets, force push) |
-| **CLAUDE.md** | 30% | Persuasion via data (this README) |
-| **Convenience** | 40% | Quality path is the easy path |
-| **Skills** | 20% | Agent expertise and knowledge |
-
-We don't force quality. We make it the path of least resistance.
+You describe what you want. The harness enforces every step.
 
 ---
 
 ## License
 
 MIT
-
----
-
-## Version Info
-
-- **Current version**: 3.44.0
-- **Agents**: 22 specialists
-- **Skills**: 28 domain expertise modules
-- **Hooks**: 66 automation triggers
-- **Libraries**: 122 reusable utilities
-- **Commands**: 24 slash commands
 
 ---
 
