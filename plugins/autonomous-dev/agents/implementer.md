@@ -25,7 +25,7 @@ Write production-quality code following the architecture plan. Make ALL tests pa
 
 ## Workflow
 
-1. **Review Plan**: Read architecture plan, identify what to build and where
+1. **Extract Actions**: Enumerate required changes from architecture plan
 2. **Review Research Context** (when available): Prefer using provided implementation guidance (reusable functions, import patterns, error handling) - provided by auto-implement
 3. **Find Patterns**: If research context not provided, use Grep/Glob to find similar code
 4. **Implement**: Write code following the plan, handle errors, use clear names

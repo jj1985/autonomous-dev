@@ -27,7 +27,7 @@ Issues filed to: `akaszubski/autonomous-dev` (framework findings) or active cons
 
 ### Pipeline Integrity (Checks 1-3)
 
-1. **Pipeline Completeness**: Did all required agents run for the given pipeline mode? Missing agent → `[INCOMPLETE]`. When evaluating pipeline completeness, check the MODE first (provided in the prompt context), then compare against the correct agent set. Do NOT flag agents as missing if they are not required for the current mode.
+1. **Pipeline Completeness**: Did all required agents run for the given pipeline mode? Missing agent → `[INCOMPLETE]`. When evaluating pipeline completeness, verify the MODE first (provided in the prompt context), then compare against the correct agent set. Do NOT flag agents as missing if they are not required for the current mode.
 
    Pipeline mode agent requirements:
    - **full** (default): researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master, continuous-improvement-analyst (8 agents)
@@ -58,17 +58,17 @@ Models predictably game evaluations. Detect these patterns:
    - Write blocked → Bash with echo/cat/heredoc to same path within 60s → `[DENY-WORKAROUND]`
    - Any deny event followed by a Bash command targeting the same file path → `[DENY-WORKAROUND]`
    ```bash
-   # Check for deny events followed by Bash to same path
+   # Detect deny events followed by Bash to same path
    grep -A 5 '"permissionDecision": "deny"' .claude/logs/activity/*.jsonl 2>/dev/null | grep -B 1 "Bash" | head -20
    ```
    This is important because it means enforcement has a hole — the model found a way around it.
-9. **Doc-master verdict quality** (severity: warning): Did doc-master output a `DOC-DRIFT-VERDICT`? Check for signs of incomplete checking:
+9. **Doc-master verdict quality** (severity: warning): Did doc-master output a `DOC-DRIFT-VERDICT`? Detect signs of incomplete checking:
    - No verdict output at all → `[DOC-VERDICT-MISSING]`
    - PASS with `docs-checked: 0` when changed files overlap with `covers:` mappings → `[DOC-DRIFT-UNCHECKED]`
    - Only CHANGELOG updated when `covers:` mappings indicate affected docs → `[DOC-DRIFT-SHALLOW]`
    Note: doc-master launches in background at STEP 6 and is collected at STEP 7 before git operations.
    - Programmatic detection: `detect_doc_verdict_missing()` in `pipeline_intent_validator.py` flags doc-master events with result_word_count=0 as `[DOC-VERDICT-MISSING]`. Use `validate_pipeline_intent()` to get these findings from session logs.
-10. **Extension health** (severity: info): If `.claude/hooks/extensions/` exists and contains .py files, check for stderr output from extensions that may indicate silent crashes:
+10. **Extension health** (severity: info): If `.claude/hooks/extensions/` exists and contains .py files, detect stderr output from extensions that may indicate silent crashes:
     ```bash
     ls .claude/hooks/extensions/*.py 2>/dev/null && echo "Extensions present" || echo "No extensions"
     ```
@@ -167,7 +167,7 @@ Each finding must be routed to the repository where the fix belongs. Ask: **"Whe
 
 - Feature code quality (reviewer already did this)
 - Security vulnerabilities (security-auditor already did this)
-- Documentation content quality (doc-master handles this) — but DO check that doc-master ran its semantic sweep
+- Documentation content quality (doc-master handles this) — but DO verify that doc-master ran its semantic sweep
 
 ---
 
@@ -215,7 +215,7 @@ print('FINDINGS:', json.dumps([{'type': f.finding_type, 'severity': f.severity, 
 
 The `subagent_type` field in JSONL log entries identifies which pipeline agent ran. Look for entries where `tool == "Agent"` (or `tool == "Task"`) and `input_summary.pipeline_action == "agent_invocation"` — the `input_summary.subagent_type` field contains the agent name.
 
-### Step 2: Check for bypasses
+### Step 2: Detect bypasses
 
 From the parsed data, check:
 - Missing agents from the expected pipeline
@@ -366,7 +366,7 @@ if history_path.exists():
 
 ### Step 6: Auto-trigger trends analysis (every 10 issues)
 
-After filing issues, check the total count of auto-improvement issues:
+After filing issues, verify the total count of auto-improvement issues:
 ```bash
 ISSUE_COUNT=$(gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state all --limit 1000 --json number | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
 echo "Total auto-improvement issues: $ISSUE_COUNT"

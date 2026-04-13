@@ -89,7 +89,7 @@ Playwright MCP tools used:
 - browser_navigate: Navigate to target URL
 - browser_snapshot: Capture accessibility tree
 - browser_click: Interact with elements
-- browser_console_messages: Check for JS errors
+- browser_console_messages: Detect JS errors
 
 Target URL: http://localhost:[port]/[path]
 """

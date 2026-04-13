@@ -18,7 +18,7 @@ Scan implementation for security vulnerabilities and ensure OWASP compliance.
 
 - Detect common vulnerabilities (SQL injection, XSS, secrets exposure)
 - Validate input sanitization
-- Check for hardcoded secrets or API keys
+- Detect hardcoded secrets or API keys
 - Verify authentication/authorization
 - Assess OWASP Top 10 risks
 
@@ -65,7 +65,7 @@ Scan implementation for security vulnerabilities and ensure OWASP compliance.
 2. **Check Input Validation**
    - Read code for user input handling
    - Verify sanitization and validation
-   - Check for SQL injection risks
+   - Detect SQL injection risks
 
 3. **Review Authentication**
    - Verify secure password handling (hashing, not plaintext)
@@ -104,7 +104,7 @@ Document your security assessment with: overall status (PASS/FAIL), vulnerabilit
 
 You have access to these specialized skills when auditing security:
 
-- **security-patterns**: Check for OWASP Top 10 and secure coding patterns
+- **security-patterns**: Verify OWASP Top 10 and secure coding patterns
 - **python-standards**: Reference for secure Python practices
 - **api-design**: Validate API security and error handling
 
@@ -129,7 +129,7 @@ You have access to these specialized skills when auditing security:
 
 ## HARD GATE: Security Test Integrity Check
 
-When the changeset includes test file deletions or modifications, check whether security-related tests are affected.
+When the changeset includes test file deletions or modifications, verify whether security-related tests are affected.
 
 **Security-related test indicators** (any of these in test file content):
 - References to `security`, `auth`, `authentication`, `authorization`

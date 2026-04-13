@@ -709,6 +709,11 @@ def validate_pipeline_ordering(tool_name: str, tool_input: Dict) -> Tuple[str, s
         launched = get_launched_agents(session_id, issue_number=issue_number)
         mode = get_validation_mode(session_id)
 
+        # SKIP_PYTEST_GATE escape hatch (Issue #838)
+        skip_pytest = os.environ.get("SKIP_PYTEST_GATE", "").strip().lower()
+        if skip_pytest in ("1", "true", "yes"):
+            completed.add("pytest-gate")
+
         # Issue #697: Read pipeline_mode from state file to filter prerequisites.
         # In --fix mode, planner is not part of the pipeline, so the
         # planner->implementer prerequisite must be skipped.
@@ -1988,13 +1993,40 @@ def _check_batch_doc_master_completions(session_id: str) -> "Optional[str]":
         if all_passed:
             return None
 
-        missing_str = ", ".join(f"#{n}" for n in missing_doc_master)
+        # Differentiate "never ran" vs "ran but no valid verdict" (Issue #837).
+        # Read the raw state to inspect verdict fields for each missing issue.
+        never_ran: list[int] = []
+        no_verdict: list[int] = []
+        try:
+            if hasattr(mod, "_read_state"):
+                raw_state = mod._read_state(session_id)
+                completions = raw_state.get("completions", {}) if raw_state else {}
+                for issue_num in missing_doc_master:
+                    issue_data = completions.get(str(issue_num), {})
+                    if isinstance(issue_data, dict) and issue_data.get("doc-master"):
+                        no_verdict.append(issue_num)
+                    else:
+                        never_ran.append(issue_num)
+            else:
+                never_ran = list(missing_doc_master)
+        except Exception:
+            never_ran = list(missing_doc_master)
+
+        parts: list[str] = []
+        if never_ran:
+            never_ran_str = ", ".join(f"#{n}" for n in never_ran)
+            parts.append(f"doc-master never ran: {never_ran_str}")
+        if no_verdict:
+            no_verdict_str = ", ".join(f"#{n}" for n in no_verdict)
+            parts.append(f"doc-master ran but produced no valid verdict: {no_verdict_str}")
+
+        detail = "; ".join(parts) if parts else ", ".join(f"#{n}" for n in missing_doc_master)
         return (
-            f"BLOCKED: Batch doc-master gate — issues missing doc-master: "
-            f"{missing_str}. All batch issues MUST have doc-master completion before git commit. "
+            f"BLOCKED: Batch doc-master gate — {detail}. "
+            f"All batch issues MUST have doc-master completion with a valid verdict before git commit. "
             f"REQUIRED NEXT ACTION: Run the doc-master agent for "
             f"the missing issues before committing. "
-            f"Set SKIP_BATCH_DOC_MASTER_GATE=1 to bypass. (Issue #786)"
+            f"Set SKIP_BATCH_DOC_MASTER_GATE=1 to bypass. (Issue #786, #837)"
         )
     except Exception:
         return None  # Fail-open
@@ -2915,6 +2947,153 @@ def _check_bash_state_deletion(command: str) -> "Optional[Tuple[str, str]]":
     return None
 
 
+def _check_spec_test_deletion_scope(file_path: str) -> "Optional[Tuple[str, str]]":
+    """Check if a spec validation test deletion is outside the current batch scope.
+
+    Spec validation tests (tests/spec_validation/test_spec_issue{N}_*.py) are
+    scoped to the issue that created them. Deleting a spec test from a different
+    issue is blocked unless the escape hatch env var is set.
+
+    Args:
+        file_path: Path to the file being deleted or overwritten.
+
+    Returns:
+        None if the operation is allowed, or (file_path, block_reason) if blocked.
+    """
+    import re
+
+    try:
+        # Escape hatch
+        skip_guard = os.getenv("SKIP_SPEC_DELETION_GUARD", "").lower()
+        if skip_guard in ("1", "true", "yes"):
+            return None
+
+        # Normalize path to handle traversal
+        resolved = Path(file_path).resolve()
+        name = resolved.name
+
+        # Only guard files in tests/spec_validation/
+        resolved_str = str(resolved)
+        if "tests/spec_validation/" not in resolved_str and "tests/spec_validation\\" not in resolved_str:
+            return None
+
+        # Extract issue number from filename pattern: test_spec_issue{N}_*.py
+        match = re.match(r'test_spec_issue(\d+)_', name)
+        if not match:
+            return None  # Not an issue-scoped spec test (e.g. test_spec_tautological_assertions.py)
+
+        spec_issue = int(match.group(1))
+
+        # Get current pipeline issue
+        current_issue = _get_current_issue_number()
+
+        # Fail open when no pipeline context
+        if current_issue == 0:
+            return None
+
+        # Allow if same issue
+        if spec_issue == current_issue:
+            return None
+
+        # Block: different issue
+        block_reason = (
+            f"BLOCKED: Deletion of spec test '{name}' denied (Issue #790). "
+            f"This test belongs to issue #{spec_issue} but current pipeline is issue #{current_issue}. "
+            f"Spec validation tests are scoped to their originating issue. "
+            f"REQUIRED NEXT ACTION: If this test is truly obsolete, move it to tests/archived/ "
+            f"instead of deleting it. Run: mv {file_path} tests/archived/"
+        )
+        return (file_path, block_reason)
+
+    except Exception:
+        pass  # Fail-open: never block legitimate commands on detection errors
+
+    return None
+
+
+def _extract_bash_spec_test_targets(command: str) -> "list[str]":
+    """Extract spec validation test file paths targeted by a Bash command.
+
+    Detects rm, unlink, truncate, redirect-to-empty, Python os.remove/Path.unlink,
+    and mv commands that move spec tests outside tests/archived/.
+
+    Args:
+        command: The Bash command string to inspect.
+
+    Returns:
+        List of file paths targeting spec validation tests.
+    """
+    import re
+
+    targets = []
+
+    try:
+        # Helper to check if a path looks like a spec test
+        def _is_spec_test_path(path: str) -> bool:
+            path = path.strip().strip("'\"")
+            return bool(
+                ("spec_validation" in path or "test_spec_issue" in path)
+                and re.search(r'test_spec_issue\d+_', path)
+            )
+
+        # 1. rm [-flags] <paths>
+        rm_pattern = r'\brm\s+(?:-[^\s]+\s+)*([^\s;&|]+(?:\s+[^\s;&|]+)*)'
+        for match in re.finditer(rm_pattern, command):
+            for token in match.group(1).split():
+                token = token.strip("'\"")
+                if _is_spec_test_path(token):
+                    targets.append(token)
+
+        # 2. unlink <path>
+        unlink_pattern = r'\bunlink\s+([^\s;&|]+)'
+        for match in re.finditer(unlink_pattern, command):
+            target = match.group(1).strip("'\"")
+            if _is_spec_test_path(target):
+                targets.append(target)
+
+        # 3. truncate [-flags [value]] <path>
+        truncate_pattern = r'\btruncate\s+(?:(?:-\w+\s+\S+\s+)|(?:--\w+=\S+\s+))*([^\s;&|]+)'
+        for match in re.finditer(truncate_pattern, command):
+            target = match.group(1).strip("'\"")
+            if _is_spec_test_path(target):
+                targets.append(target)
+
+        # 4. Redirect-to-empty: > /path/to/file
+        empty_redirect_pattern = r'(?:^|;|&&|\|\|)\s*>\s*([^\s;&|]+)'
+        for match in re.finditer(empty_redirect_pattern, command):
+            target = match.group(1).strip("'\"")
+            if _is_spec_test_path(target):
+                targets.append(target)
+
+        # 5. Python os.remove / os.unlink / Path.unlink
+        py_delete_patterns = [
+            r'os\.remove\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
+            r'os\.unlink\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
+            r'Path\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)\.unlink',
+        ]
+        for py_pat in py_delete_patterns:
+            for match in re.finditer(py_pat, command, re.IGNORECASE):
+                target = match.group(1).strip()
+                if _is_spec_test_path(target):
+                    targets.append(target)
+
+        # 6. mv to NON-archived location (mv to tests/archived/ is allowed)
+        mv_pattern = r'\bmv\s+(?:-[^\s]+\s+)*([^\s;&|]+)\s+([^\s;&|]+)'
+        for match in re.finditer(mv_pattern, command):
+            source = match.group(1).strip("'\"")
+            dest = match.group(2).strip("'\"")
+            if _is_spec_test_path(source):
+                # Allow mv to tests/archived/
+                if "tests/archived" in dest:
+                    continue
+                targets.append(source)
+
+    except Exception:
+        pass  # Fail-open
+
+    return targets
+
+
 def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
     """Check if a Bash command writes to protected infrastructure paths.
 
@@ -3300,6 +3479,27 @@ def main():
                         except Exception:
                             pass  # Don't block on check failure
 
+                # Issue #790: Block deletion of spec validation tests outside current batch scope.
+                # Detect Write with empty/whitespace content as a deletion vector.
+                if file_path and tool_name == "Write":
+                    try:
+                        content = tool_input.get("content", "")
+                        if isinstance(content, str) and content.strip() == "":
+                            spec_block = _check_spec_test_deletion_scope(file_path)
+                            if spec_block is not None:
+                                _log_deviation(spec_block[0], tool_name, "spec_test_deletion_scope_block")
+                                _log_pretool_activity(tool_name, tool_input, "deny", spec_block[1])
+                                output_decision(
+                                    "deny", spec_block[1],
+                                    system_message=(
+                                        f"BLOCKED: Spec test deletion outside batch scope. "
+                                        f"Move to tests/archived/ instead."
+                                    ),
+                                )
+                                sys.exit(0)
+                    except Exception:
+                        pass  # Fail-open: never block on detection errors
+
             # Bash command inspection: detect writes to protected paths (#502)
             if tool_name == "Bash":
                 command = tool_input.get("command", "")
@@ -3364,6 +3564,23 @@ def main():
                                 system_message="BLOCKED: Pipeline state file deletion during active pipeline.",
                             )
                             sys.exit(0)
+                    except Exception:
+                        pass  # Fail-open: never block on detection errors
+
+                    # Issue #790: Spec test deletion scope guard.
+                    # Block rm/unlink/mv of spec validation tests from other issues.
+                    try:
+                        _spec_targets = _extract_bash_spec_test_targets(command)
+                        for _spec_path in _spec_targets:
+                            _spec_block = _check_spec_test_deletion_scope(_spec_path)
+                            if _spec_block is not None:
+                                _log_deviation(_spec_block[0], tool_name, "spec_test_deletion_scope_block")
+                                _log_pretool_activity(tool_name, tool_input, "deny", _spec_block[1])
+                                output_decision(
+                                    "deny", _spec_block[1],
+                                    system_message="BLOCKED: Spec test deletion outside batch scope. Move to tests/archived/ instead.",
+                                )
+                                sys.exit(0)
                     except Exception:
                         pass  # Fail-open: never block on detection errors
 

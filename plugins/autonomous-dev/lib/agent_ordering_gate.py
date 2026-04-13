@@ -22,6 +22,7 @@ except ImportError:
         "planner": 3,
         "test-master": 4,
         "implementer": 5,
+        "pytest-gate": 5.5,
         "reviewer": 6.0,
         "security-auditor": 6.1,
         "doc-master": 6.0,
@@ -31,6 +32,9 @@ except ImportError:
         ("implementer", "reviewer"),
         ("implementer", "security-auditor"),
         ("implementer", "doc-master"),
+        ("pytest-gate", "reviewer"),
+        ("pytest-gate", "security-auditor"),
+        ("pytest-gate", "doc-master"),
         ("reviewer", "security-auditor"),
     ]
 
@@ -48,6 +52,7 @@ FULL_PIPELINE_AGENTS = {
     "researcher",
     "planner",
     "implementer",
+    "pytest-gate",
     "reviewer",
     "security-auditor",
     "doc-master",
@@ -57,6 +62,7 @@ FULL_PIPELINE_AGENTS = {
 LIGHT_PIPELINE_AGENTS = {
     "planner",
     "implementer",
+    "pytest-gate",
     "doc-master",
     "continuous-improvement-analyst",
 }
@@ -64,15 +70,16 @@ LIGHT_PIPELINE_AGENTS = {
 # Fix mode requires only the core fix agents
 FIX_PIPELINE_AGENTS = {
     "implementer",
+    "pytest-gate",
     "reviewer",
     "doc-master",
     "continuous-improvement-analyst",
 }
 
 # The sequential pair that is mode-dependent:
-# In sequential mode, security-auditor requires reviewer.
-# In parallel mode, this constraint is relaxed.
-MODE_DEPENDENT_PAIRS = {("reviewer", "security-auditor")}
+# Issue #838: reviewer->security-auditor moved to SEQUENTIAL_REQUIRED (always enforced).
+# No mode-dependent pairs remain, but keep the set for backward compatibility.
+MODE_DEPENDENT_PAIRS: set[tuple[str, str]] = set()
 
 # Core ordering prerequisites (always enforced regardless of mode):
 # These are derived from SEQUENTIAL_REQUIRED minus mode-dependent pairs.

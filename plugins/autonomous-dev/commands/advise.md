@@ -66,6 +66,11 @@ For every proposal, generate at least three alternatives:
 
 Use WebSearch if needed to research technology choices, trade-offs, or industry patterns relevant to the proposal.
 
+**Verification** — After generating all three alternatives, verify each one against these criteria:
+- Does it actually achieve the stated goal? (If not, replace it with one that does)
+- What specifically does it sacrifice vs. the original proposal?
+- Is the trade-off worth it for THIS project? (Check PROJECT.md constraints — e.g., if PROJECT.md requires local-first, a cloud alternative fails this criterion)
+
 ### STEP 5: Output Structured Recommendation
 
 Present the analysis using this exact format:
@@ -121,12 +126,15 @@ ALTERNATIVES
 
 1. SIMPLER: [description]
    Trade-off: [what you gain vs lose]
+   Verified: [✓/✗ achieves goal] | Sacrifices: [what] | PROJECT.md: [compatible/incompatible]
 
 2. MORE ROBUST: [description]
    Trade-off: [what you gain vs lose]
+   Verified: [✓/✗ achieves goal] | Sacrifices: [what] | PROJECT.md: [compatible/incompatible]
 
 3. HYBRID: [description]
    Trade-off: [what you gain vs lose]
+   Verified: [✓/✗ achieves goal] | Sacrifices: [what] | PROJECT.md: [compatible/incompatible]
 
 ------------------------------------------------------------
 RISK ASSESSMENT

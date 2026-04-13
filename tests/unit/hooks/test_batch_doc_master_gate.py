@@ -131,6 +131,83 @@ class TestCheckBatchDocMasterCompletions:
             assert all_passed is True
 
 
+    def test_block_reason_differentiates_never_ran_vs_no_verdict(self):
+        """Block reason distinguishes 'never ran' from 'ran but no verdict'. Issue #837."""
+        mock_mod = MagicMock()
+        # Issues 10 and 20 are missing; we need _read_state to distinguish them
+        mock_mod.verify_batch_doc_master_completions.return_value = (False, [5], [10, 20])
+        # Issue 10: doc-master ran (completion=True) but no valid verdict
+        # Issue 20: doc-master never ran (no completion)
+        mock_mod._read_state.return_value = {
+            "completions": {
+                "5": {"doc-master": True, "doc-master-verdict": "PASS"},
+                "10": {"doc-master": True, "doc-master-verdict": "SHALLOW"},
+                "20": {"implementer": True},
+            }
+        }
+
+        with patch("importlib.util.spec_from_file_location", return_value=MagicMock(loader=MagicMock())):
+            with patch("importlib.util.module_from_spec", return_value=mock_mod):
+                result = hook._check_batch_doc_master_completions("test-session")
+
+        assert result is not None
+        assert "never ran" in result.lower()
+        assert "no valid verdict" in result.lower()
+        assert "#20" in result  # never ran
+        assert "#10" in result  # no verdict
+
+    def test_block_reason_only_never_ran(self):
+        """When all missing issues never ran, only 'never ran' message appears. Issue #837."""
+        mock_mod = MagicMock()
+        mock_mod.verify_batch_doc_master_completions.return_value = (False, [], [30])
+        mock_mod._read_state.return_value = {
+            "completions": {
+                "30": {"implementer": True},
+            }
+        }
+
+        with patch("importlib.util.spec_from_file_location", return_value=MagicMock(loader=MagicMock())):
+            with patch("importlib.util.module_from_spec", return_value=mock_mod):
+                result = hook._check_batch_doc_master_completions("test-session")
+
+        assert result is not None
+        assert "never ran" in result.lower()
+        assert "no valid verdict" not in result.lower()
+
+    def test_block_reason_only_no_verdict(self):
+        """When all missing issues ran but have no verdict, only 'no valid verdict' appears. Issue #837."""
+        mock_mod = MagicMock()
+        mock_mod.verify_batch_doc_master_completions.return_value = (False, [], [40])
+        mock_mod._read_state.return_value = {
+            "completions": {
+                "40": {"doc-master": True, "doc-master-verdict": "MISSING"},
+            }
+        }
+
+        with patch("importlib.util.spec_from_file_location", return_value=MagicMock(loader=MagicMock())):
+            with patch("importlib.util.module_from_spec", return_value=mock_mod):
+                result = hook._check_batch_doc_master_completions("test-session")
+
+        assert result is not None
+        assert "no valid verdict" in result.lower()
+        assert "never ran" not in result.lower()
+
+    def test_block_reason_references_issue_837(self):
+        """Block reason should reference Issue #837."""
+        mock_mod = MagicMock()
+        mock_mod.verify_batch_doc_master_completions.return_value = (False, [], [50])
+        mock_mod._read_state.return_value = {
+            "completions": {"50": {"implementer": True}}
+        }
+
+        with patch("importlib.util.spec_from_file_location", return_value=MagicMock(loader=MagicMock())):
+            with patch("importlib.util.module_from_spec", return_value=mock_mod):
+                result = hook._check_batch_doc_master_completions("test-session")
+
+        assert result is not None
+        assert "#837" in result
+
+
 class TestBatchDocMasterGateIntegration:
     """Integration-style tests for the batch doc-master gate in hook flow."""
 

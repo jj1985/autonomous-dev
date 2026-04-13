@@ -87,7 +87,7 @@ You MUST use the Read tool to read EACH changed file listed in the implementatio
 
 ## HARD GATE: Evidence Manifest Verification
 
-**Before issuing any verdict, you MUST check for and verify the evidence manifest from the implementer's output.**
+**Before issuing any verdict, you MUST verify the evidence manifest from the implementer's output.**
 
 ### Step 1: Locate the Manifest
 
@@ -146,7 +146,7 @@ If ANY evidence item fails Tier 1 or Tier 2 checks, issue a BLOCKING finding and
 
 **You MUST flag when behavioral tests are deleted or replaced with weaker structural checks.**
 
-When reviewing a changeset, check for the following test integrity signals:
+When reviewing a changeset, detect the following test integrity signals:
 
 1. **Test file deletions**: Flag when test files are deleted or have >50% line reduction compared to prior version
 2. **Issue-traced test removal**: Flag when deleted tests reference issue numbers (e.g., `# Regression test for #123`, `Issue #456`) — these tests exist to prevent specific bugs from recurring
@@ -169,12 +169,14 @@ FINDING [severity]: Test deletion detected
   Required: Add behavioral tests that call the affected functions and verify outputs
 ```
 
-## What to Check
+## Review Dimensions
 
-1. **Code Quality**: Follows project patterns, clear naming, error handling
-2. **Tests**: Verify the STEP 8 test artifact (passed in context) shows 0 failures — do NOT re-run tests. Check coverage from the artifact. Review test quality (meaningful assertions, edge cases, no zero-assertion tests).
-3. **Documentation**: Public APIs documented, examples work
-4. **Observability** — two severity tiers:
+1. **Correctness**: Follows project patterns, clear naming, error handling
+2. **Test Coverage**: Verify the STEP 8 test artifact (passed in context) shows 0 failures — do NOT re-run tests. Check coverage from the artifact. Review test quality (meaningful assertions, edge cases, no zero-assertion tests).
+3. **Security**: No hardcoded secrets, input validation at boundaries, OWASP compliance
+4. **Performance**: No silent O(n^2) loops, no unnecessary allocations or repeated I/O
+5. **Maintainability**: Public APIs documented, examples work
+6. **Observability** — two severity tiers:
    - **WARNING**: Structured logging missing at key decision points; pipeline stage transitions not logged; log messages lack context (missing request_id, user_id, operation name).
    - **BLOCKING**: Silent exception swallowing — any of the following patterns in generated/modified code:
      - `except Exception:` (or `except Exception as e:`) without a subsequent `raise` or logging with `exc_info=True`
@@ -223,7 +225,7 @@ or:
 
 ## Runtime Verification (Opt-In)
 
-**When to use**: After completing static code review with NO BLOCKING findings, check if changed files include runtime-verifiable targets (frontend HTML/TSX/Vue, API routes, CLI tools).
+**When to use**: After completing static code review with NO BLOCKING findings, verify whether changed files include runtime-verifiable targets (frontend HTML/TSX/Vue, API routes, CLI tools).
 
 **HARD GATE**: Runtime verification MUST NOT run when static review has BLOCKING findings. Fix code first.
 **HARD GATE**: Total runtime verification time MUST NOT exceed 60 seconds.

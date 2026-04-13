@@ -48,7 +48,7 @@ Research existing patterns, best practices, and security considerations before i
    - Skip for standard tools: git, python, pytest, pip, npm, node, bash, docker, gh
 
 2. **Analysis**
-   - Synthesize findings from web sources
+   - Cross-reference findings against codebase patterns
    - Identify recommended approach with source URLs
    - Note security considerations (OWASP Top 10 relevance)
    - List alternatives with tradeoffs

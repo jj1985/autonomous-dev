@@ -68,7 +68,7 @@ For each affected doc:
 2. Read the changed source files that the doc covers
 3. Compare: Does the doc's prose still accurately describe the code's behavior?
 
-Look for:
+Classify each discrepancy into:
 - **Factual drift**: "The pipeline has 3 validation agents" when there are now 4
 - **Behavioral drift**: "Hooks block invalid tool calls" when the behavior was changed to warn
 - **Structural drift**: "Step 6 runs reviewer then security-auditor" when ordering changed
