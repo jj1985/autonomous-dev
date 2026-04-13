@@ -127,6 +127,20 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - Non-infrastructure paths (docs, config, test files) are unaffected — the guard only activates for the same `_is_protected_infrastructure()` paths that the base infrastructure gate covers
 - Fails open on all state file errors (`_record_agent_denial` swallows exceptions; `_check_agent_denial` returns `None` on any error) to avoid blocking legitimate work
 
+**Cross-Tool Write-to-Bash Workaround Detection** (Issue #803):
+- When a Write/Edit to a protected infrastructure file is denied, `_update_deny_cache(file_path)` is now called at both denial sites — the main infrastructure protection block and the Issue #750 agent-denial-workaround block — so the denied path is recorded in the deny cache at `/tmp/.claude_deny_cache.jsonl`
+- Subsequent Bash commands that attempt to write the same file (via heredoc, redirect, `tee`, `echo`, or Python `-c` write patterns) within the 60-second deny window are detected by extracting write targets with `_extract_bash_file_writes()` and checking each against `_check_deny_cache()`
+- A match within the 60-second window is blocked with a "cross-tool workaround detected" message including a `REQUIRED NEXT ACTION` directive
+- `_check_deny_cache(file_path)` now also falls back to basename matching (`Path.name`) when the full path does not match, handling cross-format path references (absolute vs relative)
+- Closes the bypass pattern where an agent switches from Write/Edit to a Bash heredoc after an infrastructure protection denial
+
+**Pipeline State File Deletion Guard** (Issue #804):
+- Detects `rm`, `unlink`, `truncate`, redirect-to-empty (`> file`), `python os.remove`/`os.unlink`/`Path.unlink` targeting pipeline state files during active pipeline runs
+- Protected state file patterns: `/tmp/implement_pipeline_state.json`, `/tmp/.claude_deny_cache.jsonl`, `/tmp/pipeline_completion_state_*.json`, `/tmp/pipeline_secrets/*`
+- `_check_bash_state_deletion(command)` is the detection function; `_is_state_file(path)` is the helper that matches a path against the protected patterns
+- Deleting state files during an active pipeline would bypass enforcement by clearing the ordering gate state, deny cache, or pipeline secrets — this guard closes that vector
+- Fails open: only fires when the pipeline is active (state file present); passes when no pipeline is running
+
 **GitHub Issue Creation Gate** (Issue #599):
 - Direct `gh issue create` in Bash is blocked outside approved contexts to enforce the `/create-issue` pipeline (research, duplicate detection, proper formatting)
 - Allow-through 1: an active `/implement` pipeline is present (`/tmp/implement_pipeline_state.json`)
