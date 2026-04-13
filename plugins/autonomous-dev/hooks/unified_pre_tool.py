@@ -594,15 +594,14 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
                     f"to reload the full agent prompt from disk and reconstruct with complete context.",
                 )
         else:
-            # No baseline yet — seed from OBSERVED word count (Issue #759).
+            # No baseline yet — seed from OBSERVED word count (Issue #759, #810).
             # Template files (~2500 words) are far larger than task-specific
-            # prompts (~200-400 words) because templates contain the full agent
+            # prompts (~200-600 words) because templates contain the full agent
             # definition while the coordinator sends focused task context.
-            # Even with a 0.70 slack factor, template-based seeding produced
-            # baselines of ~1700 words, blocking legitimate ~200-word prompts.
+            # Template-based seeding (even at 0.70 slack) produced baselines of
+            # ~1700 words, causing 25-50% false positive block rate in batch mode.
             # The observed word count is the correct baseline for cross-issue
-            # shrinkage detection. The library's seed_baselines_from_templates()
-            # handles batch-mode seeding separately with appropriate slack.
+            # shrinkage detection. seed_baselines_from_templates() is deprecated.
             #
             # Issue #764: Use current issue number instead of hardcoded 0.
             seed_issue = int(current_issue_str) if current_issue_str else 0
@@ -1996,6 +1995,68 @@ def _check_batch_doc_master_completions(session_id: str) -> "Optional[str]":
             f"REQUIRED NEXT ACTION: Run the doc-master agent for "
             f"the missing issues before committing. "
             f"Set SKIP_BATCH_DOC_MASTER_GATE=1 to bypass. (Issue #786)"
+        )
+    except Exception:
+        return None  # Fail-open
+
+
+def _check_pipeline_agent_completions(session_id: str) -> "Optional[str]":
+    """Check if all required pipeline agents have completed before git commit.
+
+    Loads verify_pipeline_agent_completions from pipeline_completion_state and
+    returns a block reason string if any required agents are missing, or None
+    if all passed (or on any error -- fail-open).
+
+    Args:
+        session_id: The pipeline session identifier.
+
+    Returns:
+        Block reason string if agents missing, None otherwise.
+
+    Issues: #802
+    """
+    try:
+        hook_dir = Path(__file__).resolve().parent
+        lib_candidates = [
+            hook_dir.parent / "lib" / "pipeline_completion_state.py",
+            hook_dir.parents[2] / "lib" / "pipeline_completion_state.py",
+        ]
+        mod = None
+        for lib_path in lib_candidates:
+            if lib_path.exists():
+                spec = importlib.util.spec_from_file_location(
+                    "pipeline_completion_state", str(lib_path)
+                )
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                break
+
+        if mod is None or not hasattr(mod, "verify_pipeline_agent_completions"):
+            return None  # Fail-open
+
+        # Determine pipeline mode from env (set by coordinator)
+        pipeline_mode = os.environ.get("PIPELINE_MODE", "full")
+        issue_number = 0
+        try:
+            issue_number = int(os.environ.get("PIPELINE_ISSUE_NUMBER", "0"))
+        except (ValueError, TypeError):
+            pass
+
+        passed, completed, missing = mod.verify_pipeline_agent_completions(
+            session_id, pipeline_mode, issue_number=issue_number
+        )
+        if passed:
+            return None
+
+        missing_str = ", ".join(sorted(missing))
+        completed_str = ", ".join(sorted(completed)) if completed else "(none)"
+        return (
+            f"BLOCKED: Agent completeness gate -- missing required agents: "
+            f"{missing_str}. Completed: {completed_str}. "
+            f"All required pipeline agents MUST complete before git commit. "
+            f"REQUIRED NEXT ACTION: Run the missing agents before committing. "
+            f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass. (Issue #802)"
         )
     except Exception:
         return None  # Fail-open
@@ -3415,6 +3476,28 @@ def main():
                                                 "BLOCKED: Batch doc-master gate — some issues are missing "
                                                 "doc-master completion. "
                                                 "Run doc-master for all issues before committing."
+                                            ),
+                                        )
+                                        sys.exit(0)
+                        except Exception:
+                            pass  # Fail-open: don't block on errors
+
+                    # Issue #802: Pipeline agent completeness gate
+                    # Block git commit when required pipeline agents haven't completed
+                    if "git commit" in command or "git -c" in command and "commit" in command:
+                        try:
+                            if _is_pipeline_active():
+                                if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() not in ("1", "true", "yes"):
+                                    _agent_gate_session_id = os.environ.get("CLAUDE_SESSION_ID", _session_id)
+                                    _agent_gate_result = _check_pipeline_agent_completions(_agent_gate_session_id)
+                                    if _agent_gate_result is not None:
+                                        _log_pretool_activity(tool_name, tool_input, "deny", _agent_gate_result)
+                                        output_decision(
+                                            "deny", _agent_gate_result,
+                                            system_message=(
+                                                "BLOCKED: Agent completeness gate -- required pipeline "
+                                                "agents have not completed. Run all required agents "
+                                                "before committing."
                                             ),
                                         )
                                         sys.exit(0)

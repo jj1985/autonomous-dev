@@ -336,12 +336,15 @@ class TestIssue696RegressionImplementerCompression:
 
 
 class TestTemplateBaselineSeeding:
-    """Tests for Issue #748: template-based baseline seeding.
+    """Tests for Issue #748/#810: template-based baseline seeding.
 
-    Verifies that compute_template_baselines() and seed_baselines_from_templates()
-    establish word-count baselines derived from agent template files, so the first
-    real issue in a batch is compared against the canonical template rather than
-    the (potentially already-compressed) observed first invocation.
+    Issue #810: seed_baselines_from_templates() is now a no-op. Template-seeded
+    baselines caused 25-50% false positive block rates because template files are
+    ~2500 words while actual task-specific prompts are 200-600 words. The
+    observation-based path (seeding from the first real prompt) is the correct approach.
+
+    compute_template_baselines() is kept as a pure utility (may still be useful
+    for diagnostics), but seed_baselines_from_templates() no longer writes anything.
     """
 
     def _make_agents_dir(self, tmp_path: Path, agents: dict) -> Path:
@@ -389,8 +392,12 @@ class TestTemplateBaselineSeeding:
             if agent != "implementer":
                 assert agent not in baselines
 
-    def test_seed_baselines_from_templates_writes_to_disk(self, tmp_path: Path) -> None:
-        """seed_baselines_from_templates() persists template word counts to JSON."""
+    def test_seed_baselines_from_templates_is_noop(self, tmp_path: Path) -> None:
+        """Issue #810: seed_baselines_from_templates() returns {} and writes nothing.
+
+        Template-seeded baselines caused 25-50% false positive block rates.
+        The function is now a no-op to prevent pre-empting the observation-based path.
+        """
         agents_dir = self._make_agents_dir(
             tmp_path,
             {"implementer": "word " * 400, "reviewer": "token " * 350},
@@ -402,71 +409,39 @@ class TestTemplateBaselineSeeding:
             agents_dir=agents_dir, state_dir=state_dir
         )
 
-        assert result["implementer"] == 400
-        assert result["reviewer"] == 350
-        # Verify baseline is retrievable — stored at 70% slack factor (Issue #759)
-        assert get_prompt_baseline("implementer", state_dir=state_dir) == int(400 * 0.70)
-        assert get_prompt_baseline("reviewer", state_dir=state_dir) == int(350 * 0.70)
+        # Returns empty dict — no baselines written
+        assert result == {}
+        # No baseline file written
+        assert get_prompt_baseline("implementer", state_dir=state_dir) is None
+        assert get_prompt_baseline("reviewer", state_dir=state_dir) is None
 
-    def test_seed_baselines_from_templates_baseline_used_by_validation(
-        self, tmp_path: Path
-    ) -> None:
-        """After seeding, validate_prompt_word_count() uses template baseline for comparison."""
-        # Template has 500 words
+    def test_seed_baselines_returns_empty_dict(self, tmp_path: Path) -> None:
+        """seed_baselines_from_templates() always returns empty dict (Issue #810)."""
         agents_dir = self._make_agents_dir(tmp_path, {"implementer": "word " * 500})
         state_dir = tmp_path / "state"
         state_dir.mkdir()
 
-        seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
-        baseline = get_prompt_baseline("implementer", state_dir=state_dir)
-        # Baseline is 500 * 0.70 = 350 (Issue #759 slack factor)
-        assert baseline == int(500 * 0.70)
+        result = seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
+        assert result == {}, f"Expected {{}}, got {result}"
 
-        # A first-issue prompt with 500 words — no shrinkage from 350 baseline
-        full_prompt = " ".join(["word"] * 500)
-        result = validate_prompt_word_count("implementer", full_prompt, baseline)
-        assert result.passed is True
+    def test_observation_based_seeding_works_after_clear(self, tmp_path: Path) -> None:
+        """After clear_prompt_baselines(), first observation seeds baseline correctly.
 
-        # A compressed first-issue prompt — 200 words is 42.9% shrinkage from 350 baseline
-        compressed_prompt = " ".join(["word"] * 200)
-        result_compressed = validate_prompt_word_count(
-            "implementer", compressed_prompt, baseline, max_shrinkage=0.25
-        )
-        assert result_compressed.passed is False
-        assert result_compressed.should_reload is True
-
-    def test_template_baseline_catches_first_issue_compression(
-        self, tmp_path: Path
-    ) -> None:
-        """Template baseline catches compression even on the first batch issue.
-
-        Reproduces the core bug: without template seeding, the first issue's
-        compressed prompt becomes the baseline, masking compression entirely.
-        With template seeding, the compressed first-issue prompt is caught.
+        This verifies the observation-based path that replaced template seeding.
         """
-        template_words = 600
-        # Baseline after 0.70 slack = 420 (Issue #759)
-        adjusted_baseline = int(template_words * 0.70)
-        first_issue_words = 250  # ~40.5% shrinkage from 420 baseline → caught
-
-        agents_dir = self._make_agents_dir(
-            tmp_path, {"security-auditor": "word " * template_words}
-        )
         state_dir = tmp_path / "state"
         state_dir.mkdir()
 
-        # Seed from template
-        seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
-        baseline = get_prompt_baseline("security-auditor", state_dir=state_dir)
+        # Clear any prior baselines
+        clear_prompt_baselines(state_dir=state_dir)
+        assert get_prompt_baseline("implementer", state_dir=state_dir) is None
 
-        assert baseline == adjusted_baseline
+        # First observation sets the baseline
+        record_prompt_baseline("implementer", issue_number=5, word_count=320, state_dir=state_dir)
+        baseline = get_prompt_baseline("implementer", state_dir=state_dir)
+        assert baseline == 320
 
-        # First-issue prompt is already compressed — should be caught
-        compressed_first_issue = " ".join(["word"] * first_issue_words)
-        result = validate_prompt_word_count(
-            "security-auditor", compressed_first_issue, baseline, max_shrinkage=0.25
-        )
-        assert result.passed is False
-        assert result.should_reload is True
-        # shrinkage is roughly 47%
-        assert result.shrinkage_pct > 40.0
+        # Subsequent prompt within threshold passes
+        prompt = " ".join(["word"] * 300)  # ~6.25% shrinkage from 320
+        result = validate_prompt_word_count("implementer", prompt, baseline)
+        assert result.passed is True

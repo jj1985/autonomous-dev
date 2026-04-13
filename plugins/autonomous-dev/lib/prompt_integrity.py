@@ -430,49 +430,32 @@ def seed_baselines_from_templates(
     agents_dir: Optional[Path] = None,
     state_dir: Optional[Path] = None,
 ) -> dict:
-    """Seed prompt baselines from template word counts at batch start.
+    """No-op: template-based baseline seeding is deprecated (Issue #810).
 
-    Computes word counts from agent template files and records them as
-    issue_number=0 baselines so the first real issue is compared against
-    the canonical template size, not the (potentially already-compressed)
-    observed first invocation.
+    Previously, this function seeded baselines at 0.70x template word count
+    (~477-1877 words) before the first batch issue. However, actual task-specific
+    prompts are 200-600 words, causing a systematic 25-50% false positive block
+    rate. The hook's else-branch correctly seeds from the first observed prompt
+    when no baseline exists — template seeding was pre-empting this correct path.
 
-    A 0.70 slack factor is applied (Issue #759) because template files are
-    the full agent definition (~2500 words) but task-specific prompts are
-    naturally 20-40% shorter. Seeding at 100% caused immediate false positives.
-
-    Call this immediately after clear_prompt_baselines() at the start of
-    each batch run.
+    The observation-based path (seeding from the first real prompt per agent per
+    issue) is the correct approach. Call ``clear_prompt_baselines()`` at batch
+    start to reset state; baselines are then established automatically from the
+    first observed prompt for each agent.
 
     Args:
-        agents_dir: Optional override for agents directory path.
-        state_dir: Optional override for state directory (baseline JSON location).
+        agents_dir: Ignored (kept for backwards-compatible signature).
+        state_dir: Ignored (kept for backwards-compatible signature).
 
     Returns:
-        Mapping of {agent_type: adjusted_word_count} for agents successfully seeded.
+        Empty dict — no baselines are written.
     """
-    # Slack factor for template-seeded baselines (Issue #759).
-    # Template files are the full agent definition; task-specific prompts are
-    # naturally 20-40% shorter. 0.70 allows legitimate variation without
-    # triggering false positives.
-    TEMPLATE_BASELINE_SLACK_FACTOR = 0.70
-
-    template_baselines = compute_template_baselines(agents_dir=agents_dir)
-    for agent_type, word_count in template_baselines.items():
-        adjusted_wc = int(word_count * TEMPLATE_BASELINE_SLACK_FACTOR)
-        record_prompt_baseline(
-            agent_type, issue_number=0, word_count=adjusted_wc, state_dir=state_dir
-        )
-        logger.debug(
-            "Seeded template baseline: %s = %d words (adjusted from %d)",
-            agent_type, adjusted_wc, word_count,
-        )
-    logger.info(
-        "Seeded template baselines for %d agents: %s",
-        len(template_baselines),
-        sorted(template_baselines.keys()),
+    logger.warning(
+        "seed_baselines_from_templates() is deprecated (Issue #810). "
+        "Baselines are now established automatically from the first observed prompt. "
+        "Call clear_prompt_baselines() at batch start instead."
     )
-    return template_baselines
+    return {}
 
 
 def _get_observations_path(state_dir: Optional[Path] = None) -> Path:

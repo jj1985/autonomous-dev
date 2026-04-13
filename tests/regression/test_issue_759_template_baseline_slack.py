@@ -34,13 +34,20 @@ from prompt_integrity import (
 
 
 class TestTemplateBaselineSlackFactor:
-    """Verify that template-seeded baselines use 0.70 slack factor."""
+    """Verify Issue #759 fix and Issue #810 no-op behavior.
+
+    Issue #759 introduced a 0.70 slack factor for template-seeded baselines.
+    Issue #810 deprecated template seeding entirely because even with the slack
+    factor, a ~25-50% false positive block rate remained (template ~2500 words,
+    actual prompts 200-600 words). seed_baselines_from_templates() is now a no-op.
+    """
 
     def test_seed_baselines_records_at_70_percent(self, tmp_path):
-        """seed_baselines_from_templates() must record baselines at 70% of template word count.
+        """Issue #810: seed_baselines_from_templates() is now a no-op, returns {}.
 
-        Before the fix, a 1000-word template would seed a baseline of 1000.
-        After the fix, it should seed at 700.
+        Before Issue #810: seeded at 70% of template (700 words for 1000-word template).
+        After Issue #810: function is a no-op — returns {} and writes no baseline.
+        The observation-based path handles seeding from the first real prompt.
         """
         # Create a fake agents directory with a single template
         agents_dir = tmp_path / "agents"
@@ -56,14 +63,17 @@ class TestTemplateBaselineSlackFactor:
             "prompt_integrity.COMPRESSION_CRITICAL_AGENTS",
             {"reviewer"},
         ):
-            seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
+            result = seed_baselines_from_templates(agents_dir=agents_dir, state_dir=state_dir)
 
+        # No-op: returns empty dict and writes no baseline
+        assert result == {}, (
+            f"Expected {{}} (no-op) but got {result}. "
+            f"seed_baselines_from_templates() is deprecated (Issue #810)."
+        )
         baseline = get_prompt_baseline("reviewer", state_dir=state_dir)
-        assert baseline is not None
-        # 1000 * 0.70 = 700
-        assert baseline == 700, (
-            f"Expected baseline of 700 (1000 * 0.70) but got {baseline}. "
-            f"The slack factor is not being applied."
+        assert baseline is None, (
+            f"Expected no baseline written (no-op) but got {baseline}. "
+            f"seed_baselines_from_templates() must not write baselines (Issue #810)."
         )
 
     def test_prompt_at_75_percent_of_template_passes(self, tmp_path):
