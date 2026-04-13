@@ -97,6 +97,20 @@ PARALLEL_EXPECTED = [
 # STEP 6 agents that must wait for test gate
 STEP6_AGENTS = {"reviewer", "security-auditor", "doc-master"}
 
+# Pipeline modes that skip the planner step by design.
+# Fix mode runs: implementer -> reviewer -> doc-master -> CIA (no planner).
+PLANNER_EXEMPT_MODES = {"--fix", "fix"}
+
+# File path patterns that require security-auditor review.
+# Any Write/Edit to a matching path triggers the requirement.
+SECURITY_SENSITIVE_PATTERNS = (
+    "hooks/",
+    "lib/auto_approval_engine",
+    "lib/tool_validator",
+    "config/auto_approve_policy",
+    "lib/security",
+)
+
 # Minimum agents to consider this a full pipeline run
 MIN_FULL_PIPELINE_AGENTS = 4
 
@@ -437,6 +451,18 @@ def _validate_step_ordering_for_group(
     if any(e.subagent_type == "test-master" for e in agent_events):
         all_pairs.extend(TDD_FIRST_PAIRS)
 
+    # Issue #788: Detect planner-exempt modes at the group level.
+    # If any event in this group has a planner-exempt pipeline_mode,
+    # remove the (planner, implementer) pair from enforcement.
+    # Empty/unknown pipeline_mode defaults to full enforcement (fail-safe).
+    group_modes = {e.pipeline_mode for e in agent_events if e.pipeline_mode}
+    is_planner_exempt = bool(group_modes & PLANNER_EXEMPT_MODES)
+    if is_planner_exempt:
+        all_pairs = [
+            pair for pair in all_pairs
+            if pair != ("planner", "implementer")
+        ]
+
     for first_type, second_type in all_pairs:
         # Skip STEP 6 inter-ordering when parallel launch detected (#615)
         if step6_are_parallel and (first_type, second_type) in STEP6_PAIRS:
@@ -447,18 +473,6 @@ def _validate_step_ordering_for_group(
 
         if not first_events or not second_events:
             continue
-
-        # Issue #732 + #760: Filter out --fix implementers before timestamp
-        # comparison. In --fix mode, implementer runs without a planner, which
-        # is by design. Only check ordering for non-fix implementers.
-        if (first_type, second_type) == ("planner", "implementer"):
-            non_fix_implementers = [
-                e for e in second_events
-                if e.pipeline_mode not in ("--fix", "fix")
-            ]
-            if not non_fix_implementers:
-                continue  # All implementers are --fix — no ordering check needed
-            second_events = non_fix_implementers
 
         # Use earliest timestamp for each
         first_ts = first_events[0].timestamp
@@ -1357,6 +1371,102 @@ def detect_cia_skip(events: List[PipelineEvent]) -> List[Finding]:
     return findings
 
 
+def detect_missing_security_review(
+    log_path: Path,
+    events: List[PipelineEvent],
+    *,
+    session_id: Optional[str] = None,
+) -> List[Finding]:
+    """Detect security-sensitive file changes without security-auditor review.
+
+    Scans the JSONL log for Write/Edit tool entries targeting security-sensitive
+    paths (hooks, auto-approval engine, tool validator, security libs).  If any
+    such path is modified and no security-auditor event exists in the session,
+    a WARNING finding is emitted.
+
+    Test files (paths starting with ``tests/``) are excluded — modifying a test
+    that touches hook-related paths is not a security concern.
+
+    Args:
+        log_path: Path to the JSONL log file.
+        events: List of PipelineEvent for the session/group.
+        session_id: Optional session ID filter for JSONL entries.
+
+    Returns:
+        List of findings (empty if no issues detected).
+    """
+    findings: List[Finding] = []
+
+    # Scan JSONL for Write/Edit tool entries
+    security_paths: List[str] = []
+
+    if not log_path.exists():
+        return findings
+
+    text = log_path.read_text().strip()
+    if not text:
+        return findings
+
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        # Filter by session if provided
+        if session_id and entry.get("session_id") != session_id:
+            continue
+
+        tool = entry.get("tool", "")
+        if tool not in ("Write", "Edit"):
+            continue
+
+        input_summary = entry.get("input_summary", {})
+        if not isinstance(input_summary, dict):
+            continue
+
+        file_path = input_summary.get("file_path", "")
+        if not file_path:
+            continue
+
+        # Skip test files — they are not security-sensitive
+        if file_path.startswith("tests/"):
+            continue
+
+        # Check against security-sensitive patterns
+        for pattern in SECURITY_SENSITIVE_PATTERNS:
+            if pattern in file_path:
+                security_paths.append(file_path)
+                break
+
+    if not security_paths:
+        return findings
+
+    # Check if security-auditor is present in the events
+    agents_ran = {e.subagent_type for e in events if e.subagent_type}
+    if "security-auditor" not in agents_ran:
+        findings.append(Finding(
+            finding_type="missing_security_review",
+            severity="WARNING",
+            pattern_id="missing_security_review",
+            description=(
+                f"Security-sensitive files modified without security-auditor review: "
+                f"{security_paths}"
+            ),
+            evidence=[
+                f"security_sensitive_paths: {security_paths}",
+                f"agents_ran: {sorted(agents_ran)}",
+                f"security_auditor_present: False",
+            ],
+        ))
+
+    return findings
+
+
 def _run_checks_on_events(events: List[PipelineEvent]) -> List[Finding]:
     """Run all check functions on a list of events from a single session.
 
@@ -1372,6 +1482,9 @@ def _run_checks_on_events(events: List[PipelineEvent]) -> List[Finding]:
     findings.extend(detect_context_dropping(events))
     findings.extend(detect_parallelization_violations(events))
     findings.extend(detect_ghost_invocations(events))
+    # Lazy import to avoid circular dependency (agent_output_health imports from this module)
+    from agent_output_health import detect_zero_word_completions as _detect_zero_word
+    findings.extend(_detect_zero_word(events))
     findings.extend(detect_progressive_compression(events))
     findings.extend(detect_minimum_prompt_violation(events))
     findings.extend(detect_doc_verdict_missing(events))
@@ -1429,7 +1542,11 @@ def validate_pipeline_intent(
     # When an explicit session_id filter was provided, all returned events
     # already belong to that session — run checks on the flat list directly.
     if session_id:
-        return _run_checks_on_events(events)
+        findings = _run_checks_on_events(events)
+        findings.extend(detect_missing_security_review(
+            log_path, events, session_id=session_id,
+        ))
+        return findings
 
     # Group events by session_id to avoid cross-session false positives.
     # Events with empty session_id share a fallback group ("").
@@ -1443,4 +1560,7 @@ def validate_pipeline_intent(
     findings: List[Finding] = []
     for _sid, session_events in session_groups.items():
         findings.extend(_run_checks_on_events(session_events))
+        findings.extend(detect_missing_security_review(
+            log_path, session_events, session_id=_sid or None,
+        ))
     return findings

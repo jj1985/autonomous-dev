@@ -125,6 +125,7 @@
         "plugins/autonomous-dev/lib/agent_feedback.py",
         "plugins/autonomous-dev/lib/agent_invoker.py",
         "plugins/autonomous-dev/lib/agent_ordering_gate.py",
+        "plugins/autonomous-dev/lib/agent_output_health.py",
         "plugins/autonomous-dev/lib/agent_pool.py",
         "plugins/autonomous-dev/lib/agent_tracker.py",
         "plugins/autonomous-dev/lib/alignment_assessor.py",
