@@ -32,6 +32,7 @@ from pipeline_intent_validator import (
     Finding,
     MIN_DOC_SWEEP_WORDS,
     MIN_DOC_VERDICT_WORDS,
+    PLANNER_EXEMPT_MODES,
     PipelineEvent,
     VALID_AGENT_TYPES,
     _correlate_invocation_completion,
@@ -42,6 +43,7 @@ from pipeline_intent_validator import (
     detect_doc_verdict_shallow,
     detect_ghost_invocations,
     detect_hard_gate_ordering,
+    detect_missing_security_review,
     detect_parallelization_violations,
     detect_progressive_compression,
     get_minimum_prompt_content,
@@ -62,6 +64,7 @@ def _make_event(
     success: bool = True,
     batch_issue_number: int = 0,
     session_id: str = "",
+    pipeline_mode: str = "",
 ) -> PipelineEvent:
     """Helper to create PipelineEvent for tests."""
     return PipelineEvent(
@@ -75,6 +78,7 @@ def _make_event(
         success=success,
         batch_issue_number=batch_issue_number,
         session_id=session_id,
+        pipeline_mode=pipeline_mode,
     )
 
 
@@ -89,6 +93,7 @@ def _make_jsonl_line(
     success: bool = True,
     session_id: str = "test-session",
     command: str = "",
+    pipeline_mode: str = "",
 ) -> str:
     """Helper to create JSONL log line."""
     if tool == "Task":
@@ -100,6 +105,7 @@ def _make_jsonl_line(
                 "subagent_type": subagent_type,
                 "pipeline_action": pipeline_action,
                 "prompt_word_count": prompt_word_count,
+                "pipeline_mode": pipeline_mode,
             },
             "output_summary": {
                 "success": success,
@@ -115,6 +121,7 @@ def _make_jsonl_line(
             "input_summary": {
                 "command": command or "pytest --tb=short -q",
                 "pipeline_action": pipeline_action,
+                "pipeline_mode": pipeline_mode,
             },
             "output_summary": {"success": success},
             "session_id": session_id,
@@ -2297,4 +2304,314 @@ class TestContextDroppingMixedBatch:
             "#681: Only within-issue context drops should be flagged"
         )
         assert "planner" in findings[0].description
+
+
+def _make_write_jsonl_line(
+    file_path: str,
+    tool: str = "Write",
+    session_id: str = "test-session",
+    timestamp: str = "2026-02-28T10:05:00+00:00",
+) -> str:
+    """Helper to create a Write/Edit JSONL log entry for security review tests."""
+    entry = {
+        "timestamp": timestamp,
+        "tool": tool,
+        "input_summary": {
+            "file_path": file_path,
+        },
+        "output_summary": {"success": True},
+        "session_id": session_id,
+        "agent": "main",
+    }
+    return json.dumps(entry)
+
+
+class TestFixModeStepOrdering:
+    """Tests for fix-mode planner exemption (Issue #788)."""
+
+    def test_fix_mode_no_planner_required(self):
+        """Fix-mode events with implementer but no planner produce no CRITICAL findings.
+
+        Regression test for Issue #788: pipeline_intent_validator required planner
+        in --fix mode, but fix mode intentionally skips planning.
+        """
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        events = [
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+                pipeline_mode="fix",
+            ),
+            _make_event(
+                subagent_type="reviewer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+                pipeline_mode="fix",
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) == 0, (
+            "#788: fix mode should not require planner before implementer"
+        )
+
+    def test_fix_mode_batch_no_planner_required(self):
+        """Batch fix-mode (--fix) events produce no CRITICAL planner findings."""
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        events = [
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+                pipeline_mode="--fix",
+                batch_issue_number=100,
+            ),
+            _make_event(
+                subagent_type="reviewer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+                pipeline_mode="--fix",
+                batch_issue_number=100,
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) == 0, (
+            "#788: batch --fix mode should not require planner"
+        )
+
+    def test_full_mode_requires_planner_before_implementer(self):
+        """Full-mode events with implementer before planner produce CRITICAL finding."""
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        events = [
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) >= 1, (
+            "Full mode must enforce planner before implementer"
+        )
+
+    def test_full_mode_correct_ordering_no_findings(self):
+        """Full-mode events with correct ordering produce no findings."""
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        events = [
+            _make_event(
+                subagent_type="planner",
+                timestamp=(base).isoformat(),
+            ),
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+            ),
+            _make_event(
+                subagent_type="reviewer",
+                timestamp=(base + timedelta(minutes=10)).isoformat(),
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        assert len(findings) == 0, (
+            "Correct ordering should produce no findings"
+        )
+
+    def test_unknown_mode_defaults_to_full(self):
+        """Empty pipeline_mode defaults to full enforcement (fail-safe)."""
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        events = [
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+                pipeline_mode="",
+            ),
+            _make_event(
+                subagent_type="planner",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+                pipeline_mode="",
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) >= 1, (
+            "Empty pipeline_mode must default to full enforcement"
+        )
+
+    def test_fix_mode_still_requires_implementer_before_reviewer(self):
+        """Fix mode only exempts planner — other ordering rules still apply."""
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        events = [
+            _make_event(
+                subagent_type="reviewer",
+                timestamp=(base).isoformat(),
+                pipeline_mode="fix",
+            ),
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+                pipeline_mode="fix",
+            ),
+        ]
+        findings = validate_step_ordering(events)
+        critical_findings = [f for f in findings if f.severity == "CRITICAL"]
+        assert len(critical_findings) >= 1, (
+            "#788: fix mode must still enforce implementer before reviewer"
+        )
+
+
+class TestMissingSecurityReview:
+    """Tests for security-auditor requirement when security files modified (Issue #798)."""
+
+    def test_hooks_file_changed_without_auditor(self, tmp_path):
+        """Write to hooks/ without security-auditor produces WARNING finding.
+
+        Regression test for Issue #798: security-sensitive file changes went
+        unreviewed in fix mode.
+        """
+        log_file = tmp_path / "session.jsonl"
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        lines = [
+            _make_jsonl_line(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+            ),
+            _make_write_jsonl_line(
+                "plugins/autonomous-dev/hooks/foo.py",
+                timestamp=(base + timedelta(minutes=2)).isoformat(),
+            ),
+            _make_jsonl_line(
+                subagent_type="reviewer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+            ),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = [
+            _make_event(subagent_type="implementer", timestamp=(base).isoformat()),
+            _make_event(subagent_type="reviewer", timestamp=(base + timedelta(minutes=5)).isoformat()),
+        ]
+
+        findings = detect_missing_security_review(log_file, events)
+        assert len(findings) == 1, "#798: hooks/ change without security-auditor should warn"
+        assert findings[0].pattern_id == "missing_security_review"
+        assert findings[0].severity == "WARNING"
+
+    def test_hooks_file_changed_with_auditor(self, tmp_path):
+        """Write to hooks/ with security-auditor present produces no findings."""
+        log_file = tmp_path / "session.jsonl"
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        lines = [
+            _make_jsonl_line(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+            ),
+            _make_write_jsonl_line(
+                "plugins/autonomous-dev/hooks/foo.py",
+                timestamp=(base + timedelta(minutes=2)).isoformat(),
+            ),
+            _make_jsonl_line(
+                subagent_type="security-auditor",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+            ),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = [
+            _make_event(subagent_type="implementer", timestamp=(base).isoformat()),
+            _make_event(subagent_type="security-auditor", timestamp=(base + timedelta(minutes=5)).isoformat()),
+        ]
+
+        findings = detect_missing_security_review(log_file, events)
+        assert len(findings) == 0, "No warning when security-auditor is present"
+
+    def test_non_security_file_no_warning(self, tmp_path):
+        """Write to non-security file produces no findings even without auditor."""
+        log_file = tmp_path / "session.jsonl"
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        lines = [
+            _make_jsonl_line(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+            ),
+            _make_write_jsonl_line(
+                "docs/readme.md",
+                timestamp=(base + timedelta(minutes=2)).isoformat(),
+            ),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = [
+            _make_event(subagent_type="implementer", timestamp=(base).isoformat()),
+        ]
+
+        findings = detect_missing_security_review(log_file, events)
+        assert len(findings) == 0, "Non-security files should not trigger warning"
+
+    def test_test_file_modifying_hooks_no_warning(self, tmp_path):
+        """Write to tests/unit/hooks/ does not trigger security warning."""
+        log_file = tmp_path / "session.jsonl"
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        lines = [
+            _make_jsonl_line(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+            ),
+            _make_write_jsonl_line(
+                "tests/unit/hooks/test_foo.py",
+                timestamp=(base + timedelta(minutes=2)).isoformat(),
+            ),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = [
+            _make_event(subagent_type="implementer", timestamp=(base).isoformat()),
+        ]
+
+        findings = detect_missing_security_review(log_file, events)
+        assert len(findings) == 0, "Test files should be excluded from security check"
+
+    def test_fix_mode_security_file_triggers_warning(self, tmp_path):
+        """Fix-mode pipeline with hooks/ change and no security-auditor warns.
+
+        Regression test for Issue #798: fix mode did not require security-auditor
+        when hook files were changed.
+        """
+        log_file = tmp_path / "session.jsonl"
+        base = datetime(2026, 2, 28, 10, 0, 0)
+        lines = [
+            _make_jsonl_line(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+                pipeline_mode="--fix",
+            ),
+            _make_write_jsonl_line(
+                "plugins/autonomous-dev/hooks/unified_pre_tool.py",
+                timestamp=(base + timedelta(minutes=2)).isoformat(),
+            ),
+            _make_jsonl_line(
+                subagent_type="reviewer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+                pipeline_mode="--fix",
+            ),
+        ]
+        log_file.write_text("\n".join(lines) + "\n")
+
+        events = [
+            _make_event(
+                subagent_type="implementer",
+                timestamp=(base).isoformat(),
+                pipeline_mode="--fix",
+            ),
+            _make_event(
+                subagent_type="reviewer",
+                timestamp=(base + timedelta(minutes=5)).isoformat(),
+                pipeline_mode="--fix",
+            ),
+        ]
+
+        findings = detect_missing_security_review(log_file, events)
+        assert len(findings) == 1, "#798: fix mode with hooks/ change must warn"
+        assert findings[0].pattern_id == "missing_security_review"
 
