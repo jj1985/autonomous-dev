@@ -245,8 +245,11 @@ def _summarize_input(tool_name: str, tool_input: dict) -> dict:
         # Batch context detection (Issue #526)
         if isinstance(prompt_text, str) and "BATCH CONTEXT" in prompt_text:
             summary["batch_mode"] = True
-            # Extract issue number if present
-            issue_match = re.search(r'Issue #(\d+)', prompt_text)
+            # Prefer structured field from BATCH CONTEXT block (Issue #808),
+            # fall back to inline Issue #N for backward compatibility
+            issue_match = re.search(r'Issue Number:\s*(\d+)', prompt_text)
+            if not issue_match:
+                issue_match = re.search(r'Issue #(\d+)', prompt_text)
             if issue_match:
                 summary["batch_issue_number"] = int(issue_match.group(1))
     elif tool_name == "Skill":

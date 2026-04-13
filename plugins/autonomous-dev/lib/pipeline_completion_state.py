@@ -461,6 +461,126 @@ def verify_batch_doc_master_completions(session_id: str) -> tuple[bool, list[int
         return (True, [], [])
 
 
+def record_research_skipped(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+) -> None:
+    """Record that research was skipped for a given session/issue.
+
+    Called by the coordinator after STEP 3.5 determines that research
+    agents should be skipped (fully-specified change detection).
+
+    Args:
+        session_id: The pipeline session identifier.
+        issue_number: The issue number (0 for non-batch).
+
+    Issues: #802
+    """
+    state = _ensure_state(session_id)
+    research_skipped = state.setdefault("research_skipped", {})
+    issue_key = str(issue_number)
+    research_skipped[issue_key] = True
+    _write_state(session_id, state)
+
+
+def get_research_skipped(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+) -> bool:
+    """Check if research was skipped for a given session/issue.
+
+    Args:
+        session_id: The pipeline session identifier.
+        issue_number: The issue number (0 for non-batch).
+
+    Returns:
+        True if research was recorded as skipped, False otherwise.
+
+    Issues: #802
+    """
+    state = _read_state(session_id)
+    if not state:
+        return False
+    research_skipped = state.get("research_skipped", {})
+    issue_key = str(issue_number)
+    return bool(research_skipped.get(issue_key, False))
+
+
+def verify_pipeline_agent_completions(
+    session_id: str,
+    pipeline_mode: str = "full",
+    *,
+    issue_number: int = 0,
+) -> tuple[bool, set[str], set[str]]:
+    """Verify all required agents completed for a pipeline run.
+
+    Reads completed agents from state, determines required agents based on
+    pipeline_mode and research_skipped, and returns whether all are present.
+
+    Fail-open: returns (True, set(), set()) on any error to avoid blocking
+    legitimate commits due to state file issues.
+
+    Escape hatch: set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass.
+
+    Args:
+        session_id: The pipeline session identifier.
+        pipeline_mode: Pipeline mode — "full", "light", "fix", or "tdd-first".
+        issue_number: The issue number (0 for non-batch).
+
+    Returns:
+        Tuple of (passed, completed_agents, missing_agents).
+        passed is True when all required agents have completed.
+
+    Issues: #802
+    """
+    # Escape hatch
+    if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        return (True, set(), set())
+
+    try:
+        completed = get_completed_agents(session_id, issue_number=issue_number)
+        research_skipped = get_research_skipped(session_id, issue_number=issue_number)
+
+        # Import agent_ordering_gate for get_required_agents
+        try:
+            from agent_ordering_gate import get_required_agents
+        except ImportError:
+            # Try relative import path
+            import importlib.util
+
+            gate_path = Path(__file__).resolve().parent / "agent_ordering_gate.py"
+            if gate_path.exists():
+                spec = importlib.util.spec_from_file_location(
+                    "agent_ordering_gate", str(gate_path)
+                )
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    get_required_agents = mod.get_required_agents
+                else:
+                    return (True, set(), set())  # Fail-open
+            else:
+                return (True, set(), set())  # Fail-open
+
+        required = get_required_agents(pipeline_mode, research_skipped=research_skipped)
+        missing = required - completed
+
+        if missing:
+            return (False, completed, missing)
+
+        return (True, completed, set())
+
+    except Exception:
+        # Fail-open: any error returns pass
+        return (True, set(), set())
+
+
 def clear_session(session_id: str) -> None:
     """Remove the state file for a session.
 

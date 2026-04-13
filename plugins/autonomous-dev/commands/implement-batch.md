@@ -248,6 +248,7 @@ When invoking agents in batch mode (researcher-local, researcher-web, planner, i
 ```
 **BATCH CONTEXT** (CRITICAL - Operating in worktree):
 - Worktree Path: $WORKTREE_PATH (absolute path)
+- Issue Number: $ISSUE_NUMBER
 - ALL file operations MUST use absolute paths within this worktree
 - Read/Write/Edit tools: Use absolute paths like $WORKTREE_PATH/src/file.py
 - Bash commands: Run from worktree using: cd $WORKTREE_PATH && [command]
@@ -264,6 +265,7 @@ subagent_type: "implementer"
 description: "Implement [feature name]"
 prompt: "**BATCH CONTEXT** (CRITICAL - Operating in worktree):
 - Worktree Path: $WORKTREE_PATH (absolute path)
+- Issue Number: $ISSUE_NUMBER
 - ALL file operations MUST use absolute paths within this worktree
 - Read/Write/Edit tools: Use absolute paths like $WORKTREE_PATH/src/file.py
 - Bash commands: Run from worktree using: cd $WORKTREE_PATH && [command]
@@ -314,7 +316,7 @@ Before each agent invocation in batch mode, the coordinator MUST:
    b. Validate: `result = validate_prompt_word_count(agent_type, constructed_prompt, baseline)`
    c. If `result.should_reload` is True: re-read the agent's source file using `get_agent_prompt_template(agent_type)` and reconstruct the prompt from source + issue-specific context, NOT from context memory
    d. Log: include word count in per-issue agent verification display
-3. **Batch start**: Call `clear_prompt_baselines()` followed immediately by `seed_baselines_from_templates()` to reset from any prior batch and establish template-based baselines. This ensures the first issue is compared against the canonical template word count, not the (potentially already-compressed) observed first invocation.
+3. **Batch start**: Call `clear_prompt_baselines()` to reset from any prior batch. Baselines are established automatically from the first observed prompt for each agent per issue — do NOT call `seed_baselines_from_templates()` (deprecated, Issue #810).
 
 The library functions are in `plugins/autonomous-dev/lib/prompt_integrity.py`.
 

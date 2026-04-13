@@ -617,6 +617,58 @@ class TestBatchContextDetection:
         result = sal._summarize_input("Task", {"description": "task", "subagent_type": "planner"})
         assert result.get("batch_mode") is None
 
+    def test_batch_issue_number_from_structured_field(self):
+        """Issue number extracted from structured 'Issue Number: N' field (Issue #808)."""
+        result = sal._summarize_input(
+            "Task",
+            {
+                "description": "doc-master",
+                "subagent_type": "doc-master",
+                "prompt": (
+                    "**BATCH CONTEXT** (CRITICAL - Operating in worktree):\n"
+                    "- Worktree Path: /some/path (absolute path)\n"
+                    "- Issue Number: 42\n"
+                    "- ALL file operations MUST use absolute paths\n\n"
+                    "Update documentation for the implemented changes."
+                ),
+            },
+        )
+        assert result.get("batch_mode") is True
+        assert result.get("batch_issue_number") == 42
+
+    def test_batch_issue_number_structured_preferred_over_informal(self):
+        """Structured 'Issue Number: N' takes precedence over 'Issue #N' (Issue #808)."""
+        result = sal._summarize_input(
+            "Task",
+            {
+                "description": "reviewer",
+                "subagent_type": "reviewer",
+                "prompt": (
+                    "**BATCH CONTEXT** (CRITICAL - Operating in worktree):\n"
+                    "- Worktree Path: /some/path\n"
+                    "- Issue Number: 42\n\n"
+                    "Review the implementation. See also Issue #99 for related context."
+                ),
+            },
+        )
+        assert result.get("batch_mode") is True
+        assert result.get("batch_issue_number") == 42
+
+    def test_batch_issue_number_fallback_to_issue_hash(self):
+        """Falls back to 'Issue #N' when no structured field present (backward compat)."""
+        result = sal._summarize_input(
+            "Task",
+            {
+                "description": "implementer",
+                "prompt": (
+                    "BATCH CONTEXT - Operating in worktree.\n"
+                    "Implement fixes for Issue #526 in batch mode."
+                ),
+            },
+        )
+        assert result.get("batch_mode") is True
+        assert result.get("batch_issue_number") == 526
+
     def test_batch_issue_number_absent_when_no_issue(self):
         """BATCH CONTEXT without Issue # does not set batch_issue_number."""
         result = sal._summarize_input(

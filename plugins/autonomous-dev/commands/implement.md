@@ -338,6 +338,12 @@ Then: **skip STEP 4**, proceed directly to STEP 5. Output:
 Research: SKIPPED (fully-specified change — file path + instruction provided, no security topics)
 ```
 
+**Record research skip in pipeline state** (Issue #802): When research is skipped, record it so the agent completeness gate knows researchers are not required:
+```python
+from pipeline_completion_state import record_research_skipped
+record_research_skipped(SESSION_ID, issue_number=ISSUE_NUM)
+```
+
 Otherwise: proceed to STEP 4.
 
 **FORBIDDEN** — You MUST NOT skip research when:
@@ -578,6 +584,8 @@ You MUST invoke the missing agents before proceeding to STEP 10.
 ```
 
 **FORBIDDEN**: Proceeding to STEP 10 with fewer than the minimum agents. If an agent was skipped due to a crash, the crash retry rule (forbidden list) applies — retry once, then block.
+
+**Hook enforcement** (Issue #802): The unified_pre_tool.py hook also enforces agent completeness at git commit time via `_check_pipeline_agent_completions()`. This provides a defense-in-depth hard gate — even if the coordinator bypasses STEP 9.5, the hook will block the commit if required agents are missing. The hook reads pipeline state from `verify_pipeline_agent_completions()` and respects `SKIP_AGENT_COMPLETENESS_GATE=1` as an escape hatch.
 
 ### STEP 9.7: Conditional UI Testing (ui-tester)
 
