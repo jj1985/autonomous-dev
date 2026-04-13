@@ -2661,8 +2661,21 @@ def _check_deny_cache(file_path: str, *, window_seconds: int = 60) -> bool:
                     continue
                 try:
                     entry = _json.loads(line)
-                    if entry.get("path") == file_path and entry.get("timestamp", 0) >= cutoff:
+                    if entry.get("timestamp", 0) < cutoff:
+                        continue
+                    cached_path = entry.get("path", "")
+                    # Exact match
+                    if cached_path == file_path:
                         return True
+                    # Basename fallback for cross-tool detection (Issue #803):
+                    # Write may deny "/Users/.../agents/foo.md" while Bash uses
+                    # "agents/foo.md" — match on basename as fallback.
+                    if cached_path and file_path:
+                        try:
+                            if Path(cached_path).name == Path(file_path).name:
+                                return True
+                        except Exception:
+                            pass
                 except (ValueError, KeyError):
                     continue
     except Exception:
@@ -2745,6 +2758,100 @@ def _check_agent_denial(*, window_seconds: int = AGENT_DENY_TTL) -> "Optional[st
         return state.get("agent_type", "")
     except Exception:
         return None  # Fail-open
+
+
+def _check_bash_state_deletion(command: str) -> "Optional[Tuple[str, str]]":
+    """Check if a Bash command deletes or truncates pipeline state files.
+
+    Detects rm, unlink, truncate, redirect-to-empty, and python os.remove/os.unlink/Path.unlink
+    targeting pipeline state files. Pure function: caller decides whether to block based on
+    pipeline-active status.
+
+    Args:
+        command: The Bash command string to inspect.
+
+    Returns:
+        None if no state file is targeted, or a tuple of (file_path, reason) if detected.
+    """
+    import re
+
+    # Protected state file patterns
+    _STATE_FILE_PATTERNS = [
+        "/tmp/implement_pipeline_state.json",
+        "/tmp/.claude_deny_cache.jsonl",
+    ]
+    _STATE_FILE_GLOB_PREFIXES = [
+        "/tmp/pipeline_completion_state_",
+        "/tmp/pipeline_secrets/",
+    ]
+
+    # Also protect whatever PIPELINE_STATE_FILE env var points to
+    _env_state = os.environ.get("PIPELINE_STATE_FILE", "")
+    if _env_state:
+        _STATE_FILE_PATTERNS.append(_env_state)
+
+    def _is_state_file(path: str) -> bool:
+        """Check if a path matches a protected state file."""
+        path = path.strip().strip("'\"")
+        if not path:
+            return False
+        for pattern in _STATE_FILE_PATTERNS:
+            if path == pattern or path.endswith("/" + Path(pattern).name):
+                return True
+        for prefix in _STATE_FILE_GLOB_PREFIXES:
+            if path.startswith(prefix):
+                return True
+        # Also check for $PIPELINE_STATE_FILE variable reference
+        if "$PIPELINE_STATE_FILE" in path or "${PIPELINE_STATE_FILE}" in path:
+            return True
+        return False
+
+    try:
+        # 1. rm [-flags] <path>
+        rm_pattern = r'\brm\s+(?:-[^\s]+\s+)*([^\s;&|]+)'
+        for match in re.finditer(rm_pattern, command):
+            target = match.group(1).strip().strip("'\"")
+            if _is_state_file(target):
+                return (target, "Pipeline state file deletion blocked during active pipeline (Issue #803)")
+
+        # 2. unlink <path>
+        unlink_pattern = r'\bunlink\s+([^\s;&|]+)'
+        for match in re.finditer(unlink_pattern, command):
+            target = match.group(1).strip().strip("'\"")
+            if _is_state_file(target):
+                return (target, "Pipeline state file deletion blocked during active pipeline (Issue #803)")
+
+        # 3. truncate [-flags [value]] <path>
+        # Handle: truncate -s 0 /path, truncate --size=0 /path, truncate /path
+        truncate_pattern = r'\btruncate\s+(?:(?:-\w+\s+\S+\s+)|(?:--\w+=\S+\s+))*([^\s;&|]+)'
+        for match in re.finditer(truncate_pattern, command):
+            target = match.group(1).strip().strip("'\"")
+            if _is_state_file(target):
+                return (target, "Pipeline state file deletion blocked during active pipeline (Issue #803)")
+
+        # 4. Redirect-to-empty: > /path/to/state/file (with nothing before >)
+        empty_redirect_pattern = r'(?:^|;|&&|\|\|)\s*>\s*([^\s;&|]+)'
+        for match in re.finditer(empty_redirect_pattern, command):
+            target = match.group(1).strip().strip("'\"")
+            if _is_state_file(target):
+                return (target, "Pipeline state file deletion blocked during active pipeline (Issue #803)")
+
+        # 5. python3 -c with os.remove/os.unlink/Path.unlink
+        py_delete_patterns = [
+            r'os\.remove\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
+            r'os\.unlink\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)',
+            r'Path\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)\.unlink',
+        ]
+        for py_pat in py_delete_patterns:
+            for match in re.finditer(py_pat, command, re.IGNORECASE):
+                target = match.group(1).strip()
+                if _is_state_file(target):
+                    return (target, "Pipeline state file deletion blocked during active pipeline (Issue #803)")
+
+    except Exception:
+        pass  # Fail-open: never block legitimate commands on detection errors
+
+    return None
 
 
 def _check_bash_infra_writes(command: str) -> "Optional[Tuple[str, str]]":
@@ -3097,6 +3204,12 @@ def main():
                             f"Use /implement to modify infrastructure files."
                         ),
                     )
+                    # Issue #803: Record denial for cross-tool workaround detection.
+                    # If the agent retries via Bash heredoc, the deny cache catches it.
+                    try:
+                        _update_deny_cache(file_path)
+                    except Exception:
+                        pass  # Never fail the hook for cache writes
                     sys.exit(0)
 
                 # Issue #557: Block settings.json writes during active pipeline
@@ -3130,6 +3243,69 @@ def main():
             if tool_name == "Bash":
                 command = tool_input.get("command", "")
                 if command:
+                    # Issue #803: Cross-tool workaround detection.
+                    # If a Write/Edit was recently denied, check if this Bash command
+                    # targets the same path via heredoc, redirect, etc.
+                    # Only check when pipeline is NOT active — during active pipeline,
+                    # writes are legitimately allowed, so no workaround detection needed.
+                    try:
+                        _pipeline_active_803 = _is_pipeline_active()
+                    except Exception:
+                        _pipeline_active_803 = False
+                    if not _pipeline_active_803:
+                        try:
+                            _write_targets_803 = _extract_bash_file_writes(command)
+                            for _wt in _write_targets_803:
+                                _wt_clean = _wt.strip().strip("'\"")
+                                if not _wt_clean:
+                                    continue
+                                # Check full path match AND basename fallback
+                                _wt_matched = _check_deny_cache(_wt_clean)
+                                if not _wt_matched:
+                                    # Basename fallback: Write may use absolute path,
+                                    # Bash may use relative path or vice versa
+                                    _wt_basename = Path(_wt_clean).name
+                                    _wt_matched = _check_deny_cache(_wt_basename)
+                                if _wt_matched:
+                                    _xt_reason = (
+                                        f"BLOCKED: Cross-tool workaround detected (Issue #803). "
+                                        f"Write/Edit to '{_wt_clean}' was denied, and this Bash command "
+                                        f"targets the same file. Infrastructure files require the "
+                                        f"/implement pipeline. "
+                                        f"REQUIRED NEXT ACTION: Run /implement to modify this file. "
+                                        f"Do NOT use Bash heredoc/redirect as a workaround for denied writes."
+                                    )
+                                    _log_deviation(_wt_clean, tool_name, "cross_tool_workaround_block")
+                                    _log_pretool_activity(tool_name, tool_input, "deny", _xt_reason)
+                                    output_decision(
+                                        "deny", _xt_reason,
+                                        system_message="BLOCKED: Cross-tool workaround. Use /implement.",
+                                    )
+                                    sys.exit(0)
+                        except Exception:
+                            pass  # Fail-open: never block on detection errors
+
+                    # Issue #803: Pipeline state file deletion guard.
+                    # Block rm/unlink/truncate of pipeline state files during active pipeline.
+                    try:
+                        _state_del = _check_bash_state_deletion(command)
+                        if _state_del is not None and _is_pipeline_active():
+                            _sd_reason = (
+                                f"BLOCKED: {_state_del[1]} "
+                                f"File: {_state_del[0]}. "
+                                f"REQUIRED NEXT ACTION: Do NOT delete pipeline state files "
+                                f"during an active /implement session."
+                            )
+                            _log_deviation(_state_del[0], tool_name, "state_file_deletion_block")
+                            _log_pretool_activity(tool_name, tool_input, "deny", _sd_reason)
+                            output_decision(
+                                "deny", _sd_reason,
+                                system_message="BLOCKED: Pipeline state file deletion during active pipeline.",
+                            )
+                            sys.exit(0)
+                    except Exception:
+                        pass  # Fail-open: never block on detection errors
+
                     bash_block = _check_bash_infra_writes(command)
                     if bash_block is not None:
                         _log_deviation(bash_block[0], tool_name, "bash_infrastructure_protection_block")
@@ -3330,6 +3506,11 @@ def main():
                                     f"Do not edit infrastructure files directly."
                                 ),
                             )
+                            # Issue #803: Record denial for cross-tool workaround detection.
+                            try:
+                                _update_deny_cache(_deny750_path)
+                            except Exception:
+                                pass  # Never fail the hook for cache writes
                             sys.exit(0)
 
             # Layer 4: Pipeline ordering gate (Issues #625, #629, #632)
