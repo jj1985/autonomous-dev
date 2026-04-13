@@ -55,6 +55,17 @@ COMPRESSION_CRITICAL_AGENTS = {
 # Matches MIN_CRITICAL_AGENT_PROMPT_WORDS in pipeline_intent_validator.py.
 MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
 
+# Maximum cumulative shrinkage across an entire batch (Issue #794).
+# Individual issues may pass the 25% per-issue threshold but accumulate
+# progressive 3-5% per-iteration compression that this catches.
+MAX_CUMULATIVE_SHRINKAGE = 0.20  # 20% total drift threshold
+
+# Known reinvocation context strings (Issue #789, #791).
+# These represent legitimate secondary agent invocations that produce
+# naturally shorter prompts, so the shrinkage threshold is relaxed.
+REINVOCATION_CONTEXTS = {"remediation", "re-review", "doc-update-retry"}
+
+
 # Default baseline persistence location (relative to project root).
 _DEFAULT_BASELINES_RELPATH = Path(".claude") / "logs" / "prompt_baselines.json"
 
@@ -144,6 +155,7 @@ def validate_prompt_word_count(
     baseline_word_count: Optional[int] = None,
     *,
     max_shrinkage: float = 0.15,
+    invocation_context: Optional[str] = None,
 ) -> PromptIntegrityResult:
     """Validate a constructed prompt against word count thresholds.
 
@@ -201,7 +213,23 @@ def validate_prompt_word_count(
     if baseline_word_count is not None and baseline_word_count > 0:
         shrinkage_pct = round((1.0 - word_count / baseline_word_count) * 100, 1)
 
-        if shrinkage_pct > max_shrinkage * 100:
+        # Relax threshold for known reinvocation contexts (Issue #789, #791)
+        effective_max_shrinkage = max_shrinkage
+        if invocation_context and invocation_context in REINVOCATION_CONTEXTS:
+            effective_max_shrinkage = max_shrinkage * 2.0
+            logger.debug(
+                "Relaxed shrinkage threshold for %s context: %.0f%% -> %.0f%%",
+                invocation_context,
+                max_shrinkage * 100,
+                effective_max_shrinkage * 100,
+            )
+
+        if shrinkage_pct > effective_max_shrinkage * 100:
+            ctx_note = (
+                f" [relaxed from {max_shrinkage:.0%} for {invocation_context}]"
+                if invocation_context and invocation_context in REINVOCATION_CONTEXTS
+                else ""
+            )
             return PromptIntegrityResult(
                 agent_type=agent_type,
                 word_count=word_count,
@@ -211,7 +239,7 @@ def validate_prompt_word_count(
                 reason=(
                     f"Prompt for {agent_type} shrank {shrinkage_pct:.1f}% "
                     f"from baseline ({baseline_word_count} -> {word_count} words, "
-                    f"threshold: {max_shrinkage:.0%})."
+                    f"threshold: {effective_max_shrinkage:.0%}{ctx_note})."
                 ),
                 should_reload=True,
             )
@@ -343,7 +371,10 @@ def get_prompt_baseline(
 
 
 def clear_prompt_baselines(*, state_dir: Optional[Path] = None) -> None:
-    """Clear all prompt baselines. Call at batch start.
+    """Clear all prompt baselines and batch observations. Call at batch start.
+
+    Also clears batch observations (Issue #794) so cumulative drift tracking
+    resets alongside baselines.
 
     Args:
         state_dir: Optional override for state directory.
@@ -352,6 +383,8 @@ def clear_prompt_baselines(*, state_dir: Optional[Path] = None) -> None:
     if baselines_path.exists():
         baselines_path.unlink()
         logger.debug("Cleared prompt baselines: %s", baselines_path)
+    # Also clear batch observations (Issue #794)
+    clear_batch_observations(state_dir=state_dir)
 
 
 def compute_template_baselines(*, agents_dir: Optional[Path] = None) -> dict:
@@ -440,3 +473,117 @@ def seed_baselines_from_templates(
         sorted(template_baselines.keys()),
     )
     return template_baselines
+
+
+def _get_observations_path(state_dir: Optional[Path] = None) -> Path:
+    """Resolve the path to the batch observations JSON file.
+
+    Args:
+        state_dir: Optional override directory. If None, uses project root.
+
+    Returns:
+        Absolute path to prompt_batch_observations.json.
+    """
+    if state_dir is not None:
+        return state_dir / "prompt_batch_observations.json"
+    root = _find_project_root()
+    return root / ".claude" / "logs" / "prompt_batch_observations.json"
+
+
+def record_batch_observation(
+    agent_type: str,
+    issue_number: int,
+    word_count: int,
+    *,
+    state_dir: Optional[Path] = None,
+) -> None:
+    """Record a prompt word count observation for cumulative drift tracking.
+
+    Appends to prompt_batch_observations.json file. Each agent_type gets a list
+    of observations recording the word count at each issue in the batch.
+
+    Args:
+        agent_type: Agent name (e.g., 'reviewer').
+        issue_number: GitHub issue number being processed.
+        word_count: Word count of the prompt sent to this agent.
+        state_dir: Optional override for state directory.
+    """
+    obs_path = _get_observations_path(state_dir)
+    obs_path.parent.mkdir(parents=True, exist_ok=True)
+
+    data: dict = {}
+    if obs_path.exists():
+        try:
+            data = json.loads(obs_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning(
+                "Could not read batch observations file, starting fresh: %s", obs_path
+            )
+            data = {}
+
+    if agent_type not in data:
+        data[agent_type] = []
+
+    data[agent_type].append({"issue": issue_number, "word_count": word_count})
+
+    obs_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    logger.debug(
+        "Recorded batch observation: %s issue #%d = %d words",
+        agent_type,
+        issue_number,
+        word_count,
+    )
+
+
+def get_cumulative_shrinkage(
+    agent_type: str,
+    *,
+    state_dir: Optional[Path] = None,
+) -> Optional[float]:
+    """Get cumulative shrinkage percentage for an agent across the batch.
+
+    Computes drift from the first observation to the latest observation for
+    the specified agent_type.
+
+    Args:
+        agent_type: Agent name to look up.
+        state_dir: Optional override for state directory.
+
+    Returns:
+        Shrinkage percentage (e.g., 20.0 for 20%), or None if fewer than
+        2 observations exist for this agent. Returns 0.0 if latest >= first.
+    """
+    obs_path = _get_observations_path(state_dir)
+
+    if not obs_path.exists():
+        return None
+
+    try:
+        data = json.loads(obs_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("Could not read batch observations file: %s", obs_path)
+        return None
+
+    observations = data.get(agent_type)
+    if not observations or len(observations) < 2:
+        return None
+
+    first_wc = observations[0]["word_count"]
+    latest_wc = observations[-1]["word_count"]
+
+    if first_wc <= 0:
+        return None
+
+    shrinkage = (first_wc - latest_wc) / first_wc * 100
+    return max(0.0, round(shrinkage, 1))
+
+
+def clear_batch_observations(*, state_dir: Optional[Path] = None) -> None:
+    """Clear all batch observations. Call at batch start.
+
+    Args:
+        state_dir: Optional override for state directory.
+    """
+    obs_path = _get_observations_path(state_dir)
+    obs_path.unlink(missing_ok=True)
+    logger.debug("Cleared batch observations: %s", obs_path)
