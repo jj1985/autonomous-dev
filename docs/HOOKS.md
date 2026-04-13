@@ -102,14 +102,17 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - Controlled by env var `PRE_TOOL_PIPELINE_ORDERING` (default: `true`)
 - Fails open — ordering check errors never block workflow
 
-**Prompt Integrity Gate** (Issues #695, #716, #723 — native Agent/Task tools only):
+**Prompt Integrity Gate** (Issues #695, #716, #723, #789, #791, #794 — native Agent/Task tools only):
 - Blocks invocations of compression-critical agents (security-auditor, reviewer, doc-master, implementer, planner) when their prompt falls below the minimum word count
 - Minimum word count enforcement fires **regardless of pipeline state** (Issue #716 fix) — this gate is always active for critical agents, not just during `/implement` batches
 - Baseline shrinkage check (detecting > 25% compression vs first-issue baseline) fires **whenever a baseline exists** (Issue #723 — no pipeline-active gate); when no baseline exists, the hook seeds one from the **observed word count** of the current prompt at `issue_number=0` (Issue #759 fix — template-based seeding produced ~1700-word baselines that blocked legitimate ~200-400-word task-specific prompts even with a 0.70 slack factor); template-based seeding via `seed_baselines_from_templates()` is reserved for batch-mode pre-seeding at batch start with appropriate slack
 - Uses `validate_prompt_integrity()` which imports `COMPRESSION_CRITICAL_AGENTS` and `MIN_CRITICAL_AGENT_PROMPT_WORDS` from `prompt_integrity.py` (minimum: 80 words)
 - Shrinkage check calls `validate_prompt_word_count` with `max_shrinkage=0.25` (25%, higher than the library default of 15% to allow legitimate prompt variation at the hook level)
+- **Reinvocation context detection** (Issues #789, #791): `_detect_invocation_context()` checks the `PIPELINE_INVOCATION_CONTEXT` env var first, then scans prompt text for markers (`"remediation mode"`, `"re-review"`, `"doc-update-retry"`, `"reduced context"`). When a known reinvocation context (`REINVOCATION_CONTEXTS = {"remediation", "re-review", "doc-update-retry"}`) is detected, the shrinkage threshold is doubled (25% → 50%) to accommodate naturally shorter re-invocation prompts; the effective threshold is noted in the block message. Passed as `invocation_context` to `validate_prompt_word_count`.
+- **Cumulative drift check** (Issue #794): After each check passes, `record_batch_observation(agent_type, issue_number, word_count)` records the observation to `prompt_batch_observations.json`. `get_cumulative_shrinkage(agent_type)` then computes total drift from the first to latest observation; if drift exceeds `MAX_CUMULATIVE_SHRINKAGE` (20%), the invocation is blocked with a REQUIRED NEXT ACTION directive — this catches progressive 3–5% per-iteration compression that individually passes the 25% per-issue threshold. Wrapped in try/except (fail-open) so cumulative tracking failures never block agents.
+- `clear_prompt_baselines()` now also calls `clear_batch_observations()` at batch start so cumulative drift state resets alongside baselines
 - Block message directs the coordinator to reconstruct the prompt with full context and use `get_agent_prompt_template()` to reload the agent base prompt from disk
-- Fails open in two cases: ImportError when `prompt_integrity` module is unavailable, and any Exception raised during the baseline check
+- Fails open: ImportError when `prompt_integrity` module is unavailable, any Exception during the baseline check, and any Exception in the cumulative drift check
 
 **Infrastructure Protection** (scoped to autonomous-dev repos):
 - Write/Edit to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` are blocked outside the `/implement` pipeline

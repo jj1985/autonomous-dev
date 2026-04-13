@@ -470,6 +470,37 @@ PROTECTED_INFRA_SEGMENTS = {
 }
 
 
+def _detect_invocation_context(prompt: str) -> "Optional[str]":
+    """Detect reinvocation context from prompt text or environment.
+
+    Checks for known markers that indicate a secondary agent invocation
+    (remediation, re-review, doc-update-retry) where prompts are naturally
+    shorter and should use relaxed shrinkage thresholds.
+
+    Args:
+        prompt: The prompt text to scan for markers.
+
+    Returns:
+        Context string if detected, None otherwise.
+    """
+    # 1. Explicit env var takes precedence (coordinator can set this)
+    env_ctx = os.getenv("PIPELINE_INVOCATION_CONTEXT", "").strip().lower()
+    if env_ctx:
+        return env_ctx
+
+    # 2. Scan prompt for known markers (case-insensitive)
+    prompt_lower = prompt.lower()
+
+    if "remediation mode" in prompt_lower:
+        return "remediation"
+    if "re-review" in prompt_lower or "re_review" in prompt_lower:
+        return "re-review"
+    if "doc-update-retry" in prompt_lower or "reduced context" in prompt_lower or "retry with reduced" in prompt_lower:
+        return "doc-update-retry"
+
+    return None
+
+
 def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, str]:
     """Validate agent prompt word count during active pipeline (Issue #695).
 
@@ -543,9 +574,13 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
             agent_type, issue_number=current_issue_num
         )
 
+        # Detect reinvocation context for relaxed thresholds (Issue #789, #791)
+        invocation_ctx = _detect_invocation_context(prompt)
+
         if baseline_word_count is not None:
             result = validate_prompt_word_count(
-                agent_type, prompt, baseline_word_count, max_shrinkage=0.25
+                agent_type, prompt, baseline_word_count,
+                max_shrinkage=0.25, invocation_context=invocation_ctx,
             )
             if not result.passed:
                 issue_ctx = f" (issue #{current_issue_str})" if current_issue_str else ""
@@ -578,10 +613,38 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
                 "Seeded baseline from observation: %s issue #%d = %d words",
                 agent_type, seed_issue, word_count,
             )
+            # Also record as batch observation for cumulative drift tracking (Issue #794)
+            try:
+                from prompt_integrity import record_batch_observation as _record_obs
+                _record_obs(agent_type, seed_issue, word_count)
+            except Exception:
+                pass  # fail-open
 
     except Exception:
         # Fail open: any error in baseline check must not block the agent
         pass
+
+    # Cumulative drift check (Issue #794) — wrapped in try/except (fail-open)
+    try:
+        from prompt_integrity import (
+            record_batch_observation,
+            get_cumulative_shrinkage,
+            MAX_CUMULATIVE_SHRINKAGE,
+        )
+        issue_for_obs = _get_current_issue_number()
+        record_batch_observation(agent_type, issue_for_obs, word_count)
+        cumulative = get_cumulative_shrinkage(agent_type)
+        if cumulative is not None and cumulative > MAX_CUMULATIVE_SHRINKAGE * 100:
+            return (
+                "deny",
+                f"BLOCKED: Cumulative prompt drift for '{agent_type}' is {cumulative:.1f}% "
+                f"across this batch (threshold: {MAX_CUMULATIVE_SHRINKAGE:.0%}). "
+                f"Individual issues pass but the overall trend shows progressive compression. "
+                f"REQUIRED NEXT ACTION: Use get_agent_prompt_template('{agent_type}') "
+                f"to reload the full agent prompt from disk and reconstruct with complete context.",
+            )
+    except Exception:
+        pass  # fail-open — cumulative tracking failure must not block agents
 
     return ("allow", f"Prompt integrity OK: {agent_type} has {word_count} words (>= {MIN_CRITICAL_AGENT_PROMPT_WORDS})")
 
