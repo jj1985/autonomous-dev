@@ -16013,11 +16013,11 @@ is_suspicious = has_suspicious_exec("exec(user_input)")
 
 **Version History**: v1.0.0 (2026-03-29) - Initial release for AST-based Python write detection in Bash bypass hardening (Issue #589); v1.1.0 (2026-04-07) - Added detection of `os.rename`/`os.replace`/`Path.rename`/`Path.replace` inline bypass patterns (Issue #698)
 
-## 176+3. agent_ordering_gate.py (324 lines, v1.2.0 - Issues #625, #629, #632, #669, #697)
+## 176+3. agent_ordering_gate.py (385 lines, v1.3.0 - Issues #625, #629, #632, #669, #697, #838)
 
 **Purpose**: Pure-logic gate for pipeline agent ordering decisions. No I/O, no side effects. Receives state as input, returns gate decisions. Used by `unified_pre_tool.py` to enforce agent invocation order at hook level, preventing out-of-order Agent/Task tool calls during pipeline execution.
 
-**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #669 — Defense-in-depth for parallel mode: `launched_agents` parameter + `warning` field on `GateResult`; #697 — Mode-aware prerequisite filtering: `pipeline_mode` parameter skips prerequisites for agents not in the current mode's required set
+**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #669 — Defense-in-depth for parallel mode: `launched_agents` parameter + `warning` field on `GateResult`; #697 — Mode-aware prerequisite filtering: `pipeline_mode` parameter skips prerequisites for agents not in the current mode's required set; #838 — pytest-gate as virtual prerequisite for STEP 10 agents; reviewer→security-auditor moved to SEQUENTIAL_REQUIRED (always enforced); `MODE_DEPENDENT_PAIRS` emptied
 
 ### Public API
 
@@ -16042,7 +16042,7 @@ result = check_ordering_prerequisites(
 
 ### Functions
 
-- **`check_ordering_prerequisites(target_agent, completed_agents, *, validation_mode="sequential", launched_agents=None, pipeline_mode="full") -> GateResult`** — Check if ordering prerequisites are met for a target agent. In sequential mode, all `SEQUENTIAL_REQUIRED` pairs are enforced. In parallel mode, the `reviewer → security-auditor` constraint is relaxed — but only if the prerequisite has been launched; if it has not been launched at all the check still blocks (Issue #669). Prerequisites for agents not in the current `pipeline_mode`'s required set are skipped — e.g., in `--fix` mode, the `planner → implementer` prerequisite is skipped because planner is not part of the fix pipeline (Issue #697). When the prerequisite is launched but not yet completed, a `warning` is attached to the result for observability. Unknown agents always pass through.
+- **`check_ordering_prerequisites(target_agent, completed_agents, *, validation_mode="sequential", launched_agents=None, pipeline_mode="full") -> GateResult`** — Check if ordering prerequisites are met for a target agent. In sequential mode, all `SEQUENTIAL_REQUIRED` pairs are enforced. As of Issue #838, `reviewer → security-auditor` is in `SEQUENTIAL_REQUIRED` (always enforced, even in parallel mode). In parallel mode, only the `MODE_DEPENDENT_PAIRS` set is relaxed — currently empty, so there is no effective difference between sequential and parallel mode for core prerequisites. Prerequisites for agents not in the current `pipeline_mode`'s required set are skipped — e.g., in `--fix` mode, the `planner → implementer` prerequisite is skipped because planner is not part of the fix pipeline (Issue #697). `pytest-gate` acts as a virtual prerequisite that must complete before reviewer, security-auditor, and doc-master (Issue #838). When the prerequisite is launched but not yet completed, a `warning` is attached to the result for observability. Unknown agents always pass through.
 - **`get_required_agents(mode="full", *, research_skipped=False) -> Set[str]`** — Return the set of required agents for a given pipeline mode ("full", "light", "fix", or "tdd-first").
 - **`check_minimum_agent_count(completed_agents, *, required_agents) -> GateResult`** — Check that all required agents have completed (e.g., before git operations).
 - **`check_batch_agent_completeness(completed_agents, issue_number, *, mode="default") -> GateResult`** — Check if all required agents have completed for a batch issue. Supports `"default"` (full pipeline), `"light"`, and `"fix"` modes.
@@ -16053,29 +16053,30 @@ result = check_ordering_prerequisites(
 
 ### Constants
 
-- **`FULL_PIPELINE_AGENTS`** — Set of agents required for a complete pipeline run (researcher-local, researcher, planner, implementer, reviewer, security-auditor, doc-master)
-- **`LIGHT_PIPELINE_AGENTS`** — Reduced set for `--light` mode (planner, implementer, doc-master, continuous-improvement-analyst)
-- **`FIX_PIPELINE_AGENTS`** — Reduced set for `--fix` mode (implementer, reviewer, doc-master, continuous-improvement-analyst)
+- **`FULL_PIPELINE_AGENTS`** — Set of agents required for a complete pipeline run (researcher-local, researcher, planner, implementer, pytest-gate, reviewer, security-auditor, doc-master)
+- **`LIGHT_PIPELINE_AGENTS`** — Reduced set for `--light` mode (planner, implementer, pytest-gate, doc-master, continuous-improvement-analyst)
+- **`FIX_PIPELINE_AGENTS`** — Reduced set for `--fix` mode (implementer, pytest-gate, reviewer, doc-master, continuous-improvement-analyst)
 - **`STEP_ORDER`** — Dict mapping agent name to step number (imported from `pipeline_intent_validator` with inline fallback)
-- **`SEQUENTIAL_REQUIRED`** — List of `(prerequisite, target)` pairs always enforced in sequential mode
-- **`MODE_DEPENDENT_PAIRS`** — Pairs relaxed in parallel mode (`reviewer → security-auditor`), subject to `launched_agents` check
+- **`SEQUENTIAL_REQUIRED`** — List of `(prerequisite, target)` pairs always enforced in sequential mode; includes `pytest-gate → reviewer`, `pytest-gate → security-auditor`, `pytest-gate → doc-master`, and `reviewer → security-auditor` (all always enforced regardless of mode — Issue #838)
+- **`MODE_DEPENDENT_PAIRS`** — Empty set. Previously held `reviewer → security-auditor` but that pair was moved into `SEQUENTIAL_REQUIRED` (always enforced) in Issue #838. Kept for backward compatibility.
 
 ### Testing
 
-- `tests/unit/lib/test_agent_ordering_gate.py` — unit tests (6 regression tests added in Issue #751 verifying CIA inclusion in FIX_PIPELINE_AGENTS and LIGHT_PIPELINE_AGENTS; 8 regression tests added in Issue #697 via `TestPipelineModeFiltering` class; 14 regression tests added in Issue #669)
+- `tests/unit/lib/test_agent_ordering_gate.py` — unit tests (6 regression tests added in Issue #751 verifying CIA inclusion in FIX_PIPELINE_AGENTS and LIGHT_PIPELINE_AGENTS; 8 regression tests added in Issue #697 via `TestPipelineModeFiltering` class; 14 regression tests added in Issue #669; new tests for Issue #838 pytest-gate ordering and reviewer→security-auditor always-enforced behavior)
 
 **Version History**:
+- v1.3.0 (2026-04-14) - pytest-gate added as virtual prerequisite for reviewer, security-auditor, and doc-master; `reviewer → security-auditor` moved from `MODE_DEPENDENT_PAIRS` to `SEQUENTIAL_REQUIRED` (always enforced, even in parallel mode); `MODE_DEPENDENT_PAIRS` emptied (kept for backward compat); `STEP_ORDER` updated with `"pytest-gate": 5.5`; `FULL_PIPELINE_AGENTS`, `LIGHT_PIPELINE_AGENTS`, and `FIX_PIPELINE_AGENTS` updated to include `pytest-gate` (Issue #838)
 - v1.2.0 (2026-04-07) - Mode-aware prerequisite filtering: `pipeline_mode` parameter skips prerequisites for agents not in the current mode's required set; `_get_pipeline_mode_from_state()` helper in `unified_pre_tool.py` reads mode from pipeline state file (Issue #697)
 - v1.1.0 (2026-04-07) - Defense-in-depth: `launched_agents` parameter blocks parallel mode bypass when prerequisite not launched; `GateResult.warning` field for observability; fail-open logging in `unified_pre_tool.py` (Issue #669)
 - v1.0.0 (2026-03-30) - Initial release for hook-level pipeline ordering enforcement (Issues #625, #629, #632)
 
-## 176+4. pipeline_completion_state.py (v1.3.0 - Issues #625, #629, #632, #686, #712, #786, #802)
+## 176+4. pipeline_completion_state.py (v1.5.0 - Issues #625, #629, #632, #686, #712, #786, #802, #837, #838)
 
 **Purpose**: Shared state for agent ordering enforcement. Manages a per-session JSON state file that tracks which pipeline agents have completed and which have been launched. Written by `unified_session_tracker.py` (SubagentStop for completions) and `unified_pre_tool.py` (PreToolUse for launches), read by `unified_pre_tool.py` to enforce ordering.
 
 **State file path**: `/tmp/pipeline_agent_completions_{sha256(session_id)[:8]}.json` (auto-expires after 2 hours)
 
-**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #686 — Agent launch tracking for parallel-mode defense-in-depth
+**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #686 — Agent launch tracking for parallel-mode defense-in-depth; #838 — pytest-gate virtual agent: `record_pytest_gate_passed()` and `get_pytest_gate_passed()` convenience wrappers; `SKIP_PYTEST_GATE=1` escape hatch
 
 ### Public API
 
@@ -16083,6 +16084,7 @@ result = check_ordering_prerequisites(
 from pipeline_completion_state import (
     record_agent_completion, get_completed_agents,
     record_agent_launch, get_launched_agents,
+    record_doc_verdict,
     set_validation_mode, get_validation_mode, clear_session,
 )
 
@@ -16099,6 +16101,9 @@ completed = get_completed_agents(session_id="abc123", issue_number=42)
 # Read launched agents (used by parallel-mode defense-in-depth guard)
 launched = get_launched_agents(session_id="abc123", issue_number=42)
 # => {"reviewer"}
+
+# Record doc-master verdict for a batch issue (called by coordinator after parsing doc-master output)
+record_doc_verdict(session_id="abc123", issue_number=42, verdict="PASS")
 ```
 
 ### Functions
@@ -16113,10 +16118,13 @@ launched = get_launched_agents(session_id="abc123", issue_number=42)
 - **`get_validation_mode(session_id) -> str`** — Get ordering enforcement mode (default: `"sequential"`).
 - **`clear_session(session_id) -> None`** — Remove the state file for a session (called at pipeline cleanup).
 - **`verify_batch_cia_completions(session_id) -> tuple[bool, list[int], list[int]]`** — Verify `continuous-improvement-analyst` completed for all batch issues. Returns `(all_passed, issues_with_cia, issues_missing_cia)`. Skips issue key `"0"` (non-batch). Fails open on any error or missing state. Bypass via `SKIP_BATCH_CIA_GATE=1`. Called by `unified_pre_tool.py` before allowing git commit in batch mode. (Issue #712)
-- **`verify_batch_doc_master_completions(session_id) -> tuple[bool, list[int], list[int]]`** — Verify `doc-master` completed for all batch issues. Returns `(all_passed, issues_with_doc_master, issues_missing_doc_master)`. Skips issue key `"0"` (non-batch). Fails open on any error or missing state. Bypass via `SKIP_BATCH_DOC_MASTER_GATE=1`. Called by `unified_pre_tool.py` before allowing git commit in batch mode. Mirrors CIA gate design. (Issue #786)
+- **`record_doc_verdict(session_id, issue_number, verdict) -> None`** — Record a doc-master verdict string for a specific batch issue. Persists the verdict under `"doc-master-verdict"` in the per-issue completions dict. Valid verdicts: `"PASS"`, `"FAIL"`, `"DOCS-UPDATED"`, `"NO-UPDATE-NEEDED"`, `"DOCS-DRIFT-FOUND"`. Invalid sentinel values (`"MISSING"`, `"SHALLOW"`) cause `verify_batch_doc_master_completions()` to treat the issue as incomplete. Called by the coordinator (implement.md and implement-batch.md) immediately after parsing the doc-master agent's verdict line. (Issue #837)
+- **`verify_batch_doc_master_completions(session_id) -> tuple[bool, list[int], list[int]]`** — Verify `doc-master` completed with a valid verdict for all batch issues. Returns `(all_passed, issues_with_doc_master, issues_missing_doc_master)`. An issue is considered incomplete when doc-master never ran OR when it ran but recorded no valid verdict (MISSING/SHALLOW). Backward compatible: issues with doc-master completion but no recorded `"doc-master-verdict"` field (old state) pass through as valid. Skips issue key `"0"` (non-batch). Fails open on any error or missing state. Bypass via `SKIP_BATCH_DOC_MASTER_GATE=1`. Called by `unified_pre_tool.py` before allowing git commit in batch mode. (Issues #786, #837)
 - **`record_research_skipped(session_id, *, issue_number=0) -> None`** — Record that research was skipped for a given session/issue. Called by the coordinator after STEP 3.5 determines that research agents should be skipped (fully-specified change detection). When recorded, `verify_pipeline_agent_completions()` excludes researcher agents from the required set. (Issue #802)
 - **`get_research_skipped(session_id, *, issue_number=0) -> bool`** — Check whether research was recorded as skipped for a given session/issue. Returns `True` if skipped, `False` otherwise (fail-open on read error). (Issue #802)
 - **`verify_pipeline_agent_completions(session_id, pipeline_mode="full", *, issue_number=0) -> tuple[bool, set[str], set[str]]`** — Verify all required agents completed for a pipeline run. Reads completed agents from state, determines required agents based on `pipeline_mode` and `research_skipped` flag, and returns `(passed, completed_agents, missing_agents)`. Fail-open on any error or missing state. `pipeline_mode` accepts `"full"`, `"light"`, `"fix"`, or `"tdd-first"`. Bypass via `SKIP_AGENT_COMPLETENESS_GATE=1`. Called by `unified_pre_tool.py` via `_check_pipeline_agent_completions()` before allowing git commit during an active pipeline session. (Issue #802)
+- **`record_pytest_gate_passed(session_id, *, issue_number=0, passed=True) -> None`** — Record pytest gate result as a virtual agent completion using `agent_type="pytest-gate"`. Delegates to `record_agent_completion()` so `get_completed_agents()` automatically includes `"pytest-gate"` when the gate has passed. Called by the coordinator after STEP 8 (quality gate) completes. Bypass via `SKIP_PYTEST_GATE=1`. (Issue #838)
+- **`get_pytest_gate_passed(session_id, *, issue_number=0) -> bool`** — Check if pytest gate has been recorded as passed. Returns `True` if `"pytest-gate"` is in completed agents OR `SKIP_PYTEST_GATE=1` is set. Returns `False` if not recorded or recorded as failed. Used by the ordering gate to enforce pytest-gate → reviewer/security-auditor/doc-master prerequisites. (Issue #838)
 
 ### State File Format
 
@@ -16126,7 +16134,7 @@ launched = get_launched_agents(session_id="abc123", issue_number=42)
   "created_at": "2026-03-30T12:00:00+00:00",
   "validation_mode": "sequential",
   "completions": {
-    "42": {"planner": true, "test-master": true}
+    "42": {"planner": true, "test-master": true, "doc-master": true, "doc-master-verdict": "PASS"}
   },
   "launches": {
     "42": {"reviewer": true, "security-auditor": true}
@@ -16142,9 +16150,13 @@ launched = get_launched_agents(session_id="abc123", issue_number=42)
 
 - `tests/unit/lib/test_pipeline_completion_state.py` — unit tests
 - `tests/unit/lib/test_pipeline_completion_state_agent_completeness.py` — 15 unit tests for Issue #802 functions
+- `tests/unit/lib/test_pipeline_completion_state_verdict.py` — 13 unit tests for Issue #837 verdict recording and verification functions
+- `tests/unit/hooks/test_batch_doc_master_gate.py` — includes 4 new regression tests for differentiated "never ran" vs "no valid verdict" block messages (Issue #837)
 - `tests/regression/test_issue_802_agent_completeness_gate.py` — 7 regression tests for the hook-level gate
 
 **Version History**:
+- v1.5.0 (2026-04-14) - Added `record_pytest_gate_passed()` and `get_pytest_gate_passed()` convenience wrappers; pytest-gate stored as a virtual agent completion (`agent_type="pytest-gate"`) so all existing ordering and completeness machinery automatically treats it as a completed agent; `SKIP_PYTEST_GATE=1` escape hatch bypasses the gate entirely; `unified_pre_tool.py` injects `"pytest-gate"` into completed set when env var is set before running the ordering check (Issue #838)
+- v1.4.0 (2026-04-14) - Added `record_doc_verdict()` and `_VALID_DOC_VERDICTS`; enhanced `verify_batch_doc_master_completions()` to check verdict presence (not just completion) — issues where doc-master ran but produced no valid verdict are now treated as incomplete; `unified_pre_tool.py` differentiates "doc-master never ran" vs "ran but no valid verdict" in block messages (Issue #837)
 - v1.3.0 (2026-04-13) - Added `record_research_skipped()`, `get_research_skipped()`, and `verify_pipeline_agent_completions()` for hook-level agent completeness gate; `unified_pre_tool.py` blocks git commit when required pipeline agents haven't completed; `research_skipped` state key added; bypass via `SKIP_AGENT_COMPLETENESS_GATE=1` (Issue #802)
 - v1.2.0 (2026-04-12) - Added `verify_batch_doc_master_completions()` batch commit gate mirroring `verify_batch_cia_completions()`; `unified_pre_tool.py` blocks git commit in batch worktrees when doc-master has not run for all issues (Issue #786)
 - v1.1.0 (2026-04-07) - Added `record_agent_launch()` and `get_launched_agents()` for parallel-mode defense-in-depth; `unified_pre_tool.py` now passes `launched_agents` to ordering gate (Issue #686)

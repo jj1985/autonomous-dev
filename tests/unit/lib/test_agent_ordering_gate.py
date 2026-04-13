@@ -34,7 +34,7 @@ class TestSequentialOrdering:
     """Tests for sequential (default) mode ordering."""
 
     def test_security_auditor_blocked_without_reviewer(self):
-        completed = {"implementer"}
+        completed = {"implementer", "pytest-gate"}
         result = check_ordering_prerequisites(
             "security-auditor", completed, validation_mode="sequential"
         )
@@ -42,14 +42,14 @@ class TestSequentialOrdering:
         assert "reviewer" in result.missing_agents
 
     def test_security_auditor_allowed_with_reviewer(self):
-        completed = {"implementer", "reviewer"}
+        completed = {"implementer", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor", completed, validation_mode="sequential"
         )
         assert result.passed
 
     def test_reviewer_allowed_without_security_auditor(self):
-        completed = {"implementer"}
+        completed = {"implementer", "pytest-gate"}
         result = check_ordering_prerequisites(
             "reviewer", completed, validation_mode="sequential"
         )
@@ -71,7 +71,7 @@ class TestSequentialOrdering:
         assert result.passed
 
     def test_reviewer_blocked_without_implementer(self):
-        completed = {"planner"}
+        completed = {"planner", "pytest-gate"}
         result = check_ordering_prerequisites(
             "reviewer", completed, validation_mode="sequential"
         )
@@ -79,7 +79,7 @@ class TestSequentialOrdering:
         assert "implementer" in result.missing_agents
 
     def test_security_auditor_blocked_without_implementer(self):
-        completed = {"planner", "reviewer"}
+        completed = {"planner", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor", completed, validation_mode="sequential"
         )
@@ -87,7 +87,7 @@ class TestSequentialOrdering:
         assert "implementer" in result.missing_agents
 
     def test_doc_master_blocked_without_implementer(self):
-        completed = {"planner"}
+        completed = {"planner", "pytest-gate"}
         result = check_ordering_prerequisites(
             "doc-master", completed, validation_mode="sequential"
         )
@@ -95,7 +95,7 @@ class TestSequentialOrdering:
         assert "implementer" in result.missing_agents
 
     def test_doc_master_allowed_with_implementer(self):
-        completed = {"planner", "implementer"}
+        completed = {"planner", "implementer", "pytest-gate"}
         result = check_ordering_prerequisites(
             "doc-master", completed, validation_mode="sequential"
         )
@@ -141,10 +141,20 @@ class TestSequentialOrdering:
 
 
 class TestParallelOrdering:
-    """Tests for parallel mode — relaxes reviewer->security-auditor."""
+    """Tests for parallel mode — Issue #838: reviewer->security-auditor always enforced."""
 
-    def test_security_auditor_allowed_without_reviewer(self):
-        completed = {"implementer"}
+    def test_security_auditor_blocked_without_reviewer_in_parallel(self):
+        """Issue #838: reviewer->security-auditor is now always enforced, even in parallel."""
+        completed = {"implementer", "pytest-gate"}
+        result = check_ordering_prerequisites(
+            "security-auditor", completed, validation_mode="parallel"
+        )
+        assert not result.passed
+        assert "reviewer" in result.missing_agents
+
+    def test_security_auditor_allowed_with_all_prereqs_parallel(self):
+        """Security-auditor passes in parallel mode when all prereqs met."""
+        completed = {"implementer", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor", completed, validation_mode="parallel"
         )
@@ -160,14 +170,14 @@ class TestParallelOrdering:
         assert "planner" in result.missing_agents
 
     def test_reviewer_still_requires_implementer_in_parallel(self):
-        completed = {"planner"}
+        completed = {"planner", "pytest-gate"}
         result = check_ordering_prerequisites(
             "reviewer", completed, validation_mode="parallel"
         )
         assert not result.passed
 
     def test_doc_master_still_requires_implementer_in_parallel(self):
-        completed = {"planner"}
+        completed = {"planner", "pytest-gate"}
         result = check_ordering_prerequisites(
             "doc-master", completed, validation_mode="parallel"
         )
@@ -197,7 +207,7 @@ class TestOrderingEdgeCases:
 
     def test_default_mode_is_sequential(self):
         """Default validation_mode should be sequential."""
-        completed = {"implementer"}
+        completed = {"implementer", "pytest-gate"}
         result = check_ordering_prerequisites("security-auditor", completed)
         assert not result.passed  # reviewer missing, sequential enforced
 
@@ -268,7 +278,7 @@ class TestBatchCompleteness:
         assert len(result.missing_agents) > 0
 
     def test_light_mode_requires_fewer(self):
-        completed = {"planner", "implementer", "doc-master", "continuous-improvement-analyst"}
+        completed = {"planner", "implementer", "pytest-gate", "doc-master", "continuous-improvement-analyst"}
         result = check_batch_agent_completeness(
             completed, issue_number=10, mode="light"
         )
@@ -307,11 +317,11 @@ class TestGetRequiredAgents:
 
     def test_fix_mode_returns_fix_agents(self):
         result = get_required_agents("fix")
-        assert result == {"implementer", "reviewer", "doc-master", "continuous-improvement-analyst"}
+        assert result == {"implementer", "pytest-gate", "reviewer", "doc-master", "continuous-improvement-analyst"}
 
     def test_light_mode_returns_light_agents(self):
         result = get_required_agents("light")
-        assert result == {"planner", "implementer", "doc-master", "continuous-improvement-analyst"}
+        assert result == {"planner", "implementer", "pytest-gate", "doc-master", "continuous-improvement-analyst"}
 
     def test_full_mode_returns_full_pipeline_agents(self):
         result = get_required_agents("full")
@@ -322,6 +332,7 @@ class TestGetRequiredAgents:
         assert "researcher-local" not in result
         assert "researcher" not in result
         assert len(result) == len(FULL_PIPELINE_AGENTS) - 2
+        assert "pytest-gate" in result
 
     def test_tdd_first_mode_returns_full_plus_test_master(self):
         result = get_required_agents("tdd-first")
@@ -358,10 +369,11 @@ class TestGetRequiredAgents:
         result = get_required_agents()
         assert result == FULL_PIPELINE_AGENTS
 
-    def test_full_with_research_skipped_has_5_agents(self):
+    def test_full_with_research_skipped_has_6_agents(self):
+        """Issue #838: pytest-gate added, so 6 agents with research skipped."""
         result = get_required_agents("full", research_skipped=True)
-        assert len(result) == 5
-        assert result == {"planner", "implementer", "reviewer", "security-auditor", "doc-master"}
+        assert len(result) == 6
+        assert result == {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master"}
 
 
 # ---------------------------------------------------------------------------
@@ -372,8 +384,8 @@ class TestGetRequiredAgents:
 class TestBatchCompletenessFixMode:
     """Tests for check_batch_agent_completeness with fix and other modes."""
 
-    def test_fix_mode_with_all_4_agents_passes(self):
-        completed = {"implementer", "reviewer", "doc-master", "continuous-improvement-analyst"}
+    def test_fix_mode_with_all_5_agents_passes(self):
+        completed = {"implementer", "pytest-gate", "reviewer", "doc-master", "continuous-improvement-analyst"}
         result = check_batch_agent_completeness(completed, issue_number=100, mode="fix")
         assert result.passed
 
@@ -389,8 +401,8 @@ class TestBatchCompletenessFixMode:
         assert not result.passed
         assert "implementer" in result.missing_agents
 
-    def test_light_mode_with_all_4_agents_passes(self):
-        completed = {"planner", "implementer", "doc-master", "continuous-improvement-analyst"}
+    def test_light_mode_with_all_5_agents_passes(self):
+        completed = {"planner", "implementer", "pytest-gate", "doc-master", "continuous-improvement-analyst"}
         result = check_batch_agent_completeness(completed, issue_number=10, mode="light")
         assert result.passed
 
@@ -454,7 +466,7 @@ class TestIssue669SecurityAuditorOrdering:
 
     def test_sequential_mode_blocks_security_auditor_without_reviewer(self):
         """Core regression: security-auditor MUST be blocked without reviewer in sequential mode."""
-        completed = {"planner", "implementer"}
+        completed = {"planner", "implementer", "pytest-gate"}
         result = check_ordering_prerequisites(
             "security-auditor", completed, validation_mode="sequential"
         )
@@ -463,17 +475,17 @@ class TestIssue669SecurityAuditorOrdering:
 
     def test_sequential_mode_allows_security_auditor_with_reviewer(self):
         """security-auditor allowed when reviewer has completed."""
-        completed = {"planner", "implementer", "reviewer"}
+        completed = {"planner", "implementer", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor", completed, validation_mode="sequential"
         )
         assert result.passed
 
-    def test_parallel_mode_blocks_when_reviewer_not_launched(self):
-        """Issue #669: parallel mode should block security-auditor if reviewer
-        hasn't even been launched (not just not completed)."""
-        completed = {"planner", "implementer"}
-        launched = {"planner", "implementer"}  # reviewer not launched
+    def test_parallel_mode_blocks_when_reviewer_not_completed(self):
+        """Issue #838: reviewer->security-auditor is now always enforced.
+        Parallel mode no longer relaxes this — reviewer must complete."""
+        completed = {"planner", "implementer", "pytest-gate"}
+        launched = {"planner", "implementer", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor",
             completed,
@@ -483,11 +495,10 @@ class TestIssue669SecurityAuditorOrdering:
         assert not result.passed
         assert "reviewer" in result.missing_agents
 
-    def test_parallel_mode_allows_when_reviewer_launched(self):
-        """Parallel mode allows security-auditor when reviewer is launched
-        (running concurrently), even if reviewer hasn't completed yet."""
-        completed = {"planner", "implementer"}
-        launched = {"planner", "implementer", "reviewer"}  # reviewer launched
+    def test_parallel_mode_allows_when_reviewer_completed(self):
+        """Parallel mode allows security-auditor when reviewer has completed."""
+        completed = {"planner", "implementer", "pytest-gate", "reviewer"}
+        launched = {"planner", "implementer", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor",
             completed,
@@ -495,26 +506,11 @@ class TestIssue669SecurityAuditorOrdering:
             launched_agents=launched,
         )
         assert result.passed
-
-    def test_parallel_mode_warns_when_reviewer_not_completed(self):
-        """Parallel mode emits warning when reviewer launched but not completed."""
-        completed = {"planner", "implementer"}
-        launched = {"planner", "implementer", "reviewer"}
-        result = check_ordering_prerequisites(
-            "security-auditor",
-            completed,
-            validation_mode="parallel",
-            launched_agents=launched,
-        )
-        assert result.passed
-        assert result.warning is not None
-        assert "PARALLEL MODE WARNING" in result.warning
-        assert "#669" in result.warning
 
     def test_parallel_mode_no_warning_when_reviewer_completed(self):
         """No warning when reviewer has completed in parallel mode."""
-        completed = {"planner", "implementer", "reviewer"}
-        launched = {"planner", "implementer", "reviewer"}
+        completed = {"planner", "implementer", "pytest-gate", "reviewer"}
+        launched = {"planner", "implementer", "pytest-gate", "reviewer"}
         result = check_ordering_prerequisites(
             "security-auditor",
             completed,
@@ -524,23 +520,10 @@ class TestIssue669SecurityAuditorOrdering:
         assert result.passed
         assert result.warning is None
 
-    def test_parallel_mode_without_launched_agents_allows(self):
-        """When launched_agents is not provided, parallel mode allows
-        (backward compatibility — no launched info available)."""
-        completed = {"planner", "implementer"}
-        result = check_ordering_prerequisites(
-            "security-auditor",
-            completed,
-            validation_mode="parallel",
-        )
-        assert result.passed
-
     def test_batch_context_sequential_enforcement(self):
         """Simulates batch context: PIPELINE_ISSUE_NUMBER set, sequential mode.
         security-auditor should still be blocked without reviewer."""
-        # In batch mode, each issue tracks completed agents independently.
-        # The ordering gate is called per-issue with that issue's completed set.
-        completed_for_issue = {"planner", "implementer"}
+        completed_for_issue = {"planner", "implementer", "pytest-gate"}
         result = check_ordering_prerequisites(
             "security-auditor",
             completed_for_issue,
@@ -552,7 +535,7 @@ class TestIssue669SecurityAuditorOrdering:
     def test_default_mode_is_sequential_blocks_security_auditor(self):
         """Default validation_mode must be 'sequential', which blocks
         security-auditor without reviewer. Issue #669."""
-        completed = {"planner", "implementer"}
+        completed = {"planner", "implementer", "pytest-gate"}
         result = check_ordering_prerequisites("security-auditor", completed)
         assert not result.passed
         assert "reviewer" in result.missing_agents
@@ -587,7 +570,7 @@ class TestPipelineModeFiltering:
 
     def test_fix_mode_reviewer_still_blocked_by_implementer(self):
         """In --fix mode, reviewer should still require implementer."""
-        completed = set()
+        completed = {"pytest-gate"}
         result = check_ordering_prerequisites(
             "reviewer", completed, pipeline_mode="fix"
         )
@@ -595,8 +578,8 @@ class TestPipelineModeFiltering:
         assert "implementer" in result.missing_agents
 
     def test_fix_mode_reviewer_allowed_with_implementer(self):
-        """In --fix mode, reviewer passes when implementer is done."""
-        completed = {"implementer"}
+        """In --fix mode, reviewer passes when implementer and pytest-gate are done."""
+        completed = {"implementer", "pytest-gate"}
         result = check_ordering_prerequisites(
             "reviewer", completed, pipeline_mode="fix"
         )
@@ -637,7 +620,7 @@ class TestPipelineModeFiltering:
 
     def test_fix_mode_doc_master_blocked_by_implementer(self):
         """In --fix mode, doc-master still requires implementer."""
-        completed = set()
+        completed = {"pytest-gate"}
         result = check_ordering_prerequisites(
             "doc-master", completed, pipeline_mode="fix"
         )
@@ -674,7 +657,7 @@ class TestCIAInFixAndLightPipelines:
         This is the core regression: before the fix, 3 agents were sufficient
         to pass the completeness gate. After the fix, CIA is required.
         """
-        completed = {"implementer", "reviewer", "doc-master"}  # CIA missing
+        completed = {"implementer", "pytest-gate", "reviewer", "doc-master"}  # CIA missing
         result = check_batch_agent_completeness(completed, issue_number=751, mode="fix")
         assert not result.passed
         assert "continuous-improvement-analyst" in result.missing_agents
@@ -685,19 +668,21 @@ class TestCIAInFixAndLightPipelines:
         Before the fix, 3 agents (planner, implementer, doc-master) were enough.
         After the fix, CIA is also required.
         """
-        completed = {"planner", "implementer", "doc-master"}  # CIA missing
+        completed = {"planner", "implementer", "pytest-gate", "doc-master"}  # CIA missing
         result = check_batch_agent_completeness(completed, issue_number=751, mode="light")
         assert not result.passed
         assert "continuous-improvement-analyst" in result.missing_agents
 
     def test_get_required_agents_fix_includes_cia(self):
-        """get_required_agents('fix') must return 4 agents including CIA."""
+        """get_required_agents('fix') must return 5 agents including CIA and pytest-gate."""
         result = get_required_agents("fix")
         assert "continuous-improvement-analyst" in result
-        assert len(result) == 4
+        assert "pytest-gate" in result
+        assert len(result) == 5
 
     def test_get_required_agents_light_includes_cia(self):
-        """get_required_agents('light') must return 4 agents including CIA."""
+        """get_required_agents('light') must return 5 agents including CIA and pytest-gate."""
         result = get_required_agents("light")
         assert "continuous-improvement-analyst" in result
-        assert len(result) == 4
+        assert "pytest-gate" in result
+        assert len(result) == 5

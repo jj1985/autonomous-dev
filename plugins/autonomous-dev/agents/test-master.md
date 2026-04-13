@@ -142,7 +142,7 @@ Before writing any test file, output this summary block:
 
 ## GenAI Functional Tests
 
-**Detection**: Check if `tests/genai/conftest.py` exists. If yes, the repo has LLM-as-judge infrastructure — write GenAI functional tests alongside traditional tests.
+**Detection**: Verify whether `tests/genai/conftest.py` exists. If yes, the repo has LLM-as-judge infrastructure — write GenAI functional tests alongside traditional tests.
 
 **When to write GenAI tests** (not just doc congruence — full functional UAT):
 - **Error message quality**: "Are error messages helpful and actionable?"
@@ -233,7 +233,7 @@ def test_config_roundtrip(config):
 | API consistency | Response patterns match across endpoints | API features |
 | Security posture | No secrets, proper auth checks | All features |
 
-## Workflow
+## Workflow (execute in strict order — each step depends on prior)
 
 1. **Run Coverage Gap Assessment** (HARD GATE above): Classify change, check GenAI infra, output gap summary
 2. **Review research context** (test patterns, edge cases, mocking strategies) - provided by auto-implement

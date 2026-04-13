@@ -42,7 +42,7 @@ You are **read-only** - you analyze and plan, but never write code.
 
 2. **Scope Validation — HARD GATE** (BEFORE finalizing plan)
    - Read PROJECT.md SCOPE section
-   - Check if feature is explicitly in "Out of Scope"
+   - Verify whether feature is explicitly in "Out of Scope"
 
    **FORBIDDEN**:
    - ❌ Proceeding with a plan for an Out of Scope feature without user approval

@@ -391,13 +391,54 @@ def verify_batch_cia_completions(session_id: str) -> tuple[bool, list[int], list
         return (True, [], [])
 
 
+def record_doc_verdict(
+    session_id: str,
+    issue_number: int,
+    verdict: str,
+) -> None:
+    """Record a doc-master verdict for a specific issue.
+
+    Persists the verdict string to the completion state JSON under
+    a "doc-master-verdict" key at the issue level. Uses the same
+    fcntl locking pattern as record_agent_completion.
+
+    Args:
+        session_id: The pipeline session identifier.
+        issue_number: The issue number.
+        verdict: The verdict string (e.g., "PASS", "FAIL", "DOCS-UPDATED",
+                 "NO-UPDATE-NEEDED", "DOCS-DRIFT-FOUND", "MISSING", "SHALLOW").
+
+    Issues: #837
+    """
+    state = _ensure_state(session_id)
+    completions = state.setdefault("completions", {})
+    issue_key = str(issue_number)
+    issue_completions = completions.setdefault(issue_key, {})
+    issue_completions["doc-master-verdict"] = verdict
+    _write_state(session_id, state)
+
+
+# Valid doc-master verdicts that count as "verdict present".
+_VALID_DOC_VERDICTS: set[str] = {
+    "PASS",
+    "FAIL",
+    "DOCS-UPDATED",
+    "NO-UPDATE-NEEDED",
+    "DOCS-DRIFT-FOUND",
+}
+
+
 def verify_batch_doc_master_completions(session_id: str) -> tuple[bool, list[int], list[int]]:
-    """Verify doc-master completed for all batch issues.
+    """Verify doc-master completed with a valid verdict for all batch issues.
 
     Checks the completion state for a given session and verifies that
-    'doc-master' has been recorded as completed for every tracked issue.
-    Designed to be called from the unified_pre_tool hook before allowing
-    git commit in batch mode.
+    'doc-master' has been recorded as completed AND has a valid verdict
+    for every tracked issue. Issues where doc-master completed but the
+    verdict is MISSING, SHALLOW, or absent are treated as incomplete.
+
+    Backward compatible: old state entries without a "doc-master-verdict"
+    field but WITH doc-master completion pass through (fail-open on
+    missing verdict field for backward compatibility).
 
     Fail-open: returns (True, [], []) on any error to avoid blocking
     legitimate commits due to state file issues.
@@ -407,11 +448,13 @@ def verify_batch_doc_master_completions(session_id: str) -> tuple[bool, list[int
 
     Returns:
         Tuple of (all_passed, issues_with_doc_master, issues_missing_doc_master).
-        all_passed is True when every tracked issue has doc-master completion.
+        all_passed is True when every tracked issue has doc-master completion
+        AND a valid verdict (or no verdict field at all for backward compat).
         issues_with_doc_master lists issue numbers that have doc-master.
-        issues_missing_doc_master lists issue numbers missing doc-master.
+        issues_missing_doc_master lists issue numbers missing doc-master
+        or having an invalid verdict (MISSING/SHALLOW).
 
-    Issues: #786
+    Issues: #786, #837
     """
     # Escape hatch: skip gate entirely if env var set
     if os.environ.get("SKIP_BATCH_DOC_MASTER_GATE", "").strip().lower() in ("1", "true", "yes"):
@@ -445,7 +488,18 @@ def verify_batch_doc_master_completions(session_id: str) -> tuple[bool, list[int
                 continue
 
             if issue_completions.get("doc-master"):
-                issues_with_doc_master.append(issue_num)
+                # Doc-master completed — now check verdict if present
+                verdict = issue_completions.get("doc-master-verdict")
+                if verdict is None:
+                    # Backward compat: no verdict field recorded (old state).
+                    # Treat as valid — fail-open on missing field.
+                    issues_with_doc_master.append(issue_num)
+                elif verdict in _VALID_DOC_VERDICTS:
+                    # Valid verdict present
+                    issues_with_doc_master.append(issue_num)
+                else:
+                    # Invalid verdict (MISSING, SHALLOW, etc.) — treat as incomplete
+                    issues_missing_doc_master.append(issue_num)
             else:
                 issues_missing_doc_master.append(issue_num)
 
@@ -459,6 +513,51 @@ def verify_batch_doc_master_completions(session_id: str) -> tuple[bool, list[int
     except Exception:
         # Fail-open: any error returns pass
         return (True, [], [])
+
+
+def record_pytest_gate_passed(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+    passed: bool = True,
+) -> None:
+    """Record pytest gate result as a virtual agent completion.
+
+    Uses the existing record_agent_completion infrastructure with
+    agent_type='pytest-gate'. This means get_completed_agents() will
+    automatically include 'pytest-gate' when the gate has passed.
+
+    Args:
+        session_id: Current session ID.
+        issue_number: Issue number (0 for single-issue pipeline).
+        passed: Whether pytest gate passed (True) or failed (False).
+
+    Issues: #838
+    """
+    record_agent_completion(session_id, "pytest-gate", issue_number=issue_number, success=passed)
+
+
+def get_pytest_gate_passed(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+) -> bool:
+    """Check if pytest gate has been recorded as passed.
+
+    Args:
+        session_id: Current session ID.
+        issue_number: Issue number (0 for single-issue pipeline).
+
+    Returns:
+        True if pytest gate passed or SKIP_PYTEST_GATE env var is set.
+        False if not recorded or recorded as failed.
+
+    Issues: #838
+    """
+    skip = os.environ.get("SKIP_PYTEST_GATE", "").strip().lower()
+    if skip in ("1", "true", "yes"):
+        return True
+    return "pytest-gate" in get_completed_agents(session_id, issue_number=issue_number)
 
 
 def record_research_skipped(

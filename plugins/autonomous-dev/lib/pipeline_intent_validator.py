@@ -66,6 +66,7 @@ STEP_ORDER = {
     "planner": 3,
     "test-master": 4,
     "implementer": 5,
+    "pytest-gate": 5.5,
     "reviewer": 6.0,
     "security-auditor": 6.1,
     "doc-master": 6.0,
@@ -77,6 +78,9 @@ SEQUENTIAL_REQUIRED = [
     ("implementer", "reviewer"),
     ("implementer", "security-auditor"),
     ("implementer", "doc-master"),
+    ("pytest-gate", "reviewer"),
+    ("pytest-gate", "security-auditor"),
+    ("pytest-gate", "doc-master"),
     ("reviewer", "security-auditor"),
 ]
 

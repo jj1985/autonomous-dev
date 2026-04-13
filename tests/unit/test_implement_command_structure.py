@@ -196,6 +196,59 @@ class TestModeRouting:
         assert "Tie-break" in implement_content or "fix" in implement_content.lower()
 
 
+class TestForbiddenListDensity:
+    """Verify FORBIDDEN list constraint density (Issue #825).
+
+    Research shows constraint compliance degrades after 5-7 consecutive
+    items (MOSAIC benchmark). No single block should exceed 8 items.
+    """
+
+    def test_max_consecutive_forbidden_items(self, implement_content):
+        """No contiguous block of FORBIDDEN items exceeds 8."""
+        lines = implement_content.split("\n")
+        max_consecutive = 0
+        current_run = 0
+        for line in lines:
+            if line.strip().startswith("- ❌"):
+                current_run += 1
+                max_consecutive = max(max_consecutive, current_run)
+            else:
+                current_run = 0
+        assert max_consecutive <= 8, (
+            f"Found {max_consecutive} consecutive FORBIDDEN items — "
+            f"max allowed is 8 (split into thematic groups per Issue #825)"
+        )
+
+    def test_all_14_forbidden_constraints_preserved(self, implement_content):
+        """All 14 original FORBIDDEN constraints in the coordinator block must be preserved."""
+        # Extract only the coordinator FORBIDDEN LIST block (ends at the next section)
+        start_marker = "**COORDINATOR FORBIDDEN LIST**"
+        end_marker = "### Pipeline Progress Protocol"
+        start_idx = implement_content.find(start_marker)
+        end_idx = implement_content.find(end_marker, start_idx)
+        assert start_idx != -1, "COORDINATOR FORBIDDEN LIST not found"
+        assert end_idx != -1, "End of coordinator block not found"
+        coordinator_block = implement_content[start_idx:end_idx]
+        forbidden_lines = [
+            line.strip()
+            for line in coordinator_block.split("\n")
+            if line.strip().startswith("- ❌")
+        ]
+        assert len(forbidden_lines) == 14, (
+            f"Expected 14 FORBIDDEN constraints in coordinator block, found {len(forbidden_lines)} — "
+            f"constraints must be reorganized, not removed or added"
+        )
+
+    def test_thematic_group_headers_present(self, implement_content):
+        """FORBIDDEN list must have thematic group headers."""
+        assert "Agent Management" in implement_content, (
+            "Missing 'Agent Management' thematic group header"
+        )
+        assert "Pipeline Integrity" in implement_content, (
+            "Missing 'Pipeline Integrity' thematic group header"
+        )
+
+
 class TestPipelineState:
     """Verify pipeline state tracking is preserved."""
 

@@ -174,6 +174,14 @@ If the return value is empty, wait 3 seconds before retrying (filesystem flush d
   - If retry produces a verdict: use that verdict
   - If retry also fails: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry for issue #N — proceeding with warning` and record `doc-drift-verdict: MISSING`
 
+**REQUIRED: Persist verdict to completion state** (Issue #837):
+After parsing the doc-master verdict for each issue, the coordinator MUST call `record_doc_verdict(session_id, issue_number, verdict)` from `pipeline_completion_state.py` to persist the verdict. This enables the batch doc-master gate hook to verify not just that doc-master ran, but that it produced a valid verdict. Without this call, the commit-time gate may block even when doc-master completed.
+
+```python
+from pipeline_completion_state import record_doc_verdict
+record_doc_verdict(session_id, issue_number, verdict)  # e.g., "PASS", "FAIL", "MISSING", "SHALLOW"
+```
+
 Include `doc-drift-verdict: PASS/FAIL/MISSING/SHALLOW` in the per-issue agent verification display:
 ```
 Issue #N agent verification:

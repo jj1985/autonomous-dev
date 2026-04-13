@@ -25,16 +25,22 @@ user-invocable: true
 ## Implementation
 
 **COORDINATOR FORBIDDEN LIST** — You MUST NOT do any of the following (violations = pipeline failure):
+
+#### Agent Management (you are a dispatcher, not a substitute)
 - ❌ You MUST NOT skip any STEP (even under context pressure or time constraints)
+- ❌ You MUST NOT write implementation code yourself instead of delegating to agents
+- ❌ You MUST NOT contain detailed agent instructions inline — those belong in agents/*.md
+- ❌ You MUST NOT do an agent's work yourself when the agent crashes — RETRY the agent once with the same prompt. If retry also crashes, BLOCK and report to user. This applies to ALL specialist agents (implementer, test-master, researcher, planner, reviewer, security-auditor, doc-master). The coordinator is a dispatcher, never a substitute.
 - ❌ You MUST NOT summarize agent output instead of passing full results to next agent
+
+#### Pipeline Integrity — Step Ordering and Gates
 - ❌ You MUST NOT declare "good enough" on failing tests (STEP 8 HARD GATE is absolute)
 - ❌ You MUST NOT run STEP 10 before STEP 8 test gate passes
 - ❌ You MUST NOT parallelize agents from different pipeline phases (e.g., implementer + reviewer) — within-phase parallel validation in STEP 10 is permitted for low-risk changesets per STEP 10 routing rules
 - ❌ You MUST NOT treat STEP 13 as the final step (STEP 15 is mandatory)
 - ❌ You MUST NOT clean up pipeline state before STEP 15 launches
-- ❌ You MUST NOT write implementation code yourself instead of delegating to agents
-- ❌ You MUST NOT contain detailed agent instructions inline — those belong in agents/*.md
-- ❌ You MUST NOT do an agent's work yourself when the agent crashes — RETRY the agent once with the same prompt. If retry also crashes, BLOCK and report to user. This applies to ALL specialist agents (implementer, test-master, researcher, planner, reviewer, security-auditor, doc-master). The coordinator is a dispatcher, never a substitute.
+
+#### Pipeline Integrity — Output Fidelity and Isolation
 - ❌ You MUST NOT paraphrase, summarize, or condense agent output when passing it to the next stage. Pass the FULL agent output text verbatim. If output exceeds context limits, pass the first 2000 words plus the final summary/conclusion section — never your own restatement. The anti-pattern: "The implementer changed X, Y, Z" instead of the implementer's actual output. STEP 10 agents (reviewer, security-auditor) need the real output to do real reviews.
 - ❌ You MUST NOT skip validation agents (reviewer, security-auditor, doc-master) under context pressure — BLOCK the pipeline instead and suggest `/clear` then `/implement --resume $RUN_ID`
 - ❌ You MUST NOT pass fewer than 50% of the implementer's output words to the reviewer — if you must truncate, include the first 3000 words plus the full summary/conclusion. Log the word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)"
@@ -864,6 +870,7 @@ If STEP 11 did NOT trigger remediation (both validators passed on first try), us
    - If still missing: **Retry once** with reduced context: obtain the CURRENT changed file list via `git diff --name-only HEAD~1 2>/dev/null || git diff --name-only --cached`, then re-invoke doc-master BLOCKING (not background) with ONLY this current file list and feature description (no implementer output, no reviewer output). Log: `[DOC-VERDICT-RETRY] Re-invoking doc-master with reduced context and current file list (N files)`
    - If retry produces a DOC-DRIFT-VERDICT: use that verdict
    - If retry also fails or returns empty: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry — proceeding with warning`
+7. **REQUIRED: Persist verdict to completion state** (Issue #837): After parsing the final verdict (whether PASS, FAIL, MISSING, or SHALLOW), call `record_doc_verdict(session_id, issue_number, verdict)` from `pipeline_completion_state.py`. This enables the batch doc-master gate hook to verify not just that doc-master ran, but that it produced a valid verdict.
 
 ### STEP 13: Report and Finalize
 

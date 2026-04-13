@@ -84,21 +84,21 @@ class TestPipelineOrderingGate:
     @patch("pipeline_completion_state.record_agent_launch")
     @patch("pipeline_completion_state.get_completed_agents")
     @patch("pipeline_completion_state.get_validation_mode")
-    def test_parallel_mode_allows_simultaneous_validators(
+    def test_parallel_mode_blocks_security_auditor_without_reviewer_completed(
         self, mock_mode, mock_completed, mock_record_launch, mock_get_launched, monkeypatch
     ):
-        """In parallel mode, security-auditor should pass when reviewer is launched."""
-        mock_completed.return_value = {"planner", "implementer"}
+        """Issue #838: In parallel mode, security-auditor blocked without reviewer completed.
+        reviewer->security-auditor is now always enforced (not mode-dependent)."""
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "parallel"
-        # Issue #686: reviewer must be launched for parallel mode to allow
-        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+        mock_get_launched.return_value = {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
             decision, reason = hook.validate_pipeline_ordering(
                 "Agent", {"task_description": "Run the security-auditor agent"}
             )
-            assert decision == "allow"
+            assert decision == "deny"
 
     @patch("pipeline_completion_state.get_completed_agents")
     @patch("pipeline_completion_state.get_validation_mode")
@@ -106,7 +106,7 @@ class TestPipelineOrderingGate:
         self, mock_mode, mock_completed, monkeypatch
     ):
         """When all prerequisites met, should allow."""
-        mock_completed.return_value = {"planner", "test-master", "implementer", "reviewer"}
+        mock_completed.return_value = {"planner", "test-master", "implementer", "pytest-gate", "reviewer"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -170,8 +170,8 @@ class TestPipelineOrderingGate:
     def test_doc_master_allowed_parallel_with_reviewer(
         self, mock_mode, mock_completed, monkeypatch
     ):
-        """doc-master has no reviewer prerequisite, only implementer."""
-        mock_completed.return_value = {"planner", "implementer"}
+        """doc-master has no reviewer prerequisite, only implementer and pytest-gate."""
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -368,7 +368,7 @@ class TestIssue669RegressionHookLevel:
         """Issue #669: security-auditor must be denied when reviewer hasn't completed,
         even with PIPELINE_ISSUE_NUMBER set (batch context)."""
         monkeypatch.setenv("PIPELINE_ISSUE_NUMBER", "669")
-        mock_completed.return_value = {"planner", "implementer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -386,7 +386,7 @@ class TestIssue669RegressionHookLevel:
     ):
         """Issue #669: security-auditor allowed when reviewer completed in batch context."""
         monkeypatch.setenv("PIPELINE_ISSUE_NUMBER", "669")
-        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate", "reviewer"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -411,7 +411,7 @@ class TestIssue669RegressionHookLevel:
         self, mock_mode, mock_completed
     ):
         """Ordering violation reason should include the validation mode for debugging."""
-        mock_completed.return_value = {"planner", "implementer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -441,9 +441,9 @@ class TestIssue686LaunchedAgentsWiring:
         self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
     ):
         """Issue #686: record_agent_launch must be called before the ordering gate check."""
-        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate", "reviewer"}
         mock_mode.return_value = "sequential"
-        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+        mock_get_launched.return_value = {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
@@ -462,11 +462,11 @@ class TestIssue686LaunchedAgentsWiring:
     def test_launched_agents_passed_to_gate(
         self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
     ):
-        """Issue #686: get_launched_agents result must be passed to check_ordering_prerequisites."""
-        mock_completed.return_value = {"planner", "implementer"}
+        """Issue #686/#838: security-auditor blocked when reviewer not completed.
+        reviewer->security-auditor is now always enforced (core prerequisite)."""
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "parallel"
-        # reviewer NOT launched — should block security-auditor even in parallel mode
-        mock_get_launched.return_value = {"planner", "implementer", "security-auditor"}
+        mock_get_launched.return_value = {"planner", "implementer", "pytest-gate", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
@@ -481,21 +481,21 @@ class TestIssue686LaunchedAgentsWiring:
     @patch("pipeline_completion_state.record_agent_launch")
     @patch("pipeline_completion_state.get_completed_agents")
     @patch("pipeline_completion_state.get_validation_mode")
-    def test_parallel_mode_allows_when_reviewer_launched(
+    def test_parallel_mode_blocks_when_reviewer_launched_but_not_completed(
         self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
     ):
-        """Issue #686: parallel mode allows security-auditor when reviewer is launched."""
-        mock_completed.return_value = {"planner", "implementer"}
+        """Issue #838: parallel mode blocks security-auditor even when reviewer is launched
+        but not completed. reviewer->security-auditor is now always enforced."""
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "parallel"
-        # reviewer IS launched (running concurrently)
-        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+        mock_get_launched.return_value = {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
             decision, reason = hook.validate_pipeline_ordering(
                 "Agent", {"subagent_type": "security-auditor", "prompt": "Audit"}
             )
-            assert decision == "allow"
+            assert decision == "deny"
 
     @patch("pipeline_completion_state.get_launched_agents")
     @patch("pipeline_completion_state.record_agent_launch")
@@ -506,9 +506,9 @@ class TestIssue686LaunchedAgentsWiring:
     ):
         """Issue #686: PIPELINE_ISSUE_NUMBER should be passed to record_agent_launch."""
         monkeypatch.setenv("PIPELINE_ISSUE_NUMBER", "42")
-        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate", "reviewer"}
         mock_mode.return_value = "sequential"
-        mock_get_launched.return_value = {"planner", "implementer", "reviewer", "security-auditor"}
+        mock_get_launched.return_value = {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
@@ -540,13 +540,14 @@ class TestIssue786ReviewerSecurityAuditorOrdering:
             f"Expected {pair} in SEQUENTIAL_REQUIRED, got: {SEQUENTIAL_REQUIRED}"
         )
 
-    def test_reviewer_security_auditor_in_mode_dependent_pairs(self):
-        """Issue #786: ('reviewer', 'security-auditor') must be in MODE_DEPENDENT_PAIRS."""
+    def test_reviewer_security_auditor_not_in_mode_dependent_pairs(self):
+        """Issue #838: ('reviewer', 'security-auditor') moved from MODE_DEPENDENT_PAIRS
+        to always-enforced SEQUENTIAL_REQUIRED (CORE_PREREQUISITES)."""
         from agent_ordering_gate import MODE_DEPENDENT_PAIRS
 
         pair = ("reviewer", "security-auditor")
-        assert pair in MODE_DEPENDENT_PAIRS, (
-            f"Expected {pair} in MODE_DEPENDENT_PAIRS, got: {MODE_DEPENDENT_PAIRS}"
+        assert pair not in MODE_DEPENDENT_PAIRS, (
+            f"Issue #838: {pair} should NOT be in MODE_DEPENDENT_PAIRS (always enforced now)"
         )
 
     @patch("pipeline_completion_state.get_completed_agents")
@@ -555,7 +556,7 @@ class TestIssue786ReviewerSecurityAuditorOrdering:
         self, mock_mode, mock_completed
     ):
         """Issue #786: Sequential mode blocks security-auditor when reviewer not completed."""
-        mock_completed.return_value = {"planner", "implementer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -570,14 +571,14 @@ class TestIssue786ReviewerSecurityAuditorOrdering:
     @patch("pipeline_completion_state.record_agent_launch")
     @patch("pipeline_completion_state.get_completed_agents")
     @patch("pipeline_completion_state.get_validation_mode")
-    def test_parallel_mode_blocks_security_auditor_when_reviewer_not_launched(
+    def test_parallel_mode_blocks_security_auditor_when_reviewer_not_completed(
         self, mock_mode, mock_completed, mock_record_launch, mock_get_launched
     ):
-        """Issue #786: Parallel mode blocks security-auditor when reviewer not launched."""
-        mock_completed.return_value = {"planner", "implementer"}
+        """Issue #838: Parallel mode blocks security-auditor when reviewer not completed.
+        reviewer->security-auditor is now always enforced (not mode-dependent)."""
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate"}
         mock_mode.return_value = "parallel"
-        # reviewer NOT in launched set
-        mock_get_launched.return_value = {"planner", "implementer", "security-auditor"}
+        mock_get_launched.return_value = {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor"}
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
              patch.object(hook, "_session_id", "test-session"):
@@ -593,7 +594,7 @@ class TestIssue786ReviewerSecurityAuditorOrdering:
         self, mock_mode, mock_completed
     ):
         """Issue #786: Sequential mode allows security-auditor when reviewer has completed."""
-        mock_completed.return_value = {"planner", "implementer", "reviewer"}
+        mock_completed.return_value = {"planner", "implementer", "pytest-gate", "reviewer"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
