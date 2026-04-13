@@ -383,6 +383,32 @@ print(len(d.get('hooks', {})))
             log_ok "CLAUDE.md size: $line_count lines (<= 200)"
         fi
     fi
+
+    # 11. Permission pattern syntax validation
+    if [ -f "$dest/settings.json" ]; then
+        local bad_patterns
+        bad_patterns=$(python3 -c "
+import json, re
+with open('$dest/settings.json') as f:
+    d = json.load(f)
+deny = d.get('permissions', {}).get('deny', [])
+bad = []
+for p in deny:
+    m = re.match(r'^(\w+)\((.+)\)\$', p)
+    if m:
+        content = m.group(2)
+        # :* must only appear at the end (prefix matching)
+        if ':*' in content and not content.endswith(':*'):
+            bad.append(p)
+if bad:
+    print(' '.join(bad))
+" 2>/dev/null || true)
+        if [ -z "$bad_patterns" ]; then
+            log_ok "permission patterns: all deny rules syntactically valid"
+        else
+            log_fail "permission patterns: invalid deny rules: $bad_patterns"
+        fi
+    fi
 }
 
 # --- Main ---

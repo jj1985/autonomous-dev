@@ -5,7 +5,7 @@ covers:
 
 # Agent Architecture
 
-**Last Updated**: 2026-04-04
+**Last Updated**: 2026-04-14
 **Location**: `plugins/autonomous-dev/agents/`
 
 This document describes the agent architecture, including core workflow agents, utility agents, model tier assignments, and their skill integrations.
@@ -14,9 +14,9 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Overview
 
-15 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
+16 active agents with skill integration. Each agent has specific responsibilities and references relevant skills.
 
-**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, mobile-tester, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, spec-validator, test-coverage-auditor, test-master, ui-tester
+**Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, mobile-tester, plan-critic, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, spec-validator, test-coverage-auditor, test-master, ui-tester
 
 **Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
 
@@ -24,7 +24,7 @@ This document describes the agent architecture, including core workflow agents, 
 
 ## Model Tier Strategy (Issue #108, Updated #147)
 
-Agent model assignments optimized for cost-performance balance (15 active agents):
+Agent model assignments optimized for cost-performance balance (16 active agents):
 
 ### Tier 1: Haiku (3 agents)
 
@@ -47,7 +47,7 @@ Balanced reasoning for judgment tasks:
 - **ui-tester**: E2E browser testing via Playwright MCP (optional, frontend only)
 - **mobile-tester**: iOS/Android E2E testing via Appium MCP + Maestro (optional, mobile only)
 
-### Tier 3: Opus (4 agents)
+### Tier 3: Opus (5 agents)
 
 Deep reasoning for complex synthesis:
 
@@ -55,6 +55,7 @@ Deep reasoning for complex synthesis:
 - **implementer**: Code implementation
 - **test-master**: Quality Diamond test generation
 - **spec-validator**: Spec-blind behavioral validation (STEP 8.5) — validates implementation against acceptance criteria without seeing implementation details
+- **plan-critic**: Adversarial plan reviewer — challenges assumptions, detects scope creep, enforces minimalism before implementation begins (Issue #814)
 
 ### Rationale
 
@@ -72,8 +73,8 @@ Deep reasoning for complex synthesis:
 
 **Target**: Under 3,000 tokens per agent
 **Last Audit**: 2026-01-01
-**Total Active Agents**: 15
-**Note**: 15 active agents, all under 3,000 token target
+**Total Active Agents**: 16
+**Note**: 16 active agents; plan-critic not yet measured (added Issue #814)
 
 ### Agents by Token Count
 
@@ -94,7 +95,7 @@ Deep reasoning for complex synthesis:
 ### Summary
 
 - **Run audit**: `python3 scripts/measure_agent_tokens.py --baseline`
-- All 15 active agents under 3,000 token target
+- All 15 previously audited agents under 3,000 token target; plan-critic (added Issue #814) not yet measured
 
 ---
 

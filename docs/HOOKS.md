@@ -162,6 +162,16 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 
 See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 
+**plan_gate.py** (Issue #814 — PreToolUse, Write/Edit tools):
+- Blocks complex Write/Edit operations when no valid plan exists in `.claude/plans/`
+- Simple edits (fewer than 100 new lines) are exempt — only non-trivial changes require a plan
+- Documentation files (`.md`, `.rst`, `.txt`, docs/ directory) are always exempt
+- Validates plan structure: requires `## WHY + SCOPE`, `## Existing Solutions`, and `## Minimal Path` sections
+- Plans older than 72 hours trigger a warning (stderr only, non-blocking) — expired plans do not block work
+- Escape hatch: `SKIP_PLAN_CHECK=1` bypasses all checks
+- Fails open: any exception or invalid input results in allow
+- Block message includes `REQUIRED NEXT ACTION` directive pointing to `/plan`
+
 ### PreCommit
 
 | Hook | Purpose | Key Env Vars |

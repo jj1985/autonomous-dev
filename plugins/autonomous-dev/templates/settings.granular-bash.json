@@ -184,6 +184,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/plan_gate.py\"",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "Stop": [

@@ -319,14 +319,14 @@ def test_build_command_patterns_includes_autonomous_dev_commands(temp_plugin_dir
 
     # Plugin-specific patterns based on discovered commands
     # These should be derived from the command discovery
+    # Issue #365: Bare tool names (Read, Write) replaced glob-suffixed
+    # patterns like Read(**/*.py) which triggered Claude Code bug #16170.
     expected_patterns = [
         "Bash(git:*)",
         "Bash(pytest:*)",
         "Bash(python:*)",
-        "Read(**/*.py)",
-        "Write(**/*.py)",
-        "Read(**/*.md)",
-        "Write(**/*.md)",
+        "Read",
+        "Write",
     ]
 
     for pattern in expected_patterns:
@@ -529,11 +529,13 @@ def test_build_deny_list_includes_network_commands():
     deny_list = generator.build_deny_list()
 
     # Network operations that could be abused
+    # Note: complex patterns use glob syntax (not command:pattern) to avoid
+    # Claude Code's ":* must be at end" constraint
     network = [
         "Bash(nc:*)",  # netcat
         "Bash(ncat:*)",
-        "Bash(wget:*--post-file*)",  # Data exfiltration
-        "Bash(curl:*--data*)",  # Data exfiltration
+        "Bash(*wget *--post-file*)",  # Data exfiltration
+        "Bash(*curl *--data*)",  # Data exfiltration
     ]
 
     for pattern in network:
@@ -547,11 +549,12 @@ def test_build_deny_list_includes_git_force_operations():
     deny_list = generator.build_deny_list()
 
     # Dangerous git operations
+    # Note: uses glob syntax (not command:pattern) to avoid ":* must be at end" constraint
     git_dangerous = [
-        "Bash(git:*--force*)",
-        "Bash(git:*push*-f*)",
-        "Bash(git:*reset*--hard*)",
-        "Bash(git:*clean*-fd*)",
+        "Bash(*git *--force*)",
+        "Bash(*git *push*-f*)",
+        "Bash(*git *reset*--hard*)",
+        "Bash(*git *clean*-fd*)",
     ]
 
     for pattern in git_dangerous:
@@ -565,12 +568,13 @@ def test_build_deny_list_includes_package_operations():
     deny_list = generator.build_deny_list()
 
     # Package operations (can modify system)
+    # Note: uses glob syntax (not command:pattern) to avoid ":* must be at end" constraint
     packages = [
-        "Bash(apt:*install*)",
-        "Bash(apt:*remove*)",
-        "Bash(yum:*install*)",
-        "Bash(brew:*install*)",
-        "Bash(npm:*install*-g*)",  # Global install
+        "Bash(*apt *install*)",
+        "Bash(*apt *remove*)",
+        "Bash(*yum *install*)",
+        "Bash(*brew *install*)",
+        "Bash(*npm*install*-g*)",  # Global install
     ]
 
     for pattern in packages:

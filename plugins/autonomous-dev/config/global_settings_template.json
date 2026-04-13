@@ -56,6 +56,16 @@
           }
         ],
         "matcher": "*"
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/plan_gate.py",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "Stop": [

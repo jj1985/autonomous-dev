@@ -38,9 +38,33 @@ If `--quick` is present, set quick_mode=true. Everything else is ignored (plan c
 
 ---
 
+### STEP 0.5: Check for Plan Files
+
+Check if `.claude/plans/` directory exists and contains plan files:
+
+```bash
+ls -la .claude/plans/*.md 2>/dev/null
+```
+
+If plan files are found, offer them as the input source instead of conversation context:
+
+```
+Found plan files in .claude/plans/:
+  - feature-name.md (created 2h ago)
+  - other-feature.md (created 1d ago)
+
+Use plan file as input? (recommended if you just ran /plan)
+1. Use latest plan file
+2. Use conversation context (default)
+```
+
+If the user selects a plan file, read its contents and use that as the plan source for Step 1.
+
+---
+
 ### STEP 1: Extract Plan Items
 
-The plan is in the **current conversation context** -- the user just discussed and/or approved a plan. Extract individual work items by scanning the conversation for structural markers:
+The plan is in the **current conversation context** (or from a `.claude/plans/` file selected in Step 0.5). Extract individual work items by scanning for structural markers:
 
 **Patterns to match** (in order of specificity):
 1. Numbered lists: `1. Item description`, `2. Another item`

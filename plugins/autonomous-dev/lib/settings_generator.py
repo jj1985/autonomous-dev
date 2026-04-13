@@ -149,25 +149,25 @@ DEFAULT_DENY_LIST = [
     "Bash(netcat:*)",
     "Bash(ncat:*)",
     "Bash(telnet:*)",
-    "Bash(curl:*|*sh*)",
-    "Bash(curl:*|*bash*)",
-    "Bash(curl:*--data*)",  # Data exfiltration
-    "Bash(wget:*|*sh*)",
-    "Bash(wget:*|*bash*)",
-    "Bash(wget:*--post-file*)",  # Data exfiltration
+    "Bash(*curl *|*sh*)",
+    "Bash(*curl *|*bash*)",
+    "Bash(*curl *--data*)",  # Data exfiltration
+    "Bash(*wget *|*sh*)",
+    "Bash(*wget *|*bash*)",
+    "Bash(*wget *--post-file*)",  # Data exfiltration
 
     # Dangerous git operations
-    "Bash(git:*--force*)",
-    "Bash(git:*push*-f*)",
-    "Bash(git:*reset*--hard*)",
-    "Bash(git:*clean*-fd*)",
+    "Bash(*git *--force*)",
+    "Bash(*git *push*-f*)",
+    "Bash(*git *reset*--hard*)",
+    "Bash(*git *clean*-fd*)",
 
     # Package operations (system-level)
-    "Bash(apt:*install*)",
-    "Bash(apt:*remove*)",
-    "Bash(yum:*install*)",
-    "Bash(brew:*install*)",
-    "Bash(npm:*install*-g*)",  # Global install
+    "Bash(*apt *install*)",
+    "Bash(*apt *remove*)",
+    "Bash(*yum *install*)",
+    "Bash(*brew *install*)",
+    "Bash(*npm*install*-g*)",  # Global npm install (npm install -g, npm i -g, etc.)
     "Bash(npm:publish*)",
     "Bash(pip:upload*)",
     "Bash(twine:upload*)",

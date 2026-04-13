@@ -1,0 +1,14 @@
+{
+  "name": "plan_gate",
+  "type": "lifecycle",
+  "description": "Pre-implementation planning gate - blocks complex writes without validated plan",
+  "interpreter": "python3",
+  "active": true,
+  "registrations": [
+    {
+      "event": "PreToolUse",
+      "matcher": "Write|Edit",
+      "timeout": 3
+    }
+  ]
+}

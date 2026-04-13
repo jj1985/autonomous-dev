@@ -127,6 +127,9 @@ docs/sessions/
 docs/ISSUE-*.md
 DOCUMENTATION_*.md
 
+# Plan files (ephemeral per-session artifacts)
+.claude/plans/
+
 # Plugin installation (installed via /plugin install, not source code)
 # Source of truth: plugins/autonomous-dev/ (commit this)
 # Installed copy: .claude/ (generated, don't commit)

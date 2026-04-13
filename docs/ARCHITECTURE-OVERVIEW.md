@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 15 agents (18 archived), 17 skills, 22 active commands, 196 libraries, 22 active hooks (61 archived).
+**Component Counts**: 16 agents (18 archived), 18 skills, 23 active commands, 178 libraries, 23 active hooks (61 archived).
 
 ---
 
@@ -28,7 +28,7 @@ Specialized agents with skill integration for autonomous development. See [AGENT
 
 ## Model Tier Strategy
 
-Agent model assignments optimized for cost-performance balance (15 active agents):
+Agent model assignments optimized for cost-performance balance (16 active agents):
 
 **Tier 1 (Haiku)** - Fast, cost-effective for pattern matching
 - researcher-local - Search codebase patterns
@@ -50,6 +50,7 @@ Agent model assignments optimized for cost-performance balance (15 active agents
 - implementer - Code implementation
 - test-master - Quality Diamond test generation
 - spec-validator - Spec-blind behavioral validation (STEP 8.5)
+- plan-critic - Adversarial plan reviewer; challenges assumptions, scope creep, and minimalism before implementation (Issue #814)
 
 **Performance Impact**: Optimized tier assignments reduce costs by 40-60% while maintaining quality.
 
@@ -64,13 +65,13 @@ Specialized skill packages using progressive disclosure to prevent context bloat
 - Each skill declares `allowed-tools:` for least privilege
 - Compact SKILL.md files with detailed content in docs/ subdirectories
 
-**Active Skills** (17 total):
+**Active Skills** (18 total):
 - **Core**: python-standards, testing-guide, api-design, documentation-guide
 - **Code Quality**: code-review, refactoring-patterns
 - **Error & Debugging**: error-handling, debugging-workflow
 - **Security & Observability**: security-patterns, observability
 - **Integration & Design**: library-design-patterns, api-integration-patterns, state-management-patterns, architecture-patterns
-- **Workflow & Research**: git-github, research-patterns
+- **Workflow & Research**: git-github, research-patterns, planning-workflow
 - **Validation**: scientific-validation
 
 ---
@@ -104,7 +105,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](H
 **Hook Output Visibility** (Issue #660): `permissionDecisionReason` on deny is model-visible — block messages include `REQUIRED NEXT ACTION:` carrots that the model reads and acts on. `systemMessage` is user-visible (injected into the conversation). These are distinct channels: enforcement directives belong in `permissionDecisionReason`; user notifications belong in `systemMessage`. See [HOOKS.md](HOOKS.md) for full output format specification.
 
 **Active Hooks**:
-- **PreToolUse**: unified_pre_tool.py (4-layer MCP validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass MCP layers but Agent/Task tool calls also pass through the Pipeline Ordering Gate before extensions — Issues #625, #629, #632)
+- **PreToolUse**: unified_pre_tool.py (4-layer MCP validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass MCP layers but Agent/Task tool calls also pass through the Pipeline Ordering Gate before extensions — Issues #625, #629, #632), plan_gate.py (blocks complex Write/Edit without validated plan in .claude/plans/ — Issue #814)
 - **PrePromptSubmit**: unified_prompt_validator.py (workflow enforcement)
 - **PostToolUse**: auto_format.py, auto_test.py, security_scan.py, auto_fix_docs.py
 - **PreCommit**: validate_project_alignment.py, enforce_orchestrator.py, enforce_tdd.py, validate_session_quality.py

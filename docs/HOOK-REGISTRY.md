@@ -29,7 +29,7 @@ This registry provides a comprehensive view of:
 
 ### Unified Hooks
 
-The plugin uses 22 active hooks (files on disk in `plugins/autonomous-dev/hooks/`, 61 archived):
+The plugin uses 23 active hooks (files on disk in `plugins/autonomous-dev/hooks/`, 61 archived):
 
 | Hook File | Lifecycle/Trigger | Status | Purpose |
 |-----------|------------------|--------|---------|
@@ -47,6 +47,7 @@ The plugin uses 22 active hooks (files on disk in `plugins/autonomous-dev/hooks/
 | validate_command_file_ops | PreToolUse | Enabled | Validate command file operations |
 | validate_project_alignment | PreCommit | Enabled | Validate PROJECT.md alignment |
 | validate_session_quality | Stop | Enabled | Validate session quality and completeness |
+| plan_gate | PreToolUse | Enabled | Pre-implementation planning gate — blocks complex Write/Edit when no valid plan exists in .claude/plans/. Exempts documentation files and simple edits (<100 lines). Validates WHY+SCOPE, Existing Solutions, Minimal Path sections. Escape hatch: SKIP_PLAN_CHECK=1. Fails open. (Issue #814) |
 | plan_mode_exit_detector | PostToolUse | Enabled | Detect ExitPlanMode calls and write marker to enforce /implement or /create-issue routing |
 | session_activity_logger | PostToolUse | Enabled | Structured JSONL activity logging for continuous improvement |
 | task_completed_handler | TaskCompleted | Enabled | Log task completion events to activity JSONL for pipeline observability |

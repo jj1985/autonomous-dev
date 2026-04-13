@@ -42,6 +42,12 @@ class AgentInvoker:
             'description_template': 'Design architecture for: {request}',
             'mission': 'Design a comprehensive architecture plan'
         },
+        'plan-critic': {
+            'progress_pct': 30,
+            'artifacts_required': ['manifest'],
+            'description_template': 'Adversarial critique of plan for: {request}',
+            'mission': 'Provide adversarial review of implementation plans before coding begins'
+        },
         'test-master': {
             'progress_pct': 50,
             'artifacts_required': ['manifest', 'architecture'],

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Sync settings.json hook registrations during deploy.
+Sync settings.json hooks and permissions during deploy.
 
 Replaces the hooks key in settings.json with the canonical template hooks,
-preserving all other user configuration (permissions, mcpServers, etc.).
+and syncs permissions.deny from the generator's canonical DEFAULT_DENY_LIST
+to prevent stale/invalid patterns from persisting across deploys.
 
 Previous implementation used SettingsMerger.merge_settings() which did ADDITIVE
 hook merging, causing duplicate hooks on each deploy run. This version does a
@@ -51,10 +52,52 @@ def _find_plugin_root() -> Path:
 
 
 def _setup_imports() -> None:
-    """Add lib directory to sys.path for potential future imports."""
+    """Add lib directory to sys.path for imports."""
     lib_path = _find_plugin_root() / "lib"
     if str(lib_path) not in sys.path:
         sys.path.insert(0, str(lib_path))
+
+
+def _get_canonical_deny_list() -> list:
+    """Get the canonical deny list from settings_generator.DEFAULT_DENY_LIST.
+
+    Returns:
+        List of deny patterns from the generator, or empty list if import fails.
+    """
+    _setup_imports()
+    try:
+        from settings_generator import DEFAULT_DENY_LIST
+        return list(DEFAULT_DENY_LIST)
+    except ImportError:
+        return []
+
+
+def _validate_permission_patterns(patterns: list) -> list:
+    """Validate permission patterns for known syntax errors.
+
+    Claude Code requires :* only at the end of a pattern (prefix matching).
+    Patterns like Bash(brew:*install*) are invalid because :* is mid-string.
+
+    Args:
+        patterns: List of permission pattern strings
+
+    Returns:
+        List of invalid patterns with descriptions
+    """
+    errors = []
+    import re
+    for pattern in patterns:
+        # Match Tool(content) patterns
+        m = re.match(r'^(\w+)\((.+)\)$', pattern)
+        if not m:
+            continue
+        content = m.group(2)
+        # Check for :* not at the end — the actual invalid syntax
+        # Valid: "sudo:*" (colon-star at end = prefix match)
+        # Invalid: "brew:*install*" (colon-star in middle)
+        if ':*' in content and not content.endswith(':*'):
+            errors.append(pattern)
+    return errors
 
 
 def _count_lifecycle_events(settings_path: Path) -> int:
@@ -113,6 +156,21 @@ def _replace_hooks(
     # Replace hooks entirely
     user_settings["hooks"] = template_hooks
 
+    # Sync permissions.deny from canonical generator list
+    canonical_deny = _get_canonical_deny_list()
+    deny_synced = False
+    deny_errors_fixed = 0
+    if canonical_deny:
+        old_deny = user_settings.get("permissions", {}).get("deny", [])
+        # Validate old deny list for known bad patterns
+        bad_patterns = _validate_permission_patterns(old_deny)
+        if bad_patterns or old_deny != canonical_deny:
+            if "permissions" not in user_settings:
+                user_settings["permissions"] = {}
+            user_settings["permissions"]["deny"] = canonical_deny
+            deny_synced = True
+            deny_errors_fixed = len(bad_patterns)
+
     if not dry_run:
         # Atomic write
         user_path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,15 +192,22 @@ def _replace_hooks(
     hooks_added = len(new_events - old_events)
     hooks_preserved = len(new_events & old_events)
 
+    deny_msg = ""
+    if deny_synced:
+        deny_msg = f", deny list synced ({deny_errors_fixed} invalid patterns fixed)"
+
     return {
         "success": True,
         "hooks_added": hooks_added,
         "hooks_preserved": hooks_preserved,
         "hooks_migrated": 0,
         "total_lifecycle_events": total_events,
+        "deny_synced": deny_synced,
+        "deny_errors_fixed": deny_errors_fixed,
         "message": (
             f"Hooks replaced: {total_events} lifecycle events "
             f"({hooks_added} added, {hooks_preserved} updated)"
+            f"{deny_msg}"
         ),
     }
 

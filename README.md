@@ -94,7 +94,7 @@ The solution is **deterministic rails**: a software layer that gates and validat
 | 3 | **Isolated Sub-Agents** | Specialist agents, each spawned with fresh context and constrained tools. Model selection per agent (Haiku/Sonnet/Opus) |
 | 4 | **Virtual File System** | Git worktree isolation for batch mode. `checkpoint.py` + `artifacts.py` persist outputs to `.claude/artifacts/` per phase |
 | 5 | **Human-in-the-Loop** | Plan mode (STEP 5) requires user approval before implementation. `pause_controller.py` for explicit gates |
-| 6 | **Hook Enforcement** | 22 hooks with JSON `{"decision": "block"}` hard gates — not prompt-level nudges. Research-confirmed: nudges produce unreliable compliance |
+| 6 | **Hook Enforcement** | 23 hooks with JSON `{"decision": "block"}` hard gates — not prompt-level nudges. Research-confirmed: nudges produce unreliable compliance |
 | 7 | **State Persistence** | `CheckpointManager` for resume after failure. `batch_state_manager.py` for multi-feature recovery. `/implement --resume` |
 | 8 | **Context Management** | Progressive skill injection loads domain knowledge per-step. `/clear` between features. Agent isolation prevents context rot |
 | 9 | **Deterministic Ordering** | `agent_ordering_gate.py` enforces pipeline sequence. "You MUST NOT run STEP 10 before STEP 8 test gate passes" |
@@ -395,9 +395,9 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 - [Spec Validation](tests/spec_validation/) - Spec-blind behavioral tests
 
 ### Reference
-- [Commands](plugins/autonomous-dev/commands/) - All 22 commands
-- [Hooks](docs/HOOKS.md) - 22 active hooks
-- [Libraries](docs/LIBRARIES.md) - 196 Python utilities
+- [Commands](plugins/autonomous-dev/commands/) - All 23 commands
+- [Hooks](docs/HOOKS.md) - 23 active hooks
+- [Libraries](docs/LIBRARIES.md) - 178 Python utilities
 
 ### Troubleshooting
 - [Troubleshooting Guide](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) - Common issues

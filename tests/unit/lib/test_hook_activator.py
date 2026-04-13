@@ -568,7 +568,7 @@ class TestSettingsValidation:
             }
         }
 
-        with pytest.raises(SettingsValidationError, match="must be strings"):
+        with pytest.raises(SettingsValidationError, match="must be string"):
             activator._validate_settings(invalid)
 
 
@@ -839,10 +839,21 @@ class TestEdgeCasesAndErrors:
             merged = mock_write.call_args[0][0]
             user_prompt_hooks = merged["hooks"]["UserPromptSubmit"]
 
-            # Verify custom hook preserved
-            assert "my_custom_hook.py" in user_prompt_hooks
+            # Verify custom hook preserved (may be string or structured dict after migration)
+            hook_names = []
+            for h in user_prompt_hooks:
+                if isinstance(h, str):
+                    hook_names.append(h)
+                elif isinstance(h, dict):
+                    # Extract hook name from structured format (command field)
+                    cmd = ""
+                    for inner_hook in h.get("hooks", []):
+                        cmd = inner_hook.get("command", "")
+                    hook_names.append(cmd)
+            hook_names_str = " ".join(hook_names)
+            assert "my_custom_hook.py" in hook_names_str
             # Verify new hook added
-            assert "enforce_command_limit.py" in user_prompt_hooks
+            assert "enforce_command_limit.py" in hook_names_str
 
     def test_unicode_in_settings_json(self, temp_claude_dir, temp_project_root, new_hooks, mock_security_utils):
         """Test activation handles unicode characters in settings.
