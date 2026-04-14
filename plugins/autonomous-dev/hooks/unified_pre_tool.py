@@ -551,8 +551,9 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
 
     # Baseline shrinkage check — runs whenever a baseline exists (no pipeline-active gate).
     # Falls open (returns allow) when no baseline is recorded yet. Issue #723.
-    # max_shrinkage is 0.25 (25%) instead of the library default of 15% to give
-    # more headroom for legitimate prompt variation at the hook level.
+    # max_shrinkage is 0.20 (20%) — tightened from 0.25 in Issue #812 to catch
+    # progressive compression in batch runs. Still above the library default of 15%
+    # to give headroom for legitimate prompt variation at the hook level.
     #
     # Issue #764: Use PIPELINE_ISSUE_NUMBER for per-issue baseline isolation.
     # In batch mode, each issue gets its own baseline so cross-issue context
@@ -582,7 +583,7 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
         if baseline_word_count is not None:
             result = validate_prompt_word_count(
                 agent_type, prompt, baseline_word_count,
-                max_shrinkage=0.25, invocation_context=invocation_ctx,
+                max_shrinkage=0.20, invocation_context=invocation_ctx,
             )
             if not result.passed:
                 issue_ctx = f" (issue #{current_issue_str})" if current_issue_str else ""
@@ -590,7 +591,7 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
                     "deny",
                     f"BLOCKED: Prompt for '{agent_type}'{issue_ctx} shrank {result.shrinkage_pct:.1f}% "
                     f"from baseline ({baseline_word_count} words → {word_count} words, "
-                    f"threshold: 25%). "
+                    f"threshold: 20%). "
                     f"The agent prompt is being compressed across invocations. "
                     f"REQUIRED NEXT ACTION: Use get_agent_prompt_template('{agent_type}') "
                     f"to reload the full agent prompt from disk and reconstruct with complete context.",
@@ -635,7 +636,7 @@ def validate_prompt_integrity(tool_name: str, tool_input: Dict) -> Tuple[str, st
         issue_for_obs = _get_current_issue_number()
         record_batch_observation(agent_type, issue_for_obs, word_count)
         cumulative = get_cumulative_shrinkage(agent_type)
-        if cumulative is not None and cumulative > MAX_CUMULATIVE_SHRINKAGE * 100:
+        if cumulative is not None and cumulative >= MAX_CUMULATIVE_SHRINKAGE * 100:
             return (
                 "deny",
                 f"BLOCKED: Cumulative prompt drift for '{agent_type}' is {cumulative:.1f}% "
@@ -3543,7 +3544,22 @@ def main():
                                         if _pq_spec and _pq_spec.loader:
                                             _pq_mod = importlib.util.module_from_spec(_pq_spec)
                                             _pq_spec.loader.exec_module(_pq_mod)
-                                            _pq_violations = _pq_mod.check_all(_pq_content)
+                                            # Commands are coordinator prompts with extensive
+                                            # step-by-step instructions — use a higher density
+                                            # threshold than agent prompts (Issue #845 remediation)
+                                            _pq_density_threshold = (
+                                                150
+                                                if "/commands/" in file_path
+                                                else _pq_mod.CONSTRAINT_DENSITY_THRESHOLD
+                                            )
+                                            _pq_violations = (
+                                                _pq_mod.check_persona(_pq_content)
+                                                + _pq_mod.check_casual_register(_pq_content)
+                                                + _pq_mod.check_constraint_density(
+                                                    _pq_content,
+                                                    threshold=_pq_density_threshold,
+                                                )
+                                            )
                                 except Exception:
                                     _pq_violations = None  # Fail-open on import errors
 

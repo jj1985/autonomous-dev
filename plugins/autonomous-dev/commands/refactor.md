@@ -72,6 +72,20 @@ print(json.dumps(report.to_dict()))
 
 Capture the JSON output and parse it.
 
+### STEP 1.5: Findings Self-Critique (--deep mode only)
+
+**Skip if `--quick` mode or if `--deep` was not active.** This step applies only when GenAIRefactorAnalyzer was used.
+
+After obtaining the raw findings from STEP 1, perform one FEEDBACK pass before presenting results to the user. This implements the Self-Refine pattern (GENERATE → FEEDBACK → REFINE).
+
+Audit the findings against these criteria:
+
+1. **False positive audit**: For each DEAD_CODE or UNUSED_LIB finding, verify the symbol is not invoked dynamically (via `subprocess`, `importlib`, `sys.path`, or markdown references). Findings that cannot be confirmed MUST be downgraded to MEDIUM or removed.
+2. **Severity calibration**: CRITICAL findings MUST describe a concrete negative outcome (data loss, security exposure, broken tests). Findings without a concrete outcome MUST be downgraded to HIGH or MEDIUM.
+3. **Completeness**: If fewer than 3 categories were analyzed in a full-mode run, note the gap as a warning at the top of the findings output.
+
+Revise the findings in memory before passing to STEP 2. Do NOT re-run the analyzer. This step is performed inline by the coordinator.
+
 ### STEP 2: Present Findings
 
 Display the categorized report. Group findings by category, sort by severity within each group (CRITICAL first, LOW last). Show total counts per category.

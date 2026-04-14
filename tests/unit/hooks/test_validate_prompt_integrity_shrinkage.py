@@ -68,6 +68,8 @@ class TestBaselineShrinkageEnforcement:
             patch("prompt_integrity.get_prompt_baseline", return_value=None) as mock_get,
             patch("prompt_integrity.record_prompt_baseline") as mock_record,
             patch("prompt_integrity.validate_prompt_word_count") as mock_validate,
+            # Simulate no active pipeline context (issue_number=0 → seed_issue=0)
+            patch.object(hook, "_get_current_issue_number", return_value=0),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
@@ -139,15 +141,15 @@ class TestBaselineShrinkageEnforcement:
         assert "84" in reason   # current word count in message
 
     def test_shrinkage_exactly_at_threshold_allows(self):
-        """169-word baseline, 127-word current (24.9% shrinkage) → allow (just under 25%)."""
-        current_prompt = _make_prompt(127)
+        """169-word baseline, 136-word current (19.5% shrinkage) → allow (just under 20% threshold)."""
+        current_prompt = _make_prompt(136)
         passing_result = PromptIntegrityResult(
             agent_type="reviewer",
-            word_count=127,
+            word_count=136,
             baseline_word_count=169,
-            shrinkage_pct=24.9,
+            shrinkage_pct=19.5,
             passed=True,
-            reason="Prompt for reviewer OK (127 words).",
+            reason="Prompt for reviewer OK (136 words).",
             should_reload=False,
         )
         with (
@@ -164,15 +166,15 @@ class TestBaselineShrinkageEnforcement:
         assert decision == "allow"
 
     def test_shrinkage_just_over_threshold_blocks(self):
-        """169-word baseline, 126-word current (25.4% shrinkage) → deny (just over 25%)."""
-        current_prompt = _make_prompt(126)
+        """169-word baseline, 135-word current (20.1% shrinkage) → deny (just over 20% threshold)."""
+        current_prompt = _make_prompt(135)
         failing_result = PromptIntegrityResult(
             agent_type="reviewer",
-            word_count=126,
+            word_count=135,
             baseline_word_count=169,
-            shrinkage_pct=25.4,
+            shrinkage_pct=20.1,
             passed=False,
-            reason="Prompt for reviewer shrank 25.4% from baseline (169 -> 126 words, threshold: 25%).",
+            reason="Prompt for reviewer shrank 20.1% from baseline (169 -> 135 words, threshold: 20%).",
             should_reload=True,
         )
         with (
@@ -242,8 +244,8 @@ class TestBaselineShrinkageEnforcement:
         assert "get_agent_prompt_template" in reason
         assert "security-auditor" in reason
 
-    def test_validate_prompt_word_count_called_with_25pct_max_shrinkage(self):
-        """validate_prompt_word_count must be called with max_shrinkage=0.25 (not the default 0.15)."""
+    def test_validate_prompt_word_count_called_with_20pct_max_shrinkage(self):
+        """validate_prompt_word_count must be called with max_shrinkage=0.20 (Issue #812)."""
         current_prompt = _make_prompt(140)
         passing_result = PromptIntegrityResult(
             agent_type="reviewer",
@@ -267,6 +269,6 @@ class TestBaselineShrinkageEnforcement:
 
         mock_validate.assert_called_once()
         _, kwargs = mock_validate.call_args
-        assert kwargs.get("max_shrinkage") == 0.25, (
-            f"Expected max_shrinkage=0.25 but got {kwargs.get('max_shrinkage')}"
+        assert kwargs.get("max_shrinkage") == 0.20, (
+            f"Expected max_shrinkage=0.20 but got {kwargs.get('max_shrinkage')}"
         )

@@ -14,6 +14,37 @@ Minimal pipeline (5 steps, 4 agents minimum) for test-fixing tasks.
 Invoked via `/implement --fix "description"`. Skips research and planning
 since the problem is already known (failing tests).
 
+## Coordinator Role — HARD GATE
+
+The coordinator is a **dispatcher**, not a substitute for specialist agents. These constraints apply globally — before any step definitions — and MUST NOT be violated regardless of circumstances.
+
+### Agent Management
+
+The coordinator dispatches work to specialists; it MUST NOT do the work itself.
+
+**FORBIDDEN — You MUST NOT do any of the following**:
+- ❌ You MUST NOT write, edit, or modify any project files directly — ALL file modifications MUST go through specialist agents (implementer, doc-master)
+- ❌ You MUST NOT do an agent's work when the agent crashes — RETRY once, then BLOCK with a clear error message; never substitute coordinator judgment for agent execution
+- ❌ You MUST NOT skip any STEP in the pipeline
+- ❌ You MUST NOT summarize agent output instead of passing full results to the next agent — verbatim output is required
+
+### Pipeline Integrity
+
+Step ordering and post-completion behavior are strictly constrained.
+
+**FORBIDDEN — You MUST NOT do any of the following**:
+- ❌ You MUST NOT parallelize agents from different pipeline phases (e.g., running F3 and F4 concurrently)
+- ❌ You MUST NOT clean up pipeline state before STEP F5 launches
+- ❌ You MUST NOT perform any file edits after agents complete — the coordinator's only permitted post-agent actions are: outputting the final summary, git operations (add, commit, push), and launching STEP F5
+
+### Output Fidelity
+
+The coordinator MUST transmit agent outputs intact.
+
+**FORBIDDEN — You MUST NOT do any of the following**:
+- ❌ You MUST NOT paraphrase or condense agent output when passing to the next stage
+- ❌ You MUST NOT pass fewer than 50% of the implementer output words to the reviewer — if context is a constraint, include the implementer's file change list and test results in full before trimming any prose sections
+
 ## Fix Mode Progress Protocol
 
 Output structured progress at each step. Same format conventions as the full pipeline protocol.
@@ -42,12 +73,14 @@ Total: 3:31 | Tests: N passed, M failed | Files changed: N
 
 ## Implementation
 
+## Steps F1-F2: Alignment and Test Context
+
 ### STEP F1: Validate PROJECT.md Alignment
 
 **Progress**: Output step banner (STEP F1/5 — Alignment). Capture FIX_START. Output gate result.
 
 Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofit`").
-Check that the fix is within project scope. If misaligned: BLOCK with reason.
+Verify the fix is within project scope. If misaligned: BLOCK with reason.
 
 This is the same alignment gate as the full pipeline STEP 1.
 
@@ -128,6 +161,8 @@ Fix Mode - Test Context:
   Error summary: [brief]
 ```
 
+## Steps F3-F3.5: Implementation and Spec Validation
+
 ### STEP F3: Implementer (Opus) - HARD GATE
 
 **Progress**: Output step banner (STEP F3/5 — Implementation, Agent: implementer (Opus)). Output agent completion, then test gate result with counts.
@@ -192,9 +227,47 @@ Same context boundary as STEP 8.5 in the full pipeline. Pass ONLY:
 
 Parse verdict: `SPEC-VALIDATOR-VERDICT: PASS` or `SPEC-VALIDATOR-VERDICT: FAIL`. On FAIL, re-invoke implementer with failing test names only (max 2 cycles). Block if still failing after 2 cycles.
 
+## Step F4: Review, Security, and Docs
+
 ### STEP F4: Reviewer + Doc-master (parallel)
 
 **Progress**: Output step banner (STEP F4/5 — Review + Docs, Agents: reviewer (Sonnet), doc-master (Sonnet)). Output each agent completion. Then output Final Summary table.
+
+#### Security-Sensitivity Detection — HARD GATE
+
+Before invoking any STEP F4 agents, run deterministic security-sensitivity detection on the changed file list:
+
+```bash
+CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null)
+```
+
+Match each file path against security-sensitive patterns (substring match, case-insensitive). Patterns are grouped by domain — false positives are cheap (an extra security review), false negatives are expensive (missed security regression):
+
+**Infrastructure**: `hooks/`, `lib/auto_approval_engine`, `lib/tool_validator`, `config/auto_approve_policy`, `lib/security`
+
+**Auth/access**: `auth`, `crypto`, `permission`, `session`, `token`, `secret`, `credential`, `password`, `oauth`, `sso`, `jwt`, `rbac`
+
+**Financial**: `trading`, `payment`, `billing`, `financial`, `transaction`, `wallet`
+
+**Schema/environment**: `migration`, `alembic`, `.env`
+
+**Exclusion rule**: File paths starting with `tests/` are excluded — test files that reference security topics do not themselves pose a security risk.
+
+Output the detection result before proceeding:
+```
+Security-auditor: SKIP (no security-sensitive files)
+```
+or:
+```
+Security-auditor: REQUIRED (matched: [list of matched files and patterns])
+```
+
+When detection outputs `REQUIRED`, the security-auditor invocation is **mandatory** — it MUST be added to the parallel agent invocations in this step.
+
+**FORBIDDEN**:
+- ❌ Skipping security-auditor when detection flagged one or more files as REQUIRED
+- ❌ Running the pattern match only against file names — match against full relative paths
+- ❌ Proceeding without outputting the detection result
 
 #### HARD GATE: Verbatim Implementer Output
 
@@ -216,21 +289,21 @@ The library function `validate_prompt_word_count(agent_type, prompt)` from `plug
 - Omitting file paths, test results, or diff context from the reviewer prompt
 - Invoking security-auditor with only the skeleton prompt template without the actual verbatim implementer output pasted in
 
-Invoke TWO agents in PARALLEL:
+Invoke agents in PARALLEL. When security-auditor is REQUIRED, invoke all three simultaneously. When security-auditor is SKIP, invoke two (reviewer + doc-master):
 
 1. **Reviewer** (Sonnet): Review the fix for correctness, edge cases, and regressions.
 
 ```
 subagent_type: "reviewer"
 model: "sonnet"
-prompt: "FIX MODE REVIEW: You are reviewing a test fix for correctness, edge cases, and potential regressions. Your review must be thorough and must cover all changed files.
+prompt: "FIX MODE REVIEW: You are reviewing a test fix for correctness, edge cases, and potential regressions. Your review MUST be thorough and MUST cover all changed files.
 
 **Review checklist — evaluate each item explicitly**:
 1. Read every changed file listed below and verify the fix is correct
-2. Check for edge cases that the fix may not handle
+2. Identify edge cases that the fix may not handle
 3. Verify that no regressions were introduced by the changes
 4. Confirm that new regression tests exist and would fail without the fix
-5. Check that error handling is preserved and not weakened by the fix
+5. Verify that error handling is preserved and not weakened by the fix
 6. Verify test assertions are meaningful and not trivially passing
 
 **Implementer output (VERBATIM — do not skip any section)**:
@@ -254,14 +327,14 @@ prompt: "FIX MODE DOCUMENTATION REVIEW: You are reviewing a bug fix for document
 
 REQUIRED STEPS — you MUST complete all three:
 
-1. SCAN: Identify every file changed by the fix. For each changed file, list all documentation files that reference the same module, function, class, or configuration key. Check README.md, docs/ directory, inline docstrings, and CHANGELOG entries.
+1. SCAN: Identify every file changed by the fix. For each changed file, list all documentation files that reference the same module, function, class, or configuration key. Review README.md, docs/ directory, inline docstrings, and CHANGELOG entries.
 
 2. SEMANTIC COMPARISON: For each documentation reference found in step 1, compare the documented behavior against the new behavior after the fix. Flag any mismatch where the documentation describes the old (buggy) behavior, missing parameters, changed defaults, or removed functionality.
 
 3. DOC-DRIFT-VERDICT: State one of the following verdicts explicitly:
-   - DOCS-UPDATED: List each file updated and what changed.
-   - NO-UPDATE-NEEDED: Explain why the fix is purely internal with no user-facing behavior change.
-   - DOCS-DRIFT-FOUND: List each documentation file that is now stale and what needs changing, but was not updated (this is a BLOCKING finding).
+   (a) DOCS-UPDATED: List each file updated and what changed.
+   (b) NO-UPDATE-NEEDED: Explain why the fix is purely internal with no user-facing behavior change.
+   (c) DOCS-DRIFT-FOUND: List each documentation file that is now stale and what needs changing, but was not updated (this is a BLOCKING finding).
 
 **Implementer output (VERBATIM — do not skip any section)**:
 [paste FULL implementer output from STEP F3 here — do NOT summarize]
@@ -272,8 +345,7 @@ REQUIRED STEPS — you MUST complete all three:
 Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
 ```
 
-3. **Security-auditor** (Sonnet): SKIP unless changed files touch security-sensitive paths
-(auth/, security/, crypto/, permissions/, .env, secrets, tokens).
+3. **Security-auditor** (Sonnet): Invoke ONLY when security-sensitivity detection returned REQUIRED (see detection step above).
 
 When invoked:
 ```
@@ -282,10 +354,10 @@ model: "sonnet"
 prompt: "FIX MODE SECURITY REVIEW: You are auditing a test fix for security implications. Review all changed files for security regressions.
 
 **Security audit checklist — evaluate each item explicitly**:
-1. Check that no authentication or authorization checks were weakened or removed
+1. Verify that no authentication or authorization checks were weakened or removed
 2. Verify no secrets, tokens, or credentials were hardcoded or exposed
 3. Confirm input validation was not bypassed or weakened by the fix
-4. Check that error messages do not leak sensitive internal details
+4. Verify that error messages do not leak sensitive internal details
 5. Verify that security-sensitive file permissions were not changed
 
 **Implementer output (VERBATIM — do not skip any section)**:
@@ -308,6 +380,8 @@ After the parallel agents complete, parse the doc-master output:
 2. **Shallow Verdict Detection**: Count the words in the doc-master output. If the output is fewer than 100 words, treat it as `DOC-VERDICT-SHALLOW` — the output is too short to confirm a real semantic sweep occurred. Log `[DOC-VERDICT-SHALLOW] doc-master produced N words (minimum: 100)` and retry once with reduced context (same as empty-output retry logic above). If retry also produces fewer than 100 words or no verdict, log `[DOC-VERDICT-SHALLOW-RETRY-FAILED] doc-master still shallow after retry — proceeding with warning`.
 3. If `DOCS-DRIFT-FOUND`: BLOCK. Display the stale documentation files. User must address before proceeding.
 4. If doc-master made fixes: stage them with `git add`
+
+## Step F5: Continuous Improvement
 
 ### STEP F5: Continuous Improvement (background)
 
