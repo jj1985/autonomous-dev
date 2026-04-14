@@ -87,7 +87,7 @@ class TestVerifyPipelineAgentCompletions:
         """All full-mode agents present: gate passes."""
         full_agents = {
             "researcher-local", "researcher", "planner",
-            "implementer", "reviewer", "security-auditor", "doc-master",
+            "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master",
         }
         self._record_agents(session_id, full_agents)
         passed, completed, missing = pcs.verify_pipeline_agent_completions(
@@ -125,7 +125,7 @@ class TestVerifyPipelineAgentCompletions:
     def test_research_skipped_excludes_researchers(self, session_id):
         """When research_skipped, researchers are not required but security-auditor is."""
         agents = {
-            "planner", "implementer", "reviewer",
+            "planner", "implementer", "pytest-gate", "reviewer",
             "security-auditor", "doc-master",
         }
         self._record_agents(session_id, agents)
@@ -152,7 +152,7 @@ class TestVerifyPipelineAgentCompletions:
     def test_light_mode_different_agents(self, session_id):
         """Light mode requires different agent set."""
         agents = {
-            "planner", "implementer", "doc-master",
+            "planner", "implementer", "pytest-gate", "doc-master",
             "continuous-improvement-analyst",
         }
         self._record_agents(session_id, agents)
@@ -163,9 +163,9 @@ class TestVerifyPipelineAgentCompletions:
         assert missing == set()
 
     def test_fix_mode_different_agents(self, session_id):
-        """Fix mode requires implementer, reviewer, doc-master, CIA."""
+        """Fix mode requires implementer, pytest-gate, reviewer, doc-master, CIA."""
         agents = {
-            "implementer", "reviewer", "doc-master",
+            "implementer", "pytest-gate", "reviewer", "doc-master",
             "continuous-improvement-analyst",
         }
         self._record_agents(session_id, agents)
@@ -215,7 +215,7 @@ class TestVerifyPipelineAgentCompletions:
         """Verify with a specific issue number."""
         agents = {
             "researcher-local", "researcher", "planner",
-            "implementer", "reviewer", "security-auditor", "doc-master",
+            "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master",
         }
         self._record_agents(session_id, agents, issue_number=802)
         passed, completed, missing = pcs.verify_pipeline_agent_completions(

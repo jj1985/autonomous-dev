@@ -2070,7 +2070,7 @@ def _check_pipeline_agent_completions(session_id: str) -> "Optional[str]":
             return None  # Fail-open
 
         # Determine pipeline mode from env (set by coordinator)
-        pipeline_mode = os.environ.get("PIPELINE_MODE", "full")
+        pipeline_mode = os.environ.get("PIPELINE_MODE") or _get_pipeline_mode_from_state()
         issue_number = 0
         try:
             issue_number = int(os.environ.get("PIPELINE_ISSUE_NUMBER", "0"))

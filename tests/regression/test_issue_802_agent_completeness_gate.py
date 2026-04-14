@@ -87,7 +87,7 @@ class TestAgentCompletenessGateBlocking:
         """Git commit should be allowed when all required agents complete."""
         agents = {
             "researcher-local", "researcher", "planner",
-            "implementer", "reviewer", "security-auditor", "doc-master",
+            "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master",
         }
         for agent in agents:
             pcs.record_agent_completion(session_id, agent)
@@ -101,7 +101,7 @@ class TestAgentCompletenessGateBlocking:
     def test_research_skipped_allows_without_researchers(self, session_id):
         """When research is skipped, missing researchers should not block."""
         agents = {
-            "planner", "implementer", "reviewer",
+            "planner", "implementer", "pytest-gate", "reviewer",
             "security-auditor", "doc-master",
         }
         for agent in agents:
