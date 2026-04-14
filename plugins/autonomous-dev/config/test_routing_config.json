@@ -2,7 +2,7 @@
   "version": 1,
   "routing_rules": {
     "hook":          {"smoke": true, "unit_hooks": true, "regression": true, "genai": false, "property": false},
-    "agent_prompt":  {"smoke": true, "unit": false, "regression": false, "genai": true, "property": false},
+    "agent_prompt":  {"smoke": true, "unit": true, "regression": false, "genai": true, "property": false},
     "command":       {"smoke": true, "unit_commands": true, "regression": false, "genai": true, "property": false},
     "lib":           {"smoke": true, "unit_libs": true, "regression": true, "genai": false, "property": true},
     "config":        {"smoke": true, "unit": false, "regression": true, "genai": false, "property": false},

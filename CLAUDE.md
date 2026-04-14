@@ -48,9 +48,9 @@ pytest --cov=plugins/autonomous-dev/hooks --cov=plugins/autonomous-dev/lib --cov
 - **Pipeline**: 8-step SDLC (15 internal steps) — alignment → research → plan → acceptance tests → implement → validate → verify → git
 - **Enforcement**: 22 hooks with JSON `{"decision": "block"}` hard gates (not prompt-level nudges)
 - **Agents**: 15 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
-- **Skills**: 17 domain packages, progressively injected per-step to prevent context bloat
+- **Skills**: 19 domain packages, progressively injected per-step to prevent context bloat
 
-Component counts: 15 agents, 17 skills, 22 commands, 22 hooks, 196 libraries.
+Component counts: 15 agents, 19 skills, 22 commands, 22 hooks, 196 libraries.
 
 ## Commands
 

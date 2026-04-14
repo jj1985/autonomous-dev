@@ -5,7 +5,7 @@ covers:
 
 # Shared Libraries Reference
 
-**Last Updated**: 2026-04-14 (Issue #814 - Added plan_validator.py)
+**Last Updated**: 2026-04-14 (Issue #842 - Added prompt_quality_rules.py)
 **Purpose**: Comprehensive API documentation for autonomous-dev shared libraries
 
 This document provides detailed API documentation for shared libraries in `plugins/autonomous-dev/lib/` and `plugins/autonomous-dev/scripts/`. For high-level overview, see [CLAUDE.md](../CLAUDE.md) Architecture section.
@@ -16471,3 +16471,39 @@ result = analyzer.prune_tests(dry_run=False)
 - `tests/unit/lib/test_acceptance_dependabot_tracker.py` — 16 static file inspection acceptance tests verifying all feature deliverables
 
 **Version History**: v1.0.0 (2026-04-11) - Initial release, Dependabot security tracking at STEP 13 (Issue #767)
+
+## 176+11. prompt_quality_rules.py (v1.0.0 - Issue #842)
+
+**Purpose**: Shared anti-pattern detection library for agent and command prompt files. Used as the rule engine by both the static inspection test suite (`tests/unit/test_prompt_quality.py`) and the unified_pre_tool.py Layer 6 write-time gate. Centralizes all anti-pattern definitions so enforcement is consistent between static analysis and runtime blocking.
+
+**Location**: `plugins/autonomous-dev/lib/prompt_quality_rules.py`
+
+**Key Features**:
+- `PERSONA_PATTERN` — compiled regex that matches banned expert-qualifier persona openers (`You are an expert`, `You are a senior`, `You are a world-class`, `You are a renowned/leading/top`) while explicitly allowing legitimate role assignments (`You are the **implementer** agent`)
+- `CASUAL_REGISTER_PATTERNS` — list of compiled regexes for six casual register phrases that weaken enforcement prompts: `check for`, `look for`, `make sure`, `try to`, `you should`, `feel free`
+- `CONSTRAINT_DENSITY_THRESHOLD = 8` — maximum bullet items (lines starting with `- ` or `* `) allowed per `##` section before flagging as oversized
+- `check_persona(content)` — scans for persona pattern matches, returning violation strings with line numbers; legitimate role assignments pass through
+- `check_casual_register(content)` — scans for all casual register patterns; each match produces a violation string with line number and the matched phrase
+- `check_constraint_density(content, threshold=8)` — parses content into `##`-delimited sections, counts bullet items per section, and flags sections exceeding the threshold; the final section is also checked after the loop completes
+- `check_all(content)` — orchestrates all three checks and returns a combined violation list; an empty return means the content passes all checks
+
+### Public API
+
+**Functions**:
+- `check_persona(content: str) -> List[str]` — detect banned expert-qualifier persona openers; returns violation strings with line numbers
+- `check_casual_register(content: str) -> List[str]` — detect casual register phrases that weaken enforcement; returns violation strings with line numbers
+- `check_constraint_density(content: str, threshold: int = 8) -> List[str]` — detect oversized constraint sections exceeding the bullet-item threshold
+- `check_all(content: str) -> List[str]` — run all three checks and return combined violations (empty = pass)
+
+### Integration
+
+- Consumed by `plugins/autonomous-dev/hooks/unified_pre_tool.py` Layer 6 via `importlib.util.spec_from_file_location` dynamic import; invoked on Write/Edit content targeting `agents/*.md` or `commands/*.md` during active pipeline sessions
+- Consumed by `tests/unit/test_prompt_quality.py` static inspection tests which scan all existing `plugins/autonomous-dev/agents/*.md` files for violations at test time
+- Imported defensively: any `ImportError` or `Exception` during `check_all()` causes the hook to fail-open (no block) rather than halt the pipeline
+
+### Testing
+
+- `tests/unit/test_prompt_quality.py` — 27 tests covering unit-level rule checks (persona detection, casual register, constraint density) and static inspection of all existing agent `.md` files
+- `tests/spec_validation/test_spec_issue842_prompt_quality_gate.py` — 30 spec-validation tests covering hook integration, Layer 6 enforcement behavior, and test routing config
+
+**Version History**: v1.0.0 (2026-04-14) - Initial release, prompt anti-pattern detection shared library (Issue #842)
