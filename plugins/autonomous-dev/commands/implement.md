@@ -1023,7 +1023,15 @@ If STEP 11 did NOT trigger remediation (both validators passed on first try), us
    - If still missing: **Retry once** with reduced context: obtain the CURRENT changed file list via `git diff --name-only HEAD~1 2>/dev/null || git diff --name-only --cached`, then re-invoke doc-master BLOCKING (not background) with ONLY this current file list and feature description (no implementer output, no reviewer output). Log: `[DOC-VERDICT-RETRY] Re-invoking doc-master with reduced context and current file list (N files)`
    - If retry produces a DOC-DRIFT-VERDICT: use that verdict
    - If retry also fails or returns empty: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry — proceeding with warning`
-7. **REQUIRED: Persist verdict to completion state** (Issue #837): After parsing the final verdict (whether PASS, FAIL, MISSING, or SHALLOW), call `record_doc_verdict(session_id, issue_number, verdict)` from `pipeline_completion_state.py`. This enables the batch doc-master gate hook to verify not just that doc-master ran, but that it produced a valid verdict.
+7. **REQUIRED: Persist verdict to completion state** (Issues #837, #852): After parsing the final verdict (whether PASS, FAIL, MISSING, or SHALLOW), call `record_doc_verdict(session_id, issue_number, verdict)` AND `record_agent_completion(session_id, 'doc-master', issue_number=issue_number, success=(verdict not in ('MISSING',)))` from `pipeline_completion_state.py`. The `record_doc_verdict` call enables the batch doc-master gate hook to verify a valid verdict was produced. The `record_agent_completion` call is required because SubagentStop doesn't fire reliably for background agents, leaving 'doc-master' absent from the completed agents set (Issue #852).
+
+```python
+from pipeline_completion_state import record_doc_verdict, record_agent_completion
+record_doc_verdict(session_id, issue_number, verdict)
+# Issue #852: Explicitly record doc-master completion since SubagentStop
+# doesn't fire reliably for background agents
+record_agent_completion(session_id, 'doc-master', issue_number=issue_number, success=(verdict not in ('MISSING',)))
+```
 
 ### STEP 13: Report and Finalize
 
@@ -1231,6 +1239,16 @@ Prompt word count validation: this prompt must contain >= 80 words of template t
 4. If **FAIL**: BLOCK. Display findings.
 5. If doc-master made fixes: stage them with `git add`
 6. If no verdict: log warning and proceed
+7. **REQUIRED: Persist verdict to completion state** (Issues #837, #852): After parsing the verdict, call `record_doc_verdict` AND `record_agent_completion` for 'doc-master'. The `record_agent_completion` call is required because SubagentStop doesn't fire reliably for background agents (Issue #852).
+
+```python
+from pipeline_completion_state import record_doc_verdict, record_agent_completion
+verdict = parsed_verdict  # e.g., "PASS", "FAIL", "MISSING"
+record_doc_verdict(session_id, issue_number, verdict)
+# Issue #852: Explicitly record doc-master completion since SubagentStop
+# doesn't fire reliably for background agents
+record_agent_completion(session_id, 'doc-master', issue_number=issue_number, success=(verdict not in ('MISSING',)))
+```
 
 **Progress**: Output Final Summary table (adapted for 5 steps).
 

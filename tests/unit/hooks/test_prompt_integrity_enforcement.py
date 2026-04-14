@@ -107,11 +107,15 @@ class TestPromptIntegrityEnforcement:
 
         Patches get_prompt_baseline to return None so only the minimum word
         count gate is tested — not the baseline shrinkage gate (Issue #747).
+        Patches record_batch_observation and get_cumulative_shrinkage to prevent
+        stale on-disk data from causing false denials (Issue #861).
         """
         long_prompt = _make_prompt(100)
         with (
             patch.object(hook, "_is_pipeline_active", return_value=True),
             patch("prompt_integrity.get_prompt_baseline", return_value=None),
+            patch("prompt_integrity.record_batch_observation"),
+            patch("prompt_integrity.get_cumulative_shrinkage", return_value=None),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
@@ -141,14 +145,21 @@ class TestPromptIntegrityEnforcement:
             assert "reviewer" in reason
 
     def test_critical_agent_no_shrinkage_when_above_baseline(self):
-        """Reviewer prompt at 300 words should be allowed with 396-word baseline (Issue #747).
+        """Reviewer prompt at 320 words should be allowed with 396-word baseline (Issue #747, #812).
 
-        300 > 396 * 0.75 = 297, so shrinkage gate should pass.
+        Issue #812 tightened the shrinkage threshold from 25% to 20%.
+        320 > 396 * 0.80 = 316.8, so shrinkage gate should pass.
+        Previously used _make_prompt(300) which fails the new 20% threshold:
+        300 < 316.8 → deny. This test IS the regression test for Issue #812.
+        Patches record_batch_observation and get_cumulative_shrinkage to prevent
+        stale on-disk data from causing false denials (Issue #861).
         """
-        adequate_prompt = _make_prompt(300)
+        adequate_prompt = _make_prompt(320)
         with (
             patch.object(hook, "_is_pipeline_active", return_value=True),
             patch("prompt_integrity.get_prompt_baseline", return_value=396),
+            patch("prompt_integrity.record_batch_observation"),
+            patch("prompt_integrity.get_cumulative_shrinkage", return_value=None),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
