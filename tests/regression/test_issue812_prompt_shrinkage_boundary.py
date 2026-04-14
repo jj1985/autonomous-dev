@@ -137,40 +137,41 @@ class TestIssue812PromptShrinkageBoundary:
 
     # -- Cumulative drift tests (MAX_CUMULATIVE_SHRINKAGE) --
 
-    def test_cumulative_15pct_drift_blocked(self, tmp_path: Path) -> None:
-        """Exactly 15% cumulative drift must be blocked (>= boundary).
+    def test_cumulative_30pct_drift_blocked(self, tmp_path: Path) -> None:
+        """Exactly 30% cumulative drift must be blocked (>= boundary).
 
-        Before fix: MAX_CUMULATIVE_SHRINKAGE=0.20 with `>`, so 15% passed easily.
-        After fix: MAX_CUMULATIVE_SHRINKAGE=0.15 with `>=`, so 15% is blocked.
+        Issue #870 raised MAX_CUMULATIVE_SHRINKAGE from 0.15 to 0.30.
+        30% cumulative drift should be at or above the threshold.
         """
-        # 200→170 = 15.0% cumulative shrinkage
+        # 200→140 = 30.0% cumulative shrinkage
         record_batch_observation("implementer", 1, 200, state_dir=tmp_path)
-        record_batch_observation("implementer", 2, 170, state_dir=tmp_path)
+        record_batch_observation("implementer", 2, 140, state_dir=tmp_path)
 
         cumulative = get_cumulative_shrinkage("implementer", state_dir=tmp_path)
         assert cumulative is not None
-        assert cumulative == 15.0
+        assert cumulative == 30.0
 
         # Verify this is at or above the threshold (should be blocked)
         assert cumulative >= MAX_CUMULATIVE_SHRINKAGE * 100, (
-            f"15.0% cumulative drift should be >= threshold {MAX_CUMULATIVE_SHRINKAGE * 100}%"
+            f"30.0% cumulative drift should be >= threshold {MAX_CUMULATIVE_SHRINKAGE * 100}%"
         )
 
-    def test_cumulative_14pct_drift_passes(self, tmp_path: Path) -> None:
-        """14% cumulative drift is under the 15% threshold and must PASS.
+    def test_cumulative_29pct_drift_passes(self, tmp_path: Path) -> None:
+        """29% cumulative drift is under the 30% threshold and must PASS.
 
-        200→172 = 14.0% cumulative shrinkage — just under the new 15% threshold.
+        Issue #870 raised MAX_CUMULATIVE_SHRINKAGE from 0.15 to 0.30.
+        200→142 = 29.0% cumulative shrinkage — just under the 30% threshold.
         """
         record_batch_observation("implementer", 1, 200, state_dir=tmp_path)
-        record_batch_observation("implementer", 2, 172, state_dir=tmp_path)
+        record_batch_observation("implementer", 2, 142, state_dir=tmp_path)
 
         cumulative = get_cumulative_shrinkage("implementer", state_dir=tmp_path)
         assert cumulative is not None
-        assert cumulative == 14.0
+        assert cumulative == 29.0
 
         # Verify this is below the threshold (should pass)
         assert cumulative < MAX_CUMULATIVE_SHRINKAGE * 100, (
-            f"14.0% cumulative drift should be < threshold {MAX_CUMULATIVE_SHRINKAGE * 100}%"
+            f"29.0% cumulative drift should be < threshold {MAX_CUMULATIVE_SHRINKAGE * 100}%"
         )
 
     def test_reinvocation_context_relaxes_threshold(self) -> None:
@@ -194,11 +195,11 @@ class TestIssue812PromptShrinkageBoundary:
             f"Got passed={result.passed}, shrinkage={result.shrinkage_pct:.1f}%"
         )
 
-    def test_max_cumulative_shrinkage_is_015(self) -> None:
-        """Verify MAX_CUMULATIVE_SHRINKAGE is 0.15 (15%) after Issue #812 tightening."""
-        assert MAX_CUMULATIVE_SHRINKAGE == 0.15, (
-            f"Expected MAX_CUMULATIVE_SHRINKAGE=0.15, got {MAX_CUMULATIVE_SHRINKAGE}. "
-            f"Issue #812 tightened from 0.20 to 0.15."
+    def test_max_cumulative_shrinkage_is_030(self) -> None:
+        """Verify MAX_CUMULATIVE_SHRINKAGE is 0.30 (30%) after Issue #870 calibration."""
+        assert MAX_CUMULATIVE_SHRINKAGE == 0.30, (
+            f"Expected MAX_CUMULATIVE_SHRINKAGE=0.30, got {MAX_CUMULATIVE_SHRINKAGE}. "
+            f"Issue #870 raised from 0.15 to 0.30."
         )
 
     def test_hook_blocks_at_20pct_shrinkage(self) -> None:
@@ -226,7 +227,7 @@ class TestIssue812PromptShrinkageBoundary:
             patch("prompt_integrity.validate_prompt_word_count", return_value=failing_result),
             patch("prompt_integrity.record_batch_observation"),
             patch("prompt_integrity.get_cumulative_shrinkage", return_value=5.0),
-            patch("prompt_integrity.MAX_CUMULATIVE_SHRINKAGE", 0.15),
+            patch("prompt_integrity.MAX_CUMULATIVE_SHRINKAGE", 0.30),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",

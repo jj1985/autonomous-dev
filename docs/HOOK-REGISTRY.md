@@ -304,6 +304,7 @@ All environment variables with default values:
 | ENFORCEMENT_LEVEL | suggest | enforce_implementation_workflow (PreToolUse) | Graduated enforcement level (off, warn, suggest, block) for /implement workflow - default SUGGEST allows + suggests |
 | ENFORCE_WORKFLOW_STRICT | false | enforce_implementation_workflow (PreToolUse) | Legacy variable for BLOCK enforcement (deprecated, use ENFORCEMENT_LEVEL) |
 | ALLOW_GIT_BYPASS | false | block_git_bypass (PreCommit) | Allow git commit --no-verify for emergency situations (not recommended) |
+| PIPELINE_CLEANUP_PHASE | (unset) | unified_pre_tool (PreToolUse) | Set to `1` or `true` to allow deletion of pipeline state files — escape hatch for authorized STEP 15 / STEP B4 batch cleanup; bypass for pipeline state file deletion guard (Issue #865) |
 
 ### Hook Extensions
 

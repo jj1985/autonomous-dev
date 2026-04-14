@@ -28,12 +28,13 @@ from prompt_integrity import (
 class TestSpecIssue764PerIssueBaseline:
     """Spec validation: per-issue baseline isolation for batch mode."""
 
-    def test_spec_764_1_issue1_baseline_does_not_block_issue2(
+    def test_spec_764_1_issue2_falls_back_to_lowest_issue_baseline(
         self, tmp_path: Path
     ) -> None:
-        """Criterion 1: When baselines are recorded per-issue, looking up the
-        baseline for issue 2 does not return issue 1's baseline. This prevents
-        cross-issue false-positive shrinkage blocks."""
+        """Criterion 1 (updated by Issue #867): When baselines are recorded
+        per-issue, looking up the baseline for issue 2 falls back to the
+        lowest-issue baseline (issue 1) for cross-issue shrinkage detection.
+        This prevents undetected 55% prompt shrinkage across batch issues."""
         state_dir = tmp_path / "state"
         state_dir.mkdir()
 
@@ -44,13 +45,13 @@ class TestSpecIssue764PerIssueBaseline:
             "implementer", issue_number=1, word_count=500, state_dir=state_dir
         )
 
-        # Look up baseline for issue 2 -- should be None (no baseline for issue 2 yet)
+        # Look up baseline for issue 2 -- should fall back to issue 1's baseline
         baseline_issue2 = get_prompt_baseline(
             "implementer", issue_number=2, state_dir=state_dir
         )
-        assert baseline_issue2 is None, (
-            f"Expected None for issue 2 baseline, got {baseline_issue2}. "
-            f"Issue 1's baseline is leaking into issue 2's lookup."
+        assert baseline_issue2 == 500, (
+            f"Expected fallback to issue 1 baseline (500), got {baseline_issue2}. "
+            f"Issue #867: cross-issue shrinkage detection requires fallback."
         )
 
     def test_spec_764_2_within_issue_shrinkage_detected(
@@ -136,21 +137,20 @@ class TestSpecIssue764PerIssueBaseline:
             "implementer", issue_number=1, word_count=500, state_dir=state_dir
         )
 
-        # Issue 2 should have no baselines for either agent
-        assert get_prompt_baseline("reviewer", issue_number=2, state_dir=state_dir) is None
-        assert get_prompt_baseline("implementer", issue_number=2, state_dir=state_dir) is None
+        # Issue 2 should fall back to issue 1's baseline (Issue #867: cross-issue detection)
+        assert get_prompt_baseline("reviewer", issue_number=2, state_dir=state_dir) == 600
+        assert get_prompt_baseline("implementer", issue_number=2, state_dir=state_dir) == 500
 
         # But issue 1 baselines are still retrievable
         assert get_prompt_baseline("reviewer", issue_number=1, state_dir=state_dir) == 600
         assert get_prompt_baseline("implementer", issue_number=1, state_dir=state_dir) == 500
 
-    def test_spec_764_5_batch_scenario_no_cross_issue_false_positive(
+    def test_spec_764_5_batch_scenario_cross_issue_shrinkage_detected(
         self, tmp_path: Path
     ) -> None:
-        """Criterion 1 end-to-end: Simulates a real batch scenario where issue 1
-        has a large prompt and issue 2 has a legitimately smaller prompt. With
-        per-issue isolation, issue 2's prompt is NOT falsely blocked by issue 1's
-        baseline."""
+        """Criterion 1 end-to-end (updated by Issue #867): Simulates a real
+        batch scenario where issue 1 has a large prompt and issue 2 has a much
+        smaller prompt. With cross-issue fallback, the shrinkage IS detected."""
         state_dir = tmp_path / "state"
         state_dir.mkdir()
 
@@ -161,19 +161,22 @@ class TestSpecIssue764PerIssueBaseline:
             "implementer", issue_number=1, word_count=800, state_dir=state_dir
         )
 
-        # Issue 2: legitimately smaller prompt (different feature, less context needed)
+        # Issue 2: much smaller prompt (62.5% shrinkage from 800 to 300)
         issue2_prompt = " ".join(["word"] * 300)
 
-        # Per-issue lookup: issue 2 has no baseline yet
+        # Per-issue lookup: issue 2 falls back to issue 1's baseline (Issue #867)
         baseline_for_issue2 = get_prompt_baseline(
             "implementer", issue_number=2, state_dir=state_dir
         )
-
-        # Without a baseline, validation should pass (no shrinkage comparison possible)
-        result = validate_prompt_word_count(
-            "implementer", issue2_prompt, baseline_for_issue2
+        assert baseline_for_issue2 == 800, (
+            f"Expected fallback to issue 1 baseline (800), got {baseline_for_issue2}"
         )
-        assert result.passed is True, (
-            f"Issue 2's prompt should not be blocked by issue 1's baseline. "
+
+        # With the fallback baseline, the 62.5% shrinkage IS detected
+        result = validate_prompt_word_count(
+            "implementer", issue2_prompt, baseline_for_issue2, max_shrinkage=0.15
+        )
+        assert result.passed is False, (
+            f"Issue 2's 62.5% prompt shrinkage should be detected via cross-issue fallback. "
             f"Decision: passed={result.passed}, reason={result.reason}"
         )

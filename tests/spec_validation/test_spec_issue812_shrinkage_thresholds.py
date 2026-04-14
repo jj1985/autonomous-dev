@@ -95,28 +95,28 @@ class TestSpecIssue812ShrinkageThresholds:
             f"Got passed={result.passed}"
         )
 
-    # -- Criterion 4: Cumulative drift of 15% or more MUST trigger a block --
+    # -- Criterion 4: Cumulative drift of 30% or more MUST trigger a block (Issue #870) --
 
-    def test_spec_812_4_cumulative_15pct_drift_blocked(self, tmp_path: Path) -> None:
-        """Cumulative drift of 15% or more across batch issues MUST trigger a block.
+    def test_spec_812_4_cumulative_30pct_drift_blocked(self, tmp_path: Path) -> None:
+        """Cumulative drift of 30% or more across batch issues MUST trigger a block.
 
-        MAX_CUMULATIVE_SHRINKAGE must be 0.15, and 15% must meet the threshold.
+        MAX_CUMULATIVE_SHRINKAGE raised to 0.30 in Issue #870 (from 0.15 in #812).
         """
-        # Record observations: 200 words first, 170 words later = exactly 15%
+        # Record observations: 200 words first, 140 words later = exactly 30%
         record_batch_observation("implementer", 1, 200, state_dir=tmp_path)
-        record_batch_observation("implementer", 5, 170, state_dir=tmp_path)
+        record_batch_observation("implementer", 5, 140, state_dir=tmp_path)
 
         cumulative = get_cumulative_shrinkage("implementer", state_dir=tmp_path)
         assert cumulative is not None
         assert cumulative >= MAX_CUMULATIVE_SHRINKAGE * 100, (
-            f"15% cumulative drift must meet or exceed threshold. "
+            f"30% cumulative drift must meet or exceed threshold. "
             f"Cumulative={cumulative}%, threshold={MAX_CUMULATIVE_SHRINKAGE * 100}%"
         )
 
-    def test_spec_812_4b_max_cumulative_shrinkage_is_015(self) -> None:
-        """MAX_CUMULATIVE_SHRINKAGE constant must be 0.15 (15%)."""
-        assert MAX_CUMULATIVE_SHRINKAGE == 0.15, (
-            f"Expected MAX_CUMULATIVE_SHRINKAGE=0.15, got {MAX_CUMULATIVE_SHRINKAGE}"
+    def test_spec_812_4b_max_cumulative_shrinkage_is_030(self) -> None:
+        """MAX_CUMULATIVE_SHRINKAGE constant must be 0.30 (30%) — raised in Issue #870."""
+        assert MAX_CUMULATIVE_SHRINKAGE == 0.30, (
+            f"Expected MAX_CUMULATIVE_SHRINKAGE=0.30, got {MAX_CUMULATIVE_SHRINKAGE}"
         )
 
     # -- Criterion 5: Shrinkage below 20% MUST still pass --
