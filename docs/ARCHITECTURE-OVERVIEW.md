@@ -11,7 +11,7 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 16 agents (18 archived), 18 skills, 23 active commands, 178 libraries, 23 active hooks (61 archived).
+**Component Counts**: 16 agents (18 archived), 19 skills, 23 active commands, 178 libraries, 23 active hooks (61 archived).
 
 ---
 
@@ -54,6 +54,8 @@ Agent model assignments optimized for cost-performance balance (16 active agents
 
 **Performance Impact**: Optimized tier assignments reduce costs by 40-60% while maintaining quality.
 
+**Prompt Engineering**: Agent prompts follow empirically-grounded patterns — constraint budgets (MOSAIC), register shifting, persona anti-pattern avoidance (PRISM), and HARD GATE structure. See [docs/PROMPT-ENGINEERING.md](PROMPT-ENGINEERING.md) and [docs/model-behavior-notes.md](model-behavior-notes.md) for the full reference.
+
 ---
 
 ## Skills
@@ -65,7 +67,7 @@ Specialized skill packages using progressive disclosure to prevent context bloat
 - Each skill declares `allowed-tools:` for least privilege
 - Compact SKILL.md files with detailed content in docs/ subdirectories
 
-**Active Skills** (18 total):
+**Active Skills** (19 total):
 - **Core**: python-standards, testing-guide, api-design, documentation-guide
 - **Code Quality**: code-review, refactoring-patterns
 - **Error & Debugging**: error-handling, debugging-workflow
@@ -73,6 +75,7 @@ Specialized skill packages using progressive disclosure to prevent context bloat
 - **Integration & Design**: library-design-patterns, api-integration-patterns, state-management-patterns, architecture-patterns
 - **Workflow & Research**: git-github, research-patterns, planning-workflow
 - **Validation**: scientific-validation
+- **Prompt Engineering**: prompt-engineering (constraint budgets, register shifting, HARD GATE patterns — see [docs/PROMPT-ENGINEERING.md](PROMPT-ENGINEERING.md))
 
 ---
 

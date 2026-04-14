@@ -112,6 +112,42 @@ Blocks SHOULD contain:
 
 ---
 
+## Prompt Word Selection
+
+The words used in agent prompts shift how deeply the model applies a constraint — a phenomenon called **register shifting**. This directly affects whether behavioral constraints in compensation blocks are followed or ignored.
+
+### Register Tier Taxonomy
+
+| Tier | Words | Effect |
+|------|-------|--------|
+| **Tier 1 — Deep** | `audit`, `verify`, `critically analyse`, `enumerate` | Systematic scan, high compute allocation |
+| **Tier 2 — Balanced** | `review`, `check`, `describe`, `summarize` | Standard processing |
+| **Tier 3 — Minimal** | `look at`, `mention`, `note`, `consider` | Advisory; easily skipped under cognitive load |
+
+**Rule**: Hard gates and FORBIDDEN lists must use Tier 1 verbs. Tier 3 verbs in enforcement contexts produce near-zero compliance.
+
+### Anti-Pattern: Persona Prefixes for Analytical Tasks
+
+**Source**: PRISM (arxiv:2603.18507) — expert persona prefixes reduce knowledge-retrieval accuracy for analytical tasks.
+
+The pattern `"You are a senior [role]..."` allocates model attention to maintaining the persona rather than applying domain knowledge. For reviewers, auditors, and analytical agents, this degrades output quality.
+
+**FORBIDDEN for analytical agents**: `You are a [role]...`, `Act as an expert in...`, `Imagine you are...`
+
+**Correct pattern**: Role description + behavioral directive without persona framing.
+
+```
+# BAD — persona prefix
+You are a senior security engineer with 10 years of experience. Review this code.
+
+# GOOD — directive without persona
+Perform a security audit of the changed files. Enumerate all CWE categories present.
+```
+
+**Cross-reference**: [docs/PROMPT-ENGINEERING.md](PROMPT-ENGINEERING.md) contains the full PRISM finding, constraint budget analysis (MOSAIC), and complete register shifting taxonomy.
+
+---
+
 ## References
 
 - Issue #108: Model tier strategy — original tier assignments and rationale

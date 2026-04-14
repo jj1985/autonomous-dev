@@ -12,6 +12,7 @@ This hook consolidates five PreToolUse validators into a single dispatcher:
 2. Agent Authorization (enforce_implementation_workflow.py) - Pipeline agent detection
 3. Batch Permission Approver (batch_permission_approver.py) - Permission batching
 5. Prompt Integrity (Issue #695) - Minimum word count for critical agents
+6. Prompt Quality (Issue #842) - Anti-pattern detection for agent/command .md files
 
 Native Tool Fast Path:
 - Native Claude Code tools (Read, Write, Edit, Bash, Task, etc.) bypass all 4 validation layers
@@ -32,6 +33,7 @@ Layer Execution Order (short-circuit on deny):
 2. Layer 2 (Agent Auth): Pipeline agent detection
 3. Layer 3 (Batch Permission): Permission batching
 5. Layer 5 (Prompt Integrity): Minimum word count for critical agents (Issue #695)
+6. Layer 6 (Prompt Quality): Anti-pattern detection for agent/command .md writes (Issue #842)
 
 Environment Variables:
 - SANDBOX_ENABLED: Enable/disable sandbox layer (default: false for opt-in)
@@ -3499,6 +3501,77 @@ def main():
                                 sys.exit(0)
                     except Exception:
                         pass  # Fail-open: never block on detection errors
+
+                # Layer 6: Prompt quality gate (Issue #842)
+                # Block writes to agents/ or commands/ .md files that introduce
+                # prompt anti-patterns (banned personas, casual register, oversized sections).
+                # Only enforced during active pipeline — fail-open on errors.
+                try:
+                    if _is_pipeline_active() and file_path:
+                        _pq_path = Path(file_path)
+                        _pq_is_agent_or_command = (
+                            _pq_path.suffix == ".md"
+                            and ("/agents/" in file_path or "/commands/" in file_path)
+                        )
+                        if _pq_is_agent_or_command:
+                            _pq_content = ""
+                            if tool_name == "Write":
+                                _pq_content = tool_input.get("content", "")
+                            elif tool_name == "Edit":
+                                # Read existing file, apply replacement in memory
+                                try:
+                                    _pq_existing = Path(file_path).read_text(encoding="utf-8")
+                                    _pq_old = tool_input.get("old_string", "")
+                                    _pq_new = tool_input.get("new_string", "")
+                                    if _pq_old and _pq_old in _pq_existing:
+                                        _pq_content = _pq_existing.replace(_pq_old, _pq_new, 1)
+                                    else:
+                                        _pq_content = _pq_existing  # Can't apply edit, check existing
+                                except (OSError, UnicodeDecodeError):
+                                    _pq_content = ""  # Can't read file, skip check
+
+                            if _pq_content:
+                                # Defensive import of prompt_quality_rules
+                                _pq_violations = None
+                                try:
+                                    _pq_lib_dir = Path(__file__).resolve().parent.parent / "lib"
+                                    _pq_mod_path = _pq_lib_dir / "prompt_quality_rules.py"
+                                    if _pq_mod_path.exists():
+                                        _pq_spec = importlib.util.spec_from_file_location(
+                                            "prompt_quality_rules", str(_pq_mod_path)
+                                        )
+                                        if _pq_spec and _pq_spec.loader:
+                                            _pq_mod = importlib.util.module_from_spec(_pq_spec)
+                                            _pq_spec.loader.exec_module(_pq_mod)
+                                            _pq_violations = _pq_mod.check_all(_pq_content)
+                                except Exception:
+                                    _pq_violations = None  # Fail-open on import errors
+
+                                if _pq_violations:
+                                    _pq_fname = _pq_path.name
+                                    _pq_summary = "; ".join(_pq_violations[:3])
+                                    if len(_pq_violations) > 3:
+                                        _pq_summary += f" ... and {len(_pq_violations) - 3} more"
+                                    _pq_block_reason = (
+                                        f"BLOCKED: Prompt quality violation in '{_pq_fname}' "
+                                        f"(Issue #842). {_pq_summary} "
+                                        f"REQUIRED NEXT ACTION: Fix the violations and retry. "
+                                        f"Avoid banned persona openers ('You are an expert'), "
+                                        f"casual register ('make sure', 'try to'), and "
+                                        f"oversized constraint sections (>8 bullets). "
+                                        f"Use formal directives (MUST, REQUIRED, FORBIDDEN)."
+                                    )
+                                    _log_pretool_activity(tool_name, tool_input, "deny", _pq_block_reason)
+                                    output_decision(
+                                        "deny", _pq_block_reason,
+                                        system_message=(
+                                            f"PROMPT QUALITY: '{_pq_fname}' has anti-pattern violations. "
+                                            f"Fix and retry."
+                                        ),
+                                    )
+                                    sys.exit(0)
+                except Exception:
+                    pass  # Fail-open: never block on prompt quality check errors
 
             # Bash command inspection: detect writes to protected paths (#502)
             if tool_name == "Bash":

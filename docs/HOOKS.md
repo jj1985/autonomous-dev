@@ -84,12 +84,14 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - Fail-closed: when `repo_detector` is unavailable at load time, `_is_adev_project()` returns `True` so enforcement continues rather than being silently skipped
 - Has no effect in autonomous-dev repos — all enforcement layers run normally
 
-**unified_pre_tool.py 4-Layer Architecture** (for MCP/external tools in autonomous-dev repos):
+**unified_pre_tool.py 6-Layer Architecture** (for MCP/external tools in autonomous-dev repos):
 - **Layer 0 (Sandbox)**: Command classification (SAFE/BLOCKED/NEEDS_APPROVAL)
 - **Layer 1 (MCP Security)**: Path traversal (CWE-22), injection (CWE-78), SSRF (CWE-918)
 - **Layer 2 (Agent Auth)**: Pipeline agent detection, authorized agent verification
 - **Layer 3 (Batch Approver)**: User consent caching, audit logging (merged into unified_pre_tool.py per Issue #348)
 - **Layer 4 (Extensions)**: Project/user-specific checks from `.claude/hooks/extensions/*.py` and `~/.claude/hooks/extensions/*.py` — survives `/sync` and `/install` (see Extension Points section)
+- **Layer 5 (Infrastructure Protection)**: Write/Edit to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` are blocked outside the `/implement` pipeline (see Infrastructure Protection section)
+- **Layer 6 (Prompt Quality)**: Write/Edit to `agents/*.md` or `commands/*.md` during active pipeline sessions are checked against `prompt_quality_rules.py` anti-patterns; blocks banned persona openers, casual register phrases, and oversized constraint sections (Issue #842)
 
 **Pipeline Ordering Gate** (Issues #625, #629, #632, #686 — native Agent/Task tools only):
 - Enforces agent invocation order during active pipeline sessions
@@ -118,6 +120,16 @@ This distinction is fundamental: nudges in `systemMessage` are user-readable but
 - Write/Edit to `agents/*.md`, `commands/*.md`, `hooks/*.py`, `lib/*.py`, `skills/*/SKILL.md` are blocked outside the `/implement` pipeline
 - Scoped to autonomous-dev repos (detected via `_is_autonomous_dev_repo()`) — does not affect user projects
 - User-facing docs (`README.md`, `CHANGELOG.md`, `docs/*.md`), config files (`.json`/`.yaml`), and all non-infrastructure paths are unaffected
+
+**Prompt Quality Gate** (Issue #842 — Layer 6, Write/Edit to agents/*.md and commands/*.md only):
+- Blocks writes to `agents/*.md` or `commands/*.md` when the resulting content contains prompt anti-patterns detected by `prompt_quality_rules.py`
+- Only enforced during active pipeline sessions (`_is_pipeline_active()` must return true); fails open on all errors
+- Content check for Write tool: uses `tool_input["content"]` directly
+- Content check for Edit tool: reads the existing file from disk, applies the replacement in memory, then runs anti-pattern checks on the post-edit content; if the file cannot be read, the check is skipped (fail-open)
+- Anti-patterns checked: (1) banned persona openers (`You are an expert/senior/world-class/renowned/leading/top`) — legitimate role assignments like `You are the **agent** agent` are allowed; (2) casual register phrases (`check for`, `look for`, `make sure`, `try to`, `you should`, `feel free`) that weaken enforcement; (3) oversized constraint sections exceeding 8 bullet items per `##`-level section
+- Block message lists the first three violations (plus count of remaining), and includes a `REQUIRED NEXT ACTION` directive to use formal directive language (`MUST`, `REQUIRED`, `FORBIDDEN`) and keep constraint sections under the threshold
+- Rule library (`prompt_quality_rules.py`) is loaded via `importlib.util.spec_from_file_location` at check time; if the module file is missing or import fails, the gate is skipped (fail-open)
+- Runs as Layer 6 in the Write/Edit enforcement stack, after Infrastructure Protection (Layer 5) and the Agent Denial Fallback Guard
 
 **Agent Denial Fallback Guard** (Issue #750):
 - When the Prompt Integrity Gate denies an Agent/Task invocation due to prompt shrinkage, the orchestrator may fall back to direct Write/Edit calls to the same protected infrastructure files
