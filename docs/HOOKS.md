@@ -201,6 +201,7 @@ See [SANDBOXING.md](SANDBOXING.md) for complete security architecture.
 | **auto_test.py** | Run related test files | AUTO_TEST |
 | **security_scan.py** | Secrets detection, vulnerability scanning | SECURITY_SCAN |
 | **enforce_tdd.py** | TDD workflow enforcement (tests before code) | ENFORCE_TDD |
+| **enforce_prunable_threshold.py** | Blocks commits when prunable test count exceeds `PRUNABLE_THRESHOLD` (100). Uses `TestPruningAnalyzer` for local-only AST scanning (no network calls). Imports threshold from `test_lifecycle_manager`. Graceful degradation on errors (exit 0). Supports `SKIP_PRUNABLE_GATE=1` env var. Strict-mode only. (Issue #863) | SKIP_PRUNABLE_GATE |
 | **enforce_regression_test.py** | Blocks `fix:`, `bugfix:`, and `hotfix:` commits when no test files are staged. Uses `bugfix_detector.is_bugfix_commit()` to detect prefixes. Fails open when `bugfix_detector` library is unavailable. Follows stick+carrot pattern: block message includes `REQUIRED NEXT ACTION` directing the committer to add a failing-then-passing regression test. Exception: pass `--no-verify` and document the covering test in the commit body when an existing test already covers the regression. (Issue #737) | — |
 | **enforce_orchestrator.py** | PROJECT.md alignment validation | — |
 | **validate_project_alignment.py** | PROJECT.md forbidden sections detection | VALIDATE_PROJECT_ALIGNMENT |
