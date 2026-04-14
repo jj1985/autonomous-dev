@@ -571,6 +571,8 @@ Same as BATCH FILE MODE:
 
    **Note**: Agent ordering is now hook-enforced by `unified_pre_tool.py` Layer 4 (Issues #625, #629, #632). The hook reads completion state written by `unified_session_tracker.py` and blocks out-of-order agent invocations per-issue.
 
+   The coordinator MUST also follow the **Pre-Dispatch Ordering Protocol** defined in [implement.md](implement.md) before every agent dispatch within each issue's pipeline. The hook is a backstop; the protocol is first-line defense. Issue #850.
+
    **CRITICAL**: Each issue gets a NEW `create_pipeline()` call. Do NOT reuse pipeline state across issues. Create a new pipeline, run the separate pipeline for that issue, then clear/cleanup before starting the next.
 
    **Per-issue agent verification is MANDATORY** — see STEP B3 point 4 HARD GATE. Every issue must pass the mode-appropriate agent verification (8 in default mode, 9 in `--tdd-first` mode) before the next issue starts.
