@@ -144,6 +144,11 @@
           {
             "type": "command",
             "command": "python \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/security_scan.py\" || exit 1"
+          },
+          {
+            "type": "command",
+            "command": "python \"$(dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\")/plugins/autonomous-dev/hooks/enforce_prunable_threshold.py\" || exit 1",
+            "timeout": 30
           }
         ]
       }

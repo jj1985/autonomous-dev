@@ -274,6 +274,23 @@ print(get_test_count(Path('.')))
 echo "Baseline test count: $BASELINE_TEST_COUNT"
 ```
 
+**Baseline Failing Tests Capture** (for fix-forward classification in STEP 8 — Issue #860):
+
+```bash
+BASELINE_FAILING_FILE="/tmp/baseline_failing_tests.txt"
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from fix_forward import parse_failing_tests
+import subprocess
+result = subprocess.run(['pytest', '--tb=no', '-q'], capture_output=True, text=True, timeout=120)
+failing = parse_failing_tests(result.stdout + result.stderr)
+for t in sorted(failing):
+    print(t)
+" > "$BASELINE_FAILING_FILE"
+BASELINE_FAILING_COUNT=$(grep -c . "$BASELINE_FAILING_FILE" 2>/dev/null || echo "0")
+echo "Baseline failing tests: $BASELINE_FAILING_COUNT"
+```
+
 ### STEP 2: Validate PROJECT.md Alignment — HARD GATE
 
 **Progress**: Output step banner (STEP 2/15 — Alignment). Output gate result after.
@@ -571,6 +588,32 @@ For EACH failure, you MUST choose one:
 - ❌ You MUST NOT proceed when test count drops significantly from baseline (enforced by `coverage_baseline.check_test_count_regression()`)
 
 Loop until **0 failures, 0 errors**. Do NOT proceed to STEP 10 with any failures.
+
+**Pre-Existing Failure Classification (Fix-Forward -- Issue #860)**
+
+After achieving 0 test failures OR when remaining failures are all pre-existing, run classification:
+
+```bash
+python3 -c "
+import sys, os; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from fix_forward import parse_failing_tests, classify_failures
+import subprocess
+# Capture current pytest output inline (not via shell variable)
+current_result = subprocess.run(['pytest', '--tb=no', '-q'], capture_output=True, text=True, timeout=120)
+current_failing = parse_failing_tests(current_result.stdout + current_result.stderr)
+# Read baseline failing tests from temp file written in STEP 1 (newline-separated test IDs)
+baseline_file = '/tmp/baseline_failing_tests.txt'
+try:
+    baseline_contents = open(baseline_file).read().strip()
+    baseline_failing = set(baseline_contents.split('\n')) if baseline_contents else set()
+except FileNotFoundError:
+    baseline_failing = set()
+result = classify_failures(baseline_failing, current_failing)
+print(f'Fixed: {len(result[\"fixed\"])} | Pre-existing: {len(result[\"pre_existing_remaining\"])} | New: {len(result[\"new_failures\"])}')
+"
+```
+
+Gate: `new_failures > 0` BLOCKS (unchanged). `new_failures == 0` with `pre_existing_remaining > 0` auto-files issues via `gh issue create` with label `pre-existing-failure`, then proceeds. `fixed > 0` notes in commit context. FORBIDDEN: classifying failures in implementer-modified files as "pre-existing", or silently dropping pre-existing failures without fixing or filing.
 
 **Smart Test Routing** (unless `--full-tests` flag was passed): The quality gate uses `test_routing.route_tests()` to classify changed files and run only relevant test tiers. When routing is active, report which tiers ran and which were skipped:
 ```

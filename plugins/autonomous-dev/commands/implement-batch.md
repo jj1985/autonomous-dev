@@ -311,6 +311,8 @@ The coordinator MUST maintain consistent prompt quality across all issues in the
 - The coordinator MUST log prompt word counts per agent per issue for post-hoc analysis
 - The pipeline_intent_validator detects shrinkage >= 20% from the baseline (first issue) automatically (Issue #812)
 
+**Proactive Prevention (Issue #851)**: The per-issue Proactive Template Reload (see STEP B3 per-issue setup) complements this reactive detection. Proactive reload eliminates most compression drift at source; this validation catches any remaining drift as a backstop.
+
 **FORBIDDEN** (violations = batch failure):
 - Passing progressively shorter prompts to security-auditor or reviewer in later batch issues
 - Omitting diff context or implementation details from validation agent prompts due to context pressure
@@ -562,6 +564,27 @@ Same as BATCH FILE MODE:
    ```bash
    export PIPELINE_ISSUE_NUMBER=$ISSUE_NUMBER
    ```
+
+   **HARD GATE: Proactive Template Reload (Issue #851)**
+
+   Before dispatching ANY agent for this issue, the coordinator MUST proactively reload all critical agent templates from disk. This prevents progressive prompt compression where the coordinator's in-memory prompt representations drift across batch issues.
+
+   ```bash
+   python3 -c "
+   import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+   from prompt_integrity import COMPRESSION_CRITICAL_AGENTS, get_agent_prompt_template
+   for agent in sorted(COMPRESSION_CRITICAL_AGENTS):
+       template = get_agent_prompt_template(agent)
+       print(f'{agent}: {len(template.split())} words (fresh from disk)')
+   "
+   ```
+
+   The coordinator MUST use these fresh-from-disk templates as the basis for constructing agent prompts — do NOT rely on templates from context memory. When constructing each agent's prompt, call `get_agent_prompt_template(agent_type)` to obtain the current template text and append issue-specific context to it.
+
+   **FORBIDDEN**:
+   - ❌ Constructing agent prompts from context memory without first reloading from disk
+   - ❌ Skipping the proactive reload under context pressure or time constraints
+   - ❌ Reusing template text from a previous issue's agent invocation
 
    After each issue's pipeline completes, cleanup the per-issue pipeline state between issues:
    ```bash

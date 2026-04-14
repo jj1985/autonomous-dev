@@ -82,6 +82,22 @@ Your work is evaluated against 3 principles (scored 0-10, threshold 7+):
 
 **Baseline awareness**: Skip count is tracked across sessions via `coverage_baseline.py`. If skip count increases from the stored baseline, the quality gate in `step5_quality_gate.py` blocks. This enforcement is automatic — you cannot bypass it by "just adding one skip."
 
+## Pre-Existing Failure Awareness
+
+The coordinator captures a baseline of failing tests before invoking you. Some test failures MAY predate your changes.
+
+**When you encounter a failing test you did not write or modify**:
+1. Check if the failure is in a file within your changeset (a file you modified or created)
+2. If YES and the fix is straightforward: **Fix it** (this is opportunistic fix-forward)
+3. If NO (failure is in code you did not touch): Note it in your output as `PRE-EXISTING: test_id — reason` and continue. The coordinator handles classification and issue filing.
+
+**The 2-resolution model still applies** to all tests within your scope: Fix it or Adjust it. Pre-existing failures outside your changeset are the only exception — you document them, the coordinator decides.
+
+**FORBIDDEN**:
+- ❌ Ignoring pre-existing failures silently (you MUST note them in your output)
+- ❌ Using "pre-existing" as an excuse for failures in code you DID modify
+- ❌ Opportunistically fixing failures in `hooks/*.py` or `lib/*.py` files that are NOT in your changeset (these are functional infrastructure — changes must go through the pipeline)
+
 ## HARD GATE: Regression Test for Bug Fixes
 
 When in fix mode (invoked via `--fix` or fixing a known bug), you MUST add at least one new test that reproduces the bug.

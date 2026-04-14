@@ -213,6 +213,36 @@ See `implement-batch.md` STEP B3 for complete enforcement logic.
 
 As a batch progresses, context pressure can cause the coordinator to pass progressively shorter prompts to validation agents. The security-auditor, reviewer, doc-master, implementer, and planner are most at risk: a compressed prompt may omit diff context or checklist items, causing the agent to produce a weaker (or absent) verdict without signaling failure.
 
+Two complementary mechanisms address this problem:
+
+1. **Proactive prevention (Issue #851)**: At the start of each batch issue, before dispatching any agent, the coordinator reloads all critical agent templates fresh from disk. This eliminates compression drift at source by ensuring in-memory template representations never drift across issues.
+2. **Reactive detection**: After each agent invocation, the hook and library validate prompt word counts and cumulative shrinkage against configured thresholds, catching any remaining compression as a backstop.
+
+### Proactive Template Reload (NEW in Issue #851)
+
+**HARD GATE** enforced in `implement-batch.md` STEP B3: Before dispatching any agent for a given batch issue, the coordinator MUST execute:
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from prompt_integrity import COMPRESSION_CRITICAL_AGENTS, get_agent_prompt_template
+for agent in sorted(COMPRESSION_CRITICAL_AGENTS):
+    template = get_agent_prompt_template(agent)
+    print(f'{agent}: {len(template.split())} words (fresh from disk)')
+"
+```
+
+`get_agent_prompt_template(agent_type)` reads the agent template file unconditionally on every call — no caching — so the coordinator always obtains current disk content. The coordinator MUST use these fresh templates as the basis for constructing each agent's prompt, appending issue-specific context to the template rather than constructing from context memory.
+
+**Why this matters**: Without proactive reload, the coordinator's in-memory representation of an agent's template can accumulate truncations across issues — each issue inherits a slightly compressed version of the previous one's prompt. A single reload at the start of each issue resets this accumulation.
+
+**FORBIDDEN**:
+- Constructing agent prompts from context memory without first reloading from disk
+- Skipping the proactive reload under context pressure or time constraints
+- Reusing template text from a previous issue's agent invocation
+
+No new Python library functions were added. This gate reuses the existing `get_agent_prompt_template()` and `COMPRESSION_CRITICAL_AGENTS` from `prompt_integrity.py`.
+
 ### Enforcement
 
 `implement-batch.md` STEP B3 includes a **HARD GATE: Prompt Integrity Across Issues** (Issue #544) that requires:

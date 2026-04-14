@@ -3,6 +3,14 @@
   "last_reviewed": "2026-03-28",
   "classifications": {
     "hooks": {
+      "enforce_prunable_threshold": {
+        "classification": "process-requirement",
+        "rationale": "Prevents prunable test count from rebounding after cleanup -- enforces continuous maintenance",
+        "removal_criteria": "Prunable count stays below threshold for 20+ consecutive sessions without enforcement",
+        "review_status": "initial",
+        "added_issue": "#863",
+        "location": "plugins/autonomous-dev/hooks/enforce_prunable_threshold.py"
+      },
       "enforce_tdd": {
         "classification": "model-limitation",
         "rationale": "Model writes code before tests under time/context pressure, bypassing TDD discipline",
