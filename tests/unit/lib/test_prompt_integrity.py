@@ -27,13 +27,18 @@ sys.path.insert(0, str(PROJECT_ROOT / "plugins" / "autonomous-dev" / "lib"))
 from prompt_integrity import (
     COMPRESSION_CRITICAL_AGENTS,
     MIN_CRITICAL_AGENT_PROMPT_WORDS,
+    REQUIRED_PROMPT_SLOTS,
     PromptIntegrityResult,
+    PromptSlotResult,
+    ValidateAndReloadResult,
     clear_prompt_baselines,
     compute_template_baselines,
     get_agent_prompt_template,
     get_prompt_baseline,
     record_prompt_baseline,
     seed_baselines_from_templates,
+    validate_and_reload,
+    validate_prompt_slots,
     validate_prompt_word_count,
 )
 
@@ -445,3 +450,231 @@ class TestTemplateBaselineSeeding:
         prompt = " ".join(["word"] * 300)  # ~6.25% shrinkage from 320
         result = validate_prompt_word_count("implementer", prompt, baseline)
         assert result.passed is True
+
+
+class TestValidateAndReload:
+    """Tests for validate_and_reload() — Issue #844.
+
+    After a prompt integrity block + reload, the reloaded prompt was NOT validated
+    before re-invocation. validate_and_reload() fixes this by validating the
+    reloaded template before returning it.
+    """
+
+    def _make_agents_dir(self, tmp_path: Path, agents: dict) -> Path:
+        """Helper: create agents directory with given agent content files."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir(exist_ok=True)
+        for agent_type, content in agents.items():
+            (agents_dir / f"{agent_type}.md").write_text(content, encoding="utf-8")
+        return agents_dir
+
+    def test_passes_on_first_try(self, tmp_path: Path) -> None:
+        """Prompt that passes validation returns immediately without reload."""
+        prompt = " ".join(["word"] * 100)
+        result = validate_and_reload(prompt, "implementer", baseline_word_count=100)
+
+        assert result.validation.passed is True
+        assert result.reload_count == 0
+        assert result.reload_succeeded is False
+        assert result.prompt == prompt
+
+    def test_reload_succeeds_on_first_attempt(self, tmp_path: Path) -> None:
+        """Compressed prompt triggers reload; template from disk passes."""
+        # Template has enough words to pass
+        template_content = " ".join(["word"] * 200)
+        agents_dir = self._make_agents_dir(tmp_path, {"implementer": template_content})
+
+        # Compressed prompt: 50 words vs 200 baseline = 75% shrinkage
+        compressed = " ".join(["word"] * 100)
+        result = validate_and_reload(
+            compressed, "implementer", baseline_word_count=200,
+            agents_dir=agents_dir,
+        )
+
+        assert result.validation.passed is True
+        assert result.reload_count == 1
+        assert result.reload_succeeded is True
+        assert result.prompt == template_content
+
+    def test_reload_fails_all_attempts(self, tmp_path: Path) -> None:
+        """Template on disk also fails validation — all attempts exhausted."""
+        # Template has only 50 words — below minimum for critical agents
+        template_content = " ".join(["word"] * 50)
+        agents_dir = self._make_agents_dir(tmp_path, {"implementer": template_content})
+
+        # Compressed prompt also too short
+        compressed = " ".join(["word"] * 30)
+        result = validate_and_reload(
+            compressed, "implementer", baseline_word_count=200,
+            agents_dir=agents_dir, max_reload_attempts=2,
+        )
+
+        assert result.validation.passed is False
+        assert result.reload_count == 2
+        assert result.reload_succeeded is False
+        # Should keep the better prompt (template has more words)
+        assert result.prompt == template_content
+
+    def test_max_reload_attempts_respected(self, tmp_path: Path) -> None:
+        """max_reload_attempts bounds the retry loop."""
+        template_content = " ".join(["word"] * 50)
+        agents_dir = self._make_agents_dir(tmp_path, {"implementer": template_content})
+
+        compressed = " ".join(["word"] * 30)
+        result = validate_and_reload(
+            compressed, "implementer", baseline_word_count=200,
+            agents_dir=agents_dir, max_reload_attempts=1,
+        )
+
+        assert result.reload_count == 1  # Only 1 attempt, not 2
+
+    def test_reload_with_missing_template(self, tmp_path: Path) -> None:
+        """Missing template file stops reload gracefully."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        # No implementer.md file
+
+        compressed = " ".join(["word"] * 30)
+        result = validate_and_reload(
+            compressed, "implementer", baseline_word_count=200,
+            agents_dir=agents_dir,
+        )
+
+        assert result.validation.passed is False
+        assert result.reload_succeeded is False
+        assert result.prompt == compressed  # Original prompt returned
+
+    def test_reload_keeps_better_prompt(self, tmp_path: Path) -> None:
+        """When both fail, returns the prompt with more words."""
+        # Template: 70 words (better than compressed, still below baseline threshold)
+        template_content = " ".join(["word"] * 70)
+        agents_dir = self._make_agents_dir(tmp_path, {"security-auditor": template_content})
+
+        # Compressed: 40 words
+        compressed = " ".join(["word"] * 40)
+        result = validate_and_reload(
+            compressed, "security-auditor", baseline_word_count=200,
+            agents_dir=agents_dir,
+        )
+
+        assert result.validation.passed is False
+        # Template (70 words) is better than compressed (40 words)
+        assert result.prompt == template_content
+
+    def test_no_baseline_passes_with_enough_words(self) -> None:
+        """Without baseline, a prompt with enough words passes immediately."""
+        prompt = " ".join(["word"] * 100)
+        result = validate_and_reload(prompt, "implementer")
+
+        assert result.validation.passed is True
+        assert result.reload_count == 0
+
+    def test_regression_issue_844_double_block(self, tmp_path: Path) -> None:
+        """Regression test for Issue #844: second reload attempt should still validate.
+
+        The bug was that after the first block + reload, the reloaded prompt
+        (33.9% compressed) was not validated before re-invocation, causing a
+        second block. validate_and_reload validates each reload attempt.
+        """
+        # Simulate: baseline is 345 words
+        baseline = 345
+        # First prompt: 137 words (60.3% shrinkage) -- would be blocked
+        first_prompt = " ".join(["word"] * 137)
+        # Template on disk: 228 words (33.9% shrinkage from 345) -- still fails 15% threshold
+        template_228 = " ".join(["word"] * 228)
+        agents_dir = self._make_agents_dir(tmp_path, {"implementer": template_228})
+
+        result = validate_and_reload(
+            first_prompt, "implementer", baseline_word_count=baseline,
+            agents_dir=agents_dir, max_reload_attempts=2,
+        )
+
+        # Both attempts fail (template is still 33.9% below baseline)
+        assert result.validation.passed is False
+        assert result.reload_count == 2
+        assert result.reload_succeeded is False
+        # But we get the better prompt (228 > 137)
+        assert len(result.prompt.split()) == 228
+
+
+class TestValidatePromptSlots:
+    """Tests for validate_prompt_slots() — Issue #844.
+
+    Security-auditor received only 45 words with missing implementer output,
+    changed files list, and test results. validate_prompt_slots() catches this
+    by checking for required content markers.
+    """
+
+    def test_all_slots_present(self) -> None:
+        """Prompt with all required markers passes."""
+        prompt = (
+            "Review the implementer output below. "
+            "Here is the changed file list. "
+            "The test results show all passing."
+        )
+        result = validate_prompt_slots("security-auditor", prompt)
+
+        assert result.passed is True
+        assert len(result.missing_slots) == 0
+        assert len(result.present_slots) == 3
+
+    def test_missing_slots(self) -> None:
+        """Prompt missing some markers reports missing slots."""
+        prompt = "This is a short prompt with no required content."
+        result = validate_prompt_slots("security-auditor", prompt)
+
+        assert result.passed is False
+        assert len(result.missing_slots) > 0
+        assert "implementer output" in result.missing_slots
+
+    def test_security_auditor_missing_all_slots(self) -> None:
+        """Regression for Issue #844: 45-word security-auditor prompt missing everything."""
+        # Simulate the actual bug: 45 generic words
+        prompt = " ".join(["generic"] * 45)
+        result = validate_prompt_slots("security-auditor", prompt)
+
+        assert result.passed is False
+        assert "implementer output" in result.missing_slots
+        assert "changed files" in result.missing_slots
+        assert "test results" in result.missing_slots
+
+    def test_non_critical_agent_always_passes(self) -> None:
+        """Agents not in REQUIRED_PROMPT_SLOTS always pass."""
+        prompt = "short prompt"
+        result = validate_prompt_slots("test-helper", prompt)
+
+        assert result.passed is True
+        assert result.missing_slots == []
+        assert result.present_slots == []
+
+    def test_partial_slots_present(self) -> None:
+        """Prompt with some but not all required markers fails."""
+        prompt = "The implementer produced results. No other context provided."
+        result = validate_prompt_slots("security-auditor", prompt)
+
+        assert result.passed is False
+        assert "implementer output" in result.present_slots
+        assert "changed files" in result.missing_slots
+
+    def test_case_insensitive_matching(self) -> None:
+        """Marker matching is case-insensitive."""
+        prompt = (
+            "IMPLEMENTER output here. "
+            "CHANGED FILE list below. "
+            "TEST results follow."
+        )
+        result = validate_prompt_slots("security-auditor", prompt)
+
+        assert result.passed is True
+
+    def test_reviewer_has_required_slots(self) -> None:
+        """Reviewer agent also has required prompt slots defined."""
+        assert "reviewer" in REQUIRED_PROMPT_SLOTS
+        slot_names = [name for name, _ in REQUIRED_PROMPT_SLOTS["reviewer"]]
+        assert "implementer output" in slot_names
+        assert "changed files" in slot_names
+        assert "test results" in slot_names
+
+    def test_required_prompt_slots_contains_security_auditor(self) -> None:
+        """REQUIRED_PROMPT_SLOTS must include security-auditor."""
+        assert "security-auditor" in REQUIRED_PROMPT_SLOTS

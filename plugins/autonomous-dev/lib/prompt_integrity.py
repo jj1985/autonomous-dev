@@ -10,6 +10,8 @@ that the coordinator calls before each agent invocation.
 Usage:
     from prompt_integrity import (
         validate_prompt_word_count,
+        validate_and_reload,
+        validate_prompt_slots,
         record_prompt_baseline,
         get_prompt_baseline,
         get_agent_prompt_template,
@@ -23,19 +25,25 @@ Usage:
     result = validate_prompt_word_count("reviewer", prompt)
     record_prompt_baseline("reviewer", issue_number=1, word_count=len(prompt.split()))
 
-    # Subsequent issues - validate against baseline
+    # Subsequent issues - validate and auto-reload if compressed (Issue #844)
     baseline = get_prompt_baseline("reviewer")
-    result = validate_prompt_word_count("reviewer", prompt, baseline)
-    if result.should_reload:
-        template = get_agent_prompt_template("reviewer")
-        # Reconstruct prompt from template + issue context
+    reload_result = validate_and_reload(prompt, "reviewer", baseline)
+    if not reload_result.validation.passed:
+        # All reload attempts failed, escalate
+        ...
+
+    # Check required content slots for critical agents (Issue #844)
+    slot_result = validate_prompt_slots("security-auditor", prompt)
+    if not slot_result.passed:
+        # Fill missing slots: slot_result.missing_slots
+        ...
 """
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +263,206 @@ def validate_prompt_word_count(
         passed=True,
         reason=f"Prompt for {agent_type} OK ({word_count} words).",
         should_reload=False,
+    )
+
+
+# Required content slots for critical agents (Issue #844).
+# Each agent maps to a list of (slot_name, marker_substring) tuples.
+# The marker_substring is case-insensitive and checked via `in` on the prompt.
+REQUIRED_PROMPT_SLOTS: Dict[str, List[Tuple[str, str]]] = {
+    "security-auditor": [
+        ("implementer output", "implementer"),
+        ("changed files", "changed file"),
+        ("test results", "test"),
+    ],
+    "reviewer": [
+        ("implementer output", "implementer"),
+        ("changed files", "changed file"),
+        ("test results", "test"),
+    ],
+}
+
+
+@dataclass
+class PromptSlotResult:
+    """Result of a prompt slot validation check.
+
+    Attributes:
+        agent_type: Agent name that was validated.
+        present_slots: Slot names that were found in the prompt.
+        missing_slots: Slot names that were NOT found in the prompt.
+        passed: True if all required slots are present.
+    """
+
+    agent_type: str
+    present_slots: List[str] = field(default_factory=list)
+    missing_slots: List[str] = field(default_factory=list)
+    passed: bool = True
+
+
+def validate_prompt_slots(
+    agent_type: str,
+    prompt: str,
+) -> PromptSlotResult:
+    """Check that a prompt contains required content sections for critical agents.
+
+    For agents listed in REQUIRED_PROMPT_SLOTS, verifies that the prompt
+    contains marker substrings indicating required content sections are present.
+    For agents not in REQUIRED_PROMPT_SLOTS, always passes.
+
+    Args:
+        agent_type: Agent name (e.g., 'security-auditor').
+        prompt: The constructed prompt text to validate.
+
+    Returns:
+        PromptSlotResult with present/missing slots and pass/fail.
+    """
+    required = REQUIRED_PROMPT_SLOTS.get(agent_type)
+    if not required:
+        return PromptSlotResult(agent_type=agent_type, passed=True)
+
+    prompt_lower = prompt.lower()
+    present: List[str] = []
+    missing: List[str] = []
+
+    for slot_name, marker in required:
+        if marker.lower() in prompt_lower:
+            present.append(slot_name)
+        else:
+            missing.append(slot_name)
+
+    return PromptSlotResult(
+        agent_type=agent_type,
+        present_slots=present,
+        missing_slots=missing,
+        passed=len(missing) == 0,
+    )
+
+
+@dataclass
+class ValidateAndReloadResult:
+    """Result of validate_and_reload operation.
+
+    Attributes:
+        prompt: The best available prompt (original if passed, or reloaded).
+        validation: The final PromptIntegrityResult after all attempts.
+        reload_count: Number of reload attempts made.
+        reload_succeeded: True if a reload produced a passing prompt.
+    """
+
+    prompt: str
+    validation: PromptIntegrityResult
+    reload_count: int
+    reload_succeeded: bool
+
+
+def validate_and_reload(
+    prompt: str,
+    agent_type: str,
+    baseline_word_count: Optional[int] = None,
+    *,
+    max_shrinkage: float = 0.15,
+    max_reload_attempts: int = 2,
+    agents_dir: Optional[Path] = None,
+    invocation_context: Optional[str] = None,
+) -> ValidateAndReloadResult:
+    """Validate a prompt and reload from disk template if validation fails.
+
+    This function addresses Issue #844: after a prompt integrity block + reload,
+    the reloaded prompt was NOT validated before re-invocation. This function
+    validates, and if the prompt fails, reads the agent template from disk,
+    re-validates, and returns the best available prompt.
+
+    The key insight is that after a block, the coordinator's in-memory state may
+    still produce a compressed prompt. Reading the source template from disk
+    bypasses stale context memory.
+
+    Args:
+        prompt: The constructed prompt text to validate.
+        agent_type: Agent name (e.g., 'implementer', 'security-auditor').
+        baseline_word_count: Word count from first issue (None if first issue).
+        max_shrinkage: Maximum allowed shrinkage ratio (0.15 = 15%).
+        max_reload_attempts: Maximum number of reload attempts (default: 2).
+        agents_dir: Optional override for agents directory path.
+        invocation_context: Optional context for reinvocation threshold relaxation.
+
+    Returns:
+        ValidateAndReloadResult with the best prompt and validation outcome.
+    """
+    # First: validate the prompt as-is
+    result = validate_prompt_word_count(
+        agent_type, prompt, baseline_word_count,
+        max_shrinkage=max_shrinkage,
+        invocation_context=invocation_context,
+    )
+
+    if result.passed:
+        return ValidateAndReloadResult(
+            prompt=prompt,
+            validation=result,
+            reload_count=0,
+            reload_succeeded=False,
+        )
+
+    # Prompt failed validation -- try reloading from disk template
+    best_prompt = prompt
+    best_result = result
+    reload_count = 0
+
+    for attempt in range(max_reload_attempts):
+        reload_count += 1
+        logger.info(
+            "Prompt integrity reload attempt %d/%d for %s (reason: %s)",
+            reload_count, max_reload_attempts, agent_type, best_result.reason,
+        )
+
+        try:
+            template = get_agent_prompt_template(agent_type, agents_dir=agents_dir)
+        except FileNotFoundError:
+            logger.warning(
+                "Cannot reload agent template for %s: file not found", agent_type
+            )
+            break
+
+        # Validate the reloaded template
+        reloaded_result = validate_prompt_word_count(
+            agent_type, template, baseline_word_count,
+            max_shrinkage=max_shrinkage,
+            invocation_context=invocation_context,
+        )
+
+        if reloaded_result.passed:
+            logger.info(
+                "Reload attempt %d succeeded for %s (%d words)",
+                reload_count, agent_type, reloaded_result.word_count,
+            )
+            return ValidateAndReloadResult(
+                prompt=template,
+                validation=reloaded_result,
+                reload_count=reload_count,
+                reload_succeeded=True,
+            )
+
+        # Reloaded template also failed -- keep the better one (more words)
+        if reloaded_result.word_count > best_result.word_count:
+            best_prompt = template
+            best_result = reloaded_result
+
+        logger.warning(
+            "Reload attempt %d for %s still below threshold (%d words, %s)",
+            reload_count, agent_type, reloaded_result.word_count, reloaded_result.reason,
+        )
+
+    # All reload attempts exhausted
+    logger.error(
+        "All %d reload attempts failed for %s. Best: %d words. Reason: %s",
+        reload_count, agent_type, best_result.word_count, best_result.reason,
+    )
+    return ValidateAndReloadResult(
+        prompt=best_prompt,
+        validation=best_result,
+        reload_count=reload_count,
+        reload_succeeded=False,
     )
 
 
