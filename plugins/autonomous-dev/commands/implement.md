@@ -389,6 +389,65 @@ If research came from the issue body (ISSUE_RESEARCH_HIT), prefix the research c
 
 **Agent**(subagent_type="planner", model="opus") — Pass merged research + feature description + PROJECT.md GOALS and SCOPE sections (verbatim). Read `.claude/PROJECT.md` and extract the GOALS section and SCOPE section (both IN Scope and OUT of Scope). Include them in the planner prompt as: "PROJECT.md GOALS: [verbatim text]. PROJECT.md SCOPE (In Scope): [verbatim items]. PROJECT.md SCOPE (Out of Scope): [verbatim items]. The plan MUST align with these scope boundaries." Output: file-by-file plan, dependencies, edge cases, testing strategy.
 
+### STEP 5.5: Plan Validation Gate — HARD GATE
+
+**Progress**: Output step banner (STEP 5.5/15 — Plan Validation Gate). Output gate result after.
+
+#### 5.5a — Pre-Validated Plan Check
+
+Search `.claude/plans/` for a file whose name or content matches the current feature description (case-insensitive substring match). If a matching file is found AND that file contains the string "Verdict: PROCEED" in its Critique History section:
+
+- **Skip plan-critic invocation** and continue to 5.5c (structural validation still runs)
+- Log: `Plan validation: SKIPPED (pre-validated plan: {path})`
+
+If no matching file with "Verdict: PROCEED" is found, proceed to 5.5b.
+
+#### 5.5b — Budget Plan-Critic Invocation
+
+**When no pre-validated plan exists**, invoke the plan-critic agent with a constrained budget:
+
+- **Rounds**: 1 (single pass, no iterative critique)
+- **Axes**: 3 only — Assumption Audit, Existing Solution Search, Minimalism Pressure
+- **Agent**(subagent_type="plan-critic", model="sonnet") — Pass planner output. Instruct: "Single-pass critique on 3 axes only: Assumption Audit, Existing Solution Search, Minimalism Pressure. Output verdict: PROCEED, REVISE, or BLOCKED."
+
+**Parse verdict from plan-critic output**:
+
+- **PROCEED** → continue to 5.5c (structural validation)
+- **REVISE** → pass the plan-critic feedback to the planner, re-invoke planner once (same prompt as STEP 5 plus feedback), then accept the revised plan and continue to 5.5c regardless of a second critique
+- **BLOCKED** → BLOCK the pipeline with message:
+  ```
+  BLOCKED (STEP 5.5): Plan-critic returned BLOCKED verdict.
+  Reason: {plan-critic feedback}
+  Resolution: Revise the feature description or scope and re-run /implement.
+  ```
+
+#### 5.5c — Structural Validation
+
+**Always runs** (even when 5.5a skipped plan-critic). Verify the plan (from STEP 5 or revised in 5.5b) satisfies all three structural requirements:
+
+1. **File paths**: Plan contains ≥1 absolute or relative file path (matches pattern `[\w/.-]+\.(py|md|json|yaml|sh|ts|js)`)
+2. **Acceptance criteria**: Plan contains an "acceptance criteria" section (case-insensitive: "acceptance criteria", "acceptance criterion", or "## Acceptance")
+3. **Testing strategy**: Plan contains a "testing strategy" or "test" section (case-insensitive: "testing strategy", "test plan", or "## Test")
+
+If any requirement is missing:
+- Re-invoke planner once with instruction: "Your plan is missing: {list of missing elements}. Please revise to include all required sections."
+- Re-check the three requirements on the revised plan.
+- If still missing after one revision → BLOCK the pipeline:
+  ```
+  BLOCKED (STEP 5.5): Plan failed structural validation after revision.
+  Missing: {list of still-missing elements}
+  Resolution: Ensure the planner output includes file paths, acceptance criteria, and testing strategy.
+  ```
+
+#### 5.5d — FORBIDDEN
+
+**FORBIDDEN** — You MUST NOT do any of the following:
+
+- ❌ You MUST NOT accept a plan that contains 0 file paths (structural validation always blocks this)
+- ❌ You MUST NOT accept a plan that has no acceptance criteria section
+- ❌ You MUST NOT skip plan-critic when no pre-validated plan file exists in `.claude/plans/`
+- ❌ You MUST NOT skip structural validation for any reason (it always runs, even with a pre-validated plan)
+
 ### STEP 6: Generate Acceptance Tests (default mode only)
 
 **Progress**: Output step banner (STEP 6/15 — Acceptance Tests). Output completion after. **Output the STEP 6 banner even when skipping** — the banner followed by the skip reason provides an audit trail.
@@ -543,6 +602,46 @@ which test covers it and the gate passes automatically.
 - ❌ Fixing a bug without a test that proves it was broken
 - ❌ Claiming "the fix is obvious and doesn't need a test"
 - ❌ Adding a test that passes both with and without the fix (not a real regression test)
+
+#### OUTPUT VALIDATION GATE: Plan-Implementation Alignment
+
+After tests pass, verify that the implementer worked on the files the planner intended. This prevents scope creep and silent under-delivery.
+
+**Step 1 — Collect planned files**
+
+Extract the list of files from the STEP 5 planner output that were marked `CREATE` or `MODIFY`.
+
+**Step 2 — Collect implemented files**
+
+```bash
+IMPLEMENTED_FILES=$(git diff --name-only HEAD)
+```
+
+**Step 3 — Exclude noise**
+
+Remove from both lists:
+- Test files: paths matching `tests/**`
+- Documentation files: paths matching `docs/**`, `*.md` at repo root, and `CHANGELOG.md`
+
+**Step 4 — Compare**
+
+- Files in plan but NOT in implementation → WARNING
+- Files in implementation but NOT in plan → WARNING
+- If more than 50% of non-excluded implemented files are unplanned → **BLOCK**
+
+**Step 5 — Output alignment report**
+
+```
+Plan-Implementation Alignment Check:
+  Planned files: N | Implemented files: M (after exclusions)
+  Planned but not implemented: [list or "none"]
+  Implemented but not planned: [list or "none"]
+  Verdict: PASS | WARNING (N unplanned files) | BLOCKED (X% divergence > 50%)
+```
+
+**FORBIDDEN**:
+- ❌ Skipping this gate
+- ❌ Treating >50% divergence as acceptable and continuing
 
 ### STEP 8.5: Spec-Blind Validation — HARD GATE
 
@@ -989,9 +1088,41 @@ Same as STEP 2 in full pipeline.
 
 **Agent**(subagent_type="planner", model="sonnet") — Pass feature description. No research input (skipped). Output: file-by-file plan, testing strategy, and `Recommended implementer model: sonnet|opus`.
 
+### STEP L2.5: Plan Structural Validation — HARD GATE
+
+**Progress**: Output step banner (STEP 2.5/6 — Plan Structural Validation).
+
+**Coordinator performs these three structural checks inline** (no agent required):
+
+1. **File paths**: The planner output contains ≥1 specific file path (matches a pattern like `path/to/file.ext` — must contain a `/` and a `.` extension or be an identifiable path token). Vague phrases like "update relevant files" do NOT count.
+2. **Testing strategy**: The planner output contains a testing section OR an explicit statement about testing (e.g., "no new tests needed", "testing strategy:", "tests to write:", "test coverage:"). Either confirming or explicitly opting out is acceptable.
+3. **Recommended implementer model**: The planner output contains the exact phrase `Recommended implementer model:` followed by `sonnet` or `opus`.
+
+**On validation failure**: Re-invoke the planner once with a prompt listing the specific missing elements:
+
+```
+PLAN REJECTED — structural validation failed. Missing:
+- [list each missing element from the 3 checks above]
+
+Re-plan with explicit file paths, a testing statement, and a model recommendation.
+```
+
+**On second failure**: BLOCK the pipeline. Output:
+
+```
+PIPELINE BLOCKED — Planner failed structural validation twice.
+Missing: [list elements still absent]
+Resolve by providing a more specific feature description or invoking /implement without --light.
+```
+
+**FORBIDDEN**:
+- ❌ You MUST NOT accept planner output with 0 specific file paths
+- ❌ You MUST NOT proceed to STEP L3 when the plan contains only vague language like "update relevant files" without naming specific paths
+- ❌ You MUST NOT skip structural validation for any reason (time pressure, simple feature, single-file change)
+
 ### STEP L3: Implementer + Test Gate — HARD GATE
 
-**Progress**: Output step banner (STEP 3/5 — Implementation + Test Gate, Agent: implementer (PLANNER_RECOMMENDED_MODEL)).
+**Progress**: Output step banner (STEP 3/6 — Implementation + Test Gate, Agent: implementer (PLANNER_RECOMMENDED_MODEL)).
 
 **Agent**(subagent_type="implementer", model=PLANNER_RECOMMENDED_MODEL) — Pass planner output. Default to "sonnet" if planner did not specify. Must write WORKING code, no stubs.
 
