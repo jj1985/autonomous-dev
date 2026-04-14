@@ -209,3 +209,32 @@ class TestPlanModeExitDetector:
         marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
         assert "plan_content" in marker_data
         assert "Detailed plan content here" in marker_data["plan_content"]
+
+    def test_marker_includes_stage_field(self, tmp_path: Path):
+        """Marker should include stage='plan_exited' field."""
+        input_data = json.dumps({"tool_name": "ExitPlanMode"})
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        marker_data = json.loads((tmp_path / MARKER_PATH).read_text())
+        assert marker_data["stage"] == "plan_exited"
+
+    def test_outputs_system_message_json(self, tmp_path: Path, capsys):
+        """ExitPlanMode should output JSON with systemMessage for plan-critic trigger."""
+        input_data = json.dumps({"tool_name": "ExitPlanMode"})
+        with (
+            patch("sys.stdin") as mock_stdin,
+            patch("os.getcwd", return_value=str(tmp_path)),
+        ):
+            mock_stdin.read.return_value = input_data
+            main()
+
+        captured = capsys.readouterr()
+        output = json.loads(captured.out)
+        assert "systemMessage" in output
+        assert "plan-critic" in output["systemMessage"].lower()
+        assert "hookSpecificOutput" in output

@@ -255,11 +255,17 @@ def _log_activity(event: str, details: dict) -> None:
 
 def _check_plan_mode_enforcement(user_prompt: str) -> Optional[int]:
     """
-    Enforce /implement or /create-issue after plan mode exit.
+    Enforce staged plan-exit pipeline after plan mode exit.
 
-    If the plan mode exit marker exists, the user must use /implement or
-    /create-issue as their next action. Questions (ending with ?) are
-    allowed through. Stale markers (>30 min) are auto-deleted.
+    Two-stage enforcement:
+    - plan_exited: Plan-critic hasn't run yet. Block everything except
+      questions and /implement --skip-review.
+    - critique_done: Plan-critic completed. Allow /implement, /create-issue,
+      /plan-to-issues (consume marker). Block everything else.
+
+    Old markers without a stage field are treated as critique_done for
+    backward compatibility. Unknown stage values are treated as plan_exited
+    for safety.
 
     Args:
         user_prompt: The user's submitted prompt text
@@ -267,14 +273,14 @@ def _check_plan_mode_enforcement(user_prompt: str) -> Optional[int]:
     Returns:
         None if no enforcement needed (pass through)
         0 if marker consumed by allowed command (pass through after cleanup)
-        2 if prompt is blocked (must use /implement or /create-issue)
+        2 if prompt is blocked
     """
     try:
         marker_path = Path(os.getcwd()) / PLAN_MODE_EXIT_MARKER
         if not marker_path.exists():
             return None
 
-        # Read marker to check staleness
+        # Read marker to check staleness and stage
         try:
             marker_data = json.loads(marker_path.read_text())
             marker_ts = datetime.fromisoformat(marker_data.get("timestamp", ""))
@@ -287,13 +293,53 @@ def _check_plan_mode_enforcement(user_prompt: str) -> Optional[int]:
             marker_path.unlink(missing_ok=True)
             return None
 
+        # Determine stage (backward compat: missing stage = critique_done)
+        raw_stage = marker_data.get("stage")
+        if raw_stage is None:
+            stage = "critique_done"
+        elif raw_stage in ("plan_exited", "critique_done"):
+            stage = raw_stage
+        else:
+            # Unknown stage value — treat as plan_exited for safety
+            stage = "plan_exited"
+
         text = user_prompt.strip()
 
-        # Allow questions through
+        # Allow questions through at any stage
         if text.endswith("?"):
             return None
 
-        # Allow /implement and /create-issue -- consume marker
+        # /implement --skip-review consumes marker at any stage (escape hatch)
+        if re.match(r"^/implement\b.*--skip-review\b", text):
+            marker_path.unlink(missing_ok=True)
+            return 0
+
+        if stage == "plan_exited":
+            # Block everything except questions (handled above) and --skip-review
+            message = (
+                "PLAN MODE EXIT DETECTED — Plan critique required\n\n"
+                "You just exited plan mode. Before proceeding, you MUST run the "
+                "plan-critic agent on your plan.\n\n"
+                "After plan-critic completes with PROCEED verdict, the stage will "
+                "automatically advance and you can use:\n"
+                "  /implement \"description\"  -- to execute the plan\n"
+                "  /create-issue \"description\"  -- to file an issue for later\n"
+                "  /plan-to-issues  -- to convert plan into multiple issues\n\n"
+                "Escape hatch: /implement --skip-review\n\n"
+                "REQUIRED NEXT ACTION: Invoke the plan-critic agent."
+            )
+            print(message, file=sys.stderr)
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "error": message,
+                }
+            }
+            print(json.dumps(output))
+            return 2
+
+        # stage == "critique_done"
+        # Allow /implement, /create-issue, /plan-to-issues -- consume marker
         if re.match(r"^/(implement|create-issue|plan-to-issues)\b", text):
             marker_path.unlink(missing_ok=True)
             return 0

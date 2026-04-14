@@ -706,6 +706,36 @@ def _write_jsonl_entry(
 
 
 # ============================================================================
+# Plan-Critic Stage Advance (Staged Plan-Exit Pipeline)
+# ============================================================================
+
+PLAN_MODE_EXIT_MARKER = ".claude/plan_mode_exit.json"
+
+
+def _advance_plan_mode_stage() -> None:
+    """Advance plan mode exit marker from plan_exited to critique_done.
+
+    Called when plan-critic SubagentStop fires. If the marker exists and
+    is at stage ``plan_exited``, advances it to ``critique_done`` so that
+    unified_prompt_validator allows /implement and related commands.
+
+    Never raises — failures are silently ignored to avoid blocking the
+    SubagentStop hook.
+    """
+    try:
+        marker_path = Path(os.getcwd()) / PLAN_MODE_EXIT_MARKER
+        if not marker_path.exists():
+            return
+        marker_data = json.loads(marker_path.read_text())
+        if marker_data.get("stage") == "plan_exited":
+            marker_data["stage"] = "critique_done"
+            marker_data["critique_completed_at"] = datetime.now(timezone.utc).isoformat()
+            marker_path.write_text(json.dumps(marker_data, indent=2))
+    except Exception:
+        pass  # Never crash on stage advance failure
+
+
+# ============================================================================
 # Main Hook Entry Point
 # ============================================================================
 
@@ -792,6 +822,10 @@ def main() -> int:
             )
         except Exception:
             pass  # Non-blocking: ordering state is advisory
+
+        # Plan-critic stage advance (Staged Plan-Exit Pipeline)
+        if agent_name == "plan-critic":
+            _advance_plan_mode_stage()
 
         # PROJECT.md progress updates (only for doc-master)
         if should_trigger_progress_update(agent_name) and check_pipeline_complete():

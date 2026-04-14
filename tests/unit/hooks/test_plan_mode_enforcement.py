@@ -20,12 +20,18 @@ from unified_prompt_validator import (
 )
 
 
-def _write_marker(tmp_path: Path, *, age_minutes: float = 0) -> Path:
+def _write_marker(
+    tmp_path: Path,
+    *,
+    age_minutes: float = 0,
+    stage: str = "critique_done",
+) -> Path:
     """Helper to write a plan mode exit marker file.
 
     Args:
         tmp_path: Temp directory acting as cwd
         age_minutes: How many minutes old the marker should be
+        stage: The stage field value (default: critique_done for backward compat)
 
     Returns:
         Path to the created marker file
@@ -36,6 +42,7 @@ def _write_marker(tmp_path: Path, *, age_minutes: float = 0) -> Path:
     marker_data = {
         "timestamp": ts.isoformat(),
         "session_id": "test-session",
+        "stage": stage,
     }
     marker_path.write_text(json.dumps(marker_data))
     return marker_path
@@ -204,3 +211,138 @@ class TestPlanModeEnforcementEdgeCases:
             _check_plan_mode_enforcement("make the changes now")
         captured = capsys.readouterr()
         assert "/plan-to-issues" in captured.err
+
+
+class TestPlanModeEnforcementPlanExitedStage:
+    """Tests for the plan_exited stage (plan-critic hasn't run yet)."""
+
+    def test_implement_blocked_when_plan_exited(self, tmp_path: Path):
+        """/implement without --skip-review should be blocked at plan_exited stage."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/implement add auth feature")
+        assert result == 2
+
+    def test_implement_skip_review_allowed_when_plan_exited(self, tmp_path: Path):
+        """/implement --skip-review should pass and consume marker at plan_exited stage."""
+        marker = _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/implement --skip-review add auth")
+        assert result == 0
+        assert not marker.exists()
+
+    def test_question_allowed_when_plan_exited(self, tmp_path: Path):
+        """Questions should pass through at plan_exited stage."""
+        marker = _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("What should I do next?")
+        assert result is None
+        assert marker.exists()
+
+    def test_raw_edit_blocked_when_plan_exited(self, tmp_path: Path):
+        """Raw editing prompts should be blocked at plan_exited stage."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("edit the auth module directly")
+        assert result == 2
+
+    def test_create_issue_blocked_when_plan_exited(self, tmp_path: Path):
+        """/create-issue should be blocked at plan_exited stage (critic hasn't run)."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/create-issue auth feature needed")
+        assert result == 2
+
+    def test_plan_to_issues_blocked_when_plan_exited(self, tmp_path: Path):
+        """/plan-to-issues should be blocked at plan_exited stage."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/plan-to-issues")
+        assert result == 2
+
+    def test_plan_exited_block_message_mentions_plan_critic(self, tmp_path: Path, capsys):
+        """Block message at plan_exited should mention plan-critic."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            _check_plan_mode_enforcement("make changes now")
+        captured = capsys.readouterr()
+        assert "plan-critic" in captured.err.lower()
+        assert "--skip-review" in captured.err
+
+
+class TestPlanModeEnforcementCritiqueDoneStage:
+    """Tests for the critique_done stage (plan-critic has completed)."""
+
+    def test_implement_allowed_when_critique_done(self, tmp_path: Path):
+        """/implement should pass and consume marker at critique_done stage."""
+        marker = _write_marker(tmp_path, stage="critique_done")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/implement add auth feature")
+        assert result == 0
+        assert not marker.exists()
+
+    def test_create_issue_allowed_when_critique_done(self, tmp_path: Path):
+        """/create-issue should pass at critique_done stage."""
+        marker = _write_marker(tmp_path, stage="critique_done")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/create-issue auth feature")
+        assert result == 0
+        assert not marker.exists()
+
+    def test_plan_to_issues_allowed_when_critique_done(self, tmp_path: Path):
+        """/plan-to-issues should pass at critique_done stage."""
+        marker = _write_marker(tmp_path, stage="critique_done")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/plan-to-issues")
+        assert result == 0
+        assert not marker.exists()
+
+    def test_raw_edit_blocked_when_critique_done(self, tmp_path: Path):
+        """Raw editing should still be blocked at critique_done stage."""
+        _write_marker(tmp_path, stage="critique_done")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("edit the auth module directly")
+        assert result == 2
+
+
+class TestPlanModeEnforcementBackwardCompat:
+    """Tests for backward compatibility with old markers."""
+
+    def test_marker_without_stage_treated_as_critique_done(self, tmp_path: Path):
+        """Old markers without stage field should be treated as critique_done."""
+        marker_path = tmp_path / PLAN_MODE_EXIT_MARKER
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": "test-session",
+        }
+        marker_path.write_text(json.dumps(marker_data))
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/implement add auth feature")
+        assert result == 0
+        assert not marker_path.exists()
+
+    def test_marker_with_unknown_stage_treated_as_plan_exited(self, tmp_path: Path):
+        """Unknown stage values should be treated as plan_exited for safety."""
+        marker_path = tmp_path / PLAN_MODE_EXIT_MARKER
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "session_id": "test-session",
+            "stage": "some_future_stage",
+        }
+        marker_path.write_text(json.dumps(marker_data))
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/implement add auth feature")
+        # Unknown stage treated as plan_exited — /implement without --skip-review blocked
+        assert result == 2
+
+    def test_skip_review_consumes_marker_at_critique_done(self, tmp_path: Path):
+        """/implement --skip-review should also work at critique_done stage."""
+        marker = _write_marker(tmp_path, stage="critique_done")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _check_plan_mode_enforcement("/implement --skip-review add auth")
+        assert result == 0
+        assert not marker.exists()

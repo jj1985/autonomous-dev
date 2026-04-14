@@ -12,9 +12,12 @@ When the model exits plan mode (ExitPlanMode tool), this hook writes a
 marker file at `.claude/plan_mode_exit.json` containing:
 - timestamp: ISO 8601 UTC timestamp
 - session_id: Current session ID from environment
+- stage: "plan_exited" (initial stage of the 2-stage enforcement pipeline)
 
-The marker is consumed by unified_prompt_validator.py to enforce that
-the next action uses /implement or /create-issue (not raw edits).
+The marker is read by unified_prompt_validator.py as part of the staged
+plan-exit pipeline: plan_exited → (plan-critic runs) → critique_done →
+/implement allowed. A systemMessage is output to instruct the model to
+invoke plan-critic before proceeding.
 
 Exit codes:
     0: Always (PostToolUse cannot block)
@@ -66,6 +69,7 @@ def main() -> int:
         marker_data = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "session_id": os.environ.get("CLAUDE_SESSION_ID", "unknown"),
+            "stage": "plan_exited",
         }
 
         # Add plan content if available (truncate to 10K chars)
@@ -73,8 +77,22 @@ def main() -> int:
             marker_data["plan_content"] = plan_content[:10000]
 
         marker_path.write_text(json.dumps(marker_data, indent=2))
+
+        # Output systemMessage to trigger plan-critic (Staged Plan-Exit Pipeline)
+        system_msg = (
+            "PLAN MODE EXITED — Plan critique required before proceeding.\n\n"
+            "You MUST invoke the plan-critic agent on the plan you just created. "
+            "After plan-critic completes with PROCEED verdict, the stage will "
+            "automatically advance and you can proceed with /implement or /plan-to-issues.\n\n"
+            "Escape hatch: /implement --skip-review"
+        )
+        output = {
+            "hookSpecificOutput": {"hookEventName": "PostToolUse"},
+            "systemMessage": system_msg,
+        }
+        print(json.dumps(output))
     except Exception:
-        # Never block on marker write failure
+        # Never block on marker write or system message output failure
         pass
 
     return 0
