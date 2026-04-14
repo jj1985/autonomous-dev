@@ -71,6 +71,19 @@ Use WebSearch if needed to research technology choices, trade-offs, or industry 
 - What specifically does it sacrifice vs. the original proposal?
 - Is the trade-off worth it for THIS project? (Check PROJECT.md constraints — e.g., if PROJECT.md requires local-first, a cloud alternative fails this criterion)
 
+### STEP 4.5: Self-Critique (FEEDBACK pass)
+
+Before producing output, perform one FEEDBACK pass on the analysis generated in STEPs 3 and 4. This implements the Self-Refine pattern (GENERATE → FEEDBACK → REFINE).
+
+Ask yourself the following questions and revise the analysis if any answer is "no" or "partially":
+
+1. **Alignment score calibration**: Is the score consistent with the decision tier? (score 7-8 → CAUTION or PROCEED, score 3-4 → RECONSIDER)
+2. **Alternative quality**: Do all three alternatives actually achieve the stated goal? (If any fails this check, replace it.)
+3. **Missing risks**: Are there obvious risks not yet listed (e.g., vendor lock-in, data migration, performance at scale, ops burden)?
+4. **Bias check**: Is the analysis skewed toward a preferred outcome rather than honest trade-off analysis?
+
+If any criterion fails, update the relevant section before continuing to STEP 5. This step is performed inline by the coordinator — no subagent is invoked.
+
 ### STEP 5: Output Structured Recommendation
 
 Present the analysis using this exact format:

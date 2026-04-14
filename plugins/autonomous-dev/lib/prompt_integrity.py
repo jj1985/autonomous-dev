@@ -66,7 +66,7 @@ MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
 # Maximum cumulative shrinkage across an entire batch (Issue #794).
 # Individual issues may pass the 25% per-issue threshold but accumulate
 # progressive 3-5% per-iteration compression that this catches.
-MAX_CUMULATIVE_SHRINKAGE = 0.20  # 20% total drift threshold
+MAX_CUMULATIVE_SHRINKAGE = 0.15  # 15% total drift threshold (Issue #812)
 
 # Known reinvocation context strings (Issue #789, #791).
 # These represent legitimate secondary agent invocations that produce
@@ -232,7 +232,7 @@ def validate_prompt_word_count(
                 effective_max_shrinkage * 100,
             )
 
-        if shrinkage_pct > effective_max_shrinkage * 100:
+        if shrinkage_pct >= effective_max_shrinkage * 100:
             ctx_note = (
                 f" [relaxed from {max_shrinkage:.0%} for {invocation_context}]"
                 if invocation_context and invocation_context in REINVOCATION_CONTEXTS

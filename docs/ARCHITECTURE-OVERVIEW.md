@@ -125,6 +125,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](H
    - Recommends agent count (3/6/8) and time (8/15/25 min)
    - Based on SIMPLE/STANDARD/COMPLEX classification
 3. **Research**: researcher agent finds patterns (Haiku model)
+3.5. **Research Self-Critique** (STEP 4.5, inline — no agent): One FEEDBACK pass on merged research output before passing to planner; implements Self-Refine pattern (GENERATE → FEEDBACK → REFINE). Also applied at `/advise` STEP 4.5 (post-analysis critique) and `/refactor --deep` STEP 1.5 (findings critique).
 4. **Planning**: planner agent creates architecture plan
 5. **Pause Control** (v3.45.0): Optional human-in-the-loop after planning
 6. **Acceptance Tests** (Issue #404, default): test-master writes specification-driven acceptance tests

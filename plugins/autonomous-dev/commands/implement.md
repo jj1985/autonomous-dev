@@ -283,7 +283,7 @@ if os.path.exists(state_path):
 
 **Issue Body Research Check** (before file-based cache):
 
-If `ISSUE_BODY` is set (from STEP 0) AND `--no-cache` was NOT specified, check for embedded research:
+If `ISSUE_BODY` is set (from STEP 0) AND `--no-cache` was NOT specified, DETECT embedded research:
 
 ```bash
 # Write issue body to temp file to avoid shell escaping issues
@@ -366,6 +366,20 @@ Invoke TWO agents in PARALLEL (single message, both Agent tool calls):
 2. **Agent**(subagent_type="researcher", model="sonnet") — "Research best practices for: {feature}. MUST use WebSearch. Output JSON with findings, sources, security considerations."
 
 Validation: If web researcher shows 0 tool uses, retry. Merge both outputs. Persist research via `save_merged_research()`.
+
+### STEP 4.5: Research Completeness Critique (inline — no agent)
+
+**Progress**: Output step banner (STEP 4.5/15 — Research Completeness Critique). No agent invoked.
+
+After merging research, perform one FEEDBACK pass on the merged output before passing it to the planner. This implements the Self-Refine pattern (GENERATE → FEEDBACK → REFINE).
+
+Check the merged research against these criteria:
+
+1. **Coverage**: Does the research cover the feature's core algorithm/logic, integration points, and failure modes? If any are missing, note them as "Research Gaps".
+2. **Missing perspectives**: Are security implications, performance at scale, and backwards-compatibility addressed? If not, flag each gap.
+3. **Source quality**: Did the web researcher cite at least one non-trivial external source (docs, paper, RFC)? If not, note it.
+
+If gaps are found, append a "**Research Gaps**" section to the merged research summary before passing to STEP 5. The planner MUST be made aware of gaps so it can flag them in the architecture plan. This step is performed inline by the coordinator.
 
 ### STEP 5: Planner (1 agent)
 
@@ -628,7 +642,7 @@ If conditions are NOT met, skip this step silently and proceed to STEP 10.
 **Progress**: Output step banner (STEP 10/15 — Validation). Output each agent completion as they return.
 
 **Validation mode routing**: Before launching any validator, check if any changed files match security-sensitive patterns:
-- Security-sensitive patterns: `hooks/*.py`, `lib/*security*`, `lib/*auth*`, `lib/*token*`, `*.env*`, `*secret*`, `config/auto_approve_policy.json`, `templates/settings.*.json`
+- Security-sensitive patterns: `hooks/*.py`, `lib/*security*`, `lib/*auth*`, `lib/*token*`, `*.env*`, `*secret*`, `config/auto_approve_policy.json`, `templates/settings.*.json`, `*trading*`, `*payment*`, `*billing*`, `*financial*`, `*transaction*`, `*wallet*`, `*crypto*`, `*permission*`, `*session*`, `*credential*`, `*password*`, `*oauth*`, `*sso*`, `*jwt*`, `*rbac*`, `migrations/`, `*migrate*`, `alembic/`
 
 Output the selected mode before proceeding:
 ```
@@ -647,7 +661,7 @@ Invoke reviewer, security-auditor, and doc-master in a SINGLE message (all three
 
 **VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. If the implementer output contains an Evidence Manifest section, it MUST be included in the passed content. When truncating long output, preserve the Evidence Manifest in addition to the file change list and test results. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
-- **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
+- **Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. **FEEDBACK pass required**: Before finalizing the verdict, the reviewer MUST perform one self-critique pass: (1) audit findings for false positives — findings that reflect correct behavior MUST be removed; (2) calibrate severity — BLOCKING findings MUST be truly blocking, not stylistic; (3) verify coverage — all changed files MUST appear in the review. Revise findings if any criterion fails. Output: APPROVE or REQUEST_CHANGES.
 - **Agent**(subagent_type="security-auditor", model="sonnet") — Pass file list with complete diffs. Output: PASS/FAIL (OWASP Top 10).
 - **Agent**(subagent_type="doc-master", model="sonnet", run_in_background=true) — Pass file list + feature description using the template below.
 
@@ -690,7 +704,7 @@ Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — 
 
 **VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. If the implementer output contains an Evidence Manifest section, it MUST be included in the passed content. When truncating long output, preserve the Evidence Manifest in addition to the file change list and test results. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
-**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. Output: APPROVE or REQUEST_CHANGES.
+**Agent**(subagent_type="reviewer", model="sonnet") — Pass file list + planner summary + FULL implementer output + STEP 8 test results + PROJECT.md SCOPE (In Scope and Out of Scope, verbatim). The reviewer SHOULD flag any implementation that introduces functionality listed in Out of Scope or not covered by In Scope. **FEEDBACK pass required**: Before finalizing the verdict, the reviewer MUST perform one self-critique pass: (1) audit findings for false positives — findings that reflect correct behavior MUST be removed; (2) calibrate severity — BLOCKING findings MUST be truly blocking, not stylistic; (3) verify coverage — all changed files MUST appear in the review. Revise findings if any criterion fails. Output: APPROVE or REQUEST_CHANGES.
 
 **Runtime Verification**: When changed files include frontend (HTML/TSX/Vue), API routes, or CLI tools, the reviewer MAY perform targeted runtime verification after completing static review. This is opt-in and does not change the pipeline structure. See reviewer.md for details.
 

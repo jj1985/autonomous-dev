@@ -107,12 +107,41 @@ PLANNER_EXEMPT_MODES = {"--fix", "fix"}
 
 # File path patterns that require security-auditor review.
 # Any Write/Edit to a matching path triggers the requirement.
+# Broad substring matching is intentional — false positives are cheap (an extra
+# security review), false negatives are expensive (missed security regression).
+# Test file exclusion (tests/ prefix) is applied separately by callers.
 SECURITY_SENSITIVE_PATTERNS = (
+    # Infrastructure: core pipeline enforcement
     "hooks/",
     "lib/auto_approval_engine",
     "lib/tool_validator",
     "config/auto_approve_policy",
     "lib/security",
+    # Application-domain: authentication and access control
+    "auth",
+    "crypto",
+    "permission",
+    "session",
+    "token",
+    "secret",
+    "credential",
+    "password",
+    "oauth",
+    "sso",
+    "jwt",
+    "rbac",
+    # Application-domain: financial and transactional
+    "trading",
+    "payment",
+    "billing",
+    "financial",
+    "transaction",
+    "wallet",
+    # Application-domain: database schema changes
+    "migration",
+    "alembic",
+    # Environment and secrets files
+    ".env",
 )
 
 # Minimum agents to consider this a full pipeline run

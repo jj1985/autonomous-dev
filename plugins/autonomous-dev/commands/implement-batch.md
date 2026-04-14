@@ -306,7 +306,7 @@ The coordinator MUST maintain consistent prompt quality across all issues in the
 - Each agent MUST receive prompts of comparable length across all issues in the batch
 - Security-critical agents (security-auditor, reviewer, doc-master, implementer, planner) MUST receive at least 80 words in their prompts
 - The coordinator MUST log prompt word counts per agent per issue for post-hoc analysis
-- The pipeline_intent_validator detects shrinkage > 25% from the baseline (first issue) automatically
+- The pipeline_intent_validator detects shrinkage >= 20% from the baseline (first issue) automatically (Issue #812)
 
 **FORBIDDEN** (violations = batch failure):
 - Passing progressively shorter prompts to security-auditor or reviewer in later batch issues
@@ -580,7 +580,7 @@ Same as BATCH FILE MODE:
 
    ```
    subagent_type: "continuous-improvement-analyst"
-   description: "CI batch check for Issue #N"
+   description: "CI batch analysis — Issue #N"
    prompt: "BATCH MODE (per-issue analysis).
    Agents that ran for Issue #N: [list from verification step with ✓/✗]
    Agent timings: [list agent name + duration + tool use count if available]
@@ -589,7 +589,7 @@ Same as BATCH FILE MODE:
    Expected agents for this mode: [list from get_required_agents() — e.g., "implementer, reviewer, doc-master, continuous-improvement-analyst (4 agents)" for --fix]
 
    REQUIRED TOOL ACTIONS (you MUST perform these — do not report from context alone):
-   1. Run: git diff HEAD -- tests/ | Check for @pytest.mark.skip additions, NotImplementedError, weakened assertions
+   1. Run: git diff HEAD -- tests/ | INSPECT for @pytest.mark.skip additions, NotImplementedError, weakened assertions
    2. Read: .claude/config/known_bypass_patterns.json | Verify no undocumented bypasses
    3. Run: grep -r 'pytest.mark.skip' tests/ --include='*.py' -c | Report skip marker count
 
