@@ -195,6 +195,7 @@
         "plugins/autonomous-dev/lib/conflict_resolver.py",
         "plugins/autonomous-dev/lib/context_budget_monitor.py",
         "plugins/autonomous-dev/lib/context_skill_injector.py",
+        "plugins/autonomous-dev/lib/coordinator_log.py",
         "plugins/autonomous-dev/lib/copy_system.py",
         "plugins/autonomous-dev/lib/coverage_baseline.py",
         "plugins/autonomous-dev/lib/covers_index.py",

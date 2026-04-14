@@ -1034,7 +1034,10 @@ def _get_current_issue_number() -> int:
         1. ``PIPELINE_ISSUE_NUMBER`` env var (set by Claude Code process)
         2. ``issue_number`` field in the pipeline state file
            (``/tmp/implement_pipeline_state.json``, written by coordinator)
-        3. ``0`` as a safe default (no issue context)
+        3. Issue number extracted from ``run_id`` field in the pipeline state
+           file (Issue #869: batch mode run_ids follow pattern
+           ``issue-{N}-YYYYMMDD-HHMMSS``)
+        4. ``0`` as a safe default (no issue context)
 
     Returns:
         The current issue number, or 0 if unavailable.
@@ -1067,6 +1070,16 @@ def _get_current_issue_number() -> int:
             # Also handle string values
             if isinstance(issue_num, str) and issue_num.isdigit():
                 return int(issue_num)
+
+            # Issue #869: Fallback — extract issue number from run_id field.
+            # Batch mode run_ids follow pattern: issue-{N}-YYYYMMDD-HHMMSS
+            run_id = state.get("run_id", "")
+            if isinstance(run_id, str) and run_id.startswith("issue-"):
+                import re as _re
+
+                match = _re.match(r"issue-(\d+)-", run_id)
+                if match:
+                    return int(match.group(1))
     except Exception:
         pass  # Fail open — return 0
 
@@ -2914,6 +2927,22 @@ def _check_bash_state_deletion(command: str) -> "Optional[Tuple[str, str]]":
             return True
         return False
 
+    # Strip heredoc bodies and --body/--message quoted args so that text content
+    # (e.g. issue descriptions mentioning deletion commands) is not scanned.
+    # Issue #866: false positive when gh issue create heredoc body mentions rm.
+
+    # Strip heredoc bodies: <<'EOF'...EOF, <<EOF...EOF, <<"EOF"...EOF, <<-EOF...EOF
+    _heredoc_pat = r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n.*?\n\s*\1\b"
+    command = re.sub(_heredoc_pat, "", command, flags=re.DOTALL)
+
+    # Strip --body '...' / --body "..." / --body "$(cat ...)" argument values
+    _body_pat = r"""--body\s+(?:'[^']*'|"[^"]*"|\$\([^)]*\))"""
+    command = re.sub(_body_pat, '--body ""', command)
+
+    # Strip --message / -m quoted argument values
+    _msg_pat = r"""(?:--message|-m)\s+(?:'[^']*'|"[^"]*")"""
+    command = re.sub(_msg_pat, '-m ""', command)
+
     try:
         # 1. rm [-flags] <path>
         rm_pattern = r'\brm\s+(?:-[^\s]+\s+)*([^\s;&|]+)'
@@ -3649,9 +3678,12 @@ def main():
 
                     # Issue #803: Pipeline state file deletion guard.
                     # Block rm/unlink/truncate of pipeline state files during active pipeline.
+                    # Issue #865: Allow cleanup when PIPELINE_CLEANUP_PHASE is set
+                    # (STEP 15 / STEP B4 cleanup authorized by coordinator)
                     try:
+                        _cleanup_phase = os.getenv("PIPELINE_CLEANUP_PHASE", "").lower()
                         _state_del = _check_bash_state_deletion(command)
-                        if _state_del is not None and _is_pipeline_active():
+                        if _state_del is not None and _cleanup_phase not in ("1", "true") and _is_pipeline_active():
                             _sd_reason = (
                                 f"BLOCKED: {_state_del[1]} "
                                 f"File: {_state_del[0]}. "

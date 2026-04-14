@@ -64,9 +64,12 @@ COMPRESSION_CRITICAL_AGENTS = {
 MIN_CRITICAL_AGENT_PROMPT_WORDS = 80
 
 # Maximum cumulative shrinkage across an entire batch (Issue #794).
-# Individual issues may pass the 25% per-issue threshold but accumulate
-# progressive 3-5% per-iteration compression that this catches.
-MAX_CUMULATIVE_SHRINKAGE = 0.15  # 15% total drift threshold (Issue #812)
+# Calibrated to 30% (from 15% in Issue #812) after Issue #870 showed the 15%
+# threshold fires too aggressively on normal inter-issue variance (15-25%).
+# The per-issue check (20% threshold, cross-issue aware via #867) catches
+# individual issue compression; this cumulative check catches gradual drift
+# that per-issue checks miss.
+MAX_CUMULATIVE_SHRINKAGE = 0.30  # 30% total drift threshold (Issue #870, calibrated from #812)
 
 # Known reinvocation context strings (Issue #789, #791).
 # These represent legitimate secondary agent invocations that produce
@@ -568,7 +571,19 @@ def get_prompt_baseline(
                 "Per-issue baseline lookup: %s issue #%s = %d words",
                 agent_type, issue_key, baseline,
             )
-        return baseline
+            return baseline
+        # Issue #867: Fall back to lowest-issue baseline for cross-issue detection.
+        # Without this, each issue starts fresh and cross-issue shrinkage is invisible.
+        try:
+            lowest_issue = min(agent_data.keys(), key=lambda k: int(k))
+            fallback = agent_data[lowest_issue]
+            logger.debug(
+                "Cross-issue baseline fallback: %s issue #%s -> using issue #%s baseline = %d words",
+                agent_type, issue_key, lowest_issue, fallback,
+            )
+            return fallback
+        except (ValueError, TypeError):
+            return None
 
     # Backward compat: find entry with lowest issue number (first issue in batch)
     try:

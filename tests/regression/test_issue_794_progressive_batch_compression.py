@@ -55,12 +55,12 @@ class TestCumulativeDriftTracking:
         assert result < MAX_CUMULATIVE_SHRINKAGE * 100
 
     def test_cumulative_at_threshold_boundary(self, tmp_path: Path) -> None:
-        """250->212 exactly (~15.2%). Test boundary behavior — just over 15% is blocked (Issue #812)."""
+        """250->174 exactly (~30.4%). Test boundary behavior — just over 30% is blocked (Issue #870)."""
         record_batch_observation("reviewer", 1, 250, state_dir=tmp_path)
-        record_batch_observation("reviewer", 2, 212, state_dir=tmp_path)
+        record_batch_observation("reviewer", 2, 174, state_dir=tmp_path)
 
         result = get_cumulative_shrinkage("reviewer", state_dir=tmp_path)
-        assert result == 15.2  # Just over threshold (tightened to 15% in Issue #812)
+        assert result == 30.4  # Just over threshold (raised to 30% in Issue #870)
 
     def test_single_observation_returns_none(self, tmp_path: Path) -> None:
         """Only 1 observation recorded. Returns None (no drift calculable)."""
@@ -125,8 +125,8 @@ class TestCumulativeDriftTracking:
         assert "REQUIRED NEXT ACTION" in reason
 
     def test_max_cumulative_shrinkage_constant(self) -> None:
-        """Verify MAX_CUMULATIVE_SHRINKAGE is 0.15 (15%) — tightened in Issue #812."""
-        assert MAX_CUMULATIVE_SHRINKAGE == 0.15
+        """Verify MAX_CUMULATIVE_SHRINKAGE is 0.30 (30%) — raised in Issue #870 from 0.15."""
+        assert MAX_CUMULATIVE_SHRINKAGE == 0.30
 
     def test_observations_persisted_to_json(self, tmp_path: Path) -> None:
         """Verify observations file is valid JSON with expected structure."""
