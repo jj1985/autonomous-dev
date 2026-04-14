@@ -189,7 +189,7 @@ These agents execute the main autonomous development workflow and provide specia
 
 **Purpose**: Code implementation (makes tests pass)
 **Model**: Opus (Tier 3 - deep reasoning for code implementation)
-**Skills**: python-standards, observability
+**Skills**: python-standards, testing-guide, error-handling, refactoring-patterns, debugging-workflow
 **Execution**: Step 4 of /implement workflow
 **Research Context**: Receives implementation_guidance from researcher-local and researcher-web (Issue #130)
   - Uses reusable_functions, import_patterns, error_handling_patterns from researchers
@@ -202,6 +202,7 @@ These agents execute the main autonomous development workflow and provide specia
 **Mini-Replan on Blocking Signals** (Issue #730): When a tool execution returns a recoverable error (ModuleNotFoundError, FileNotFoundError, ImportError, AttributeError, command not found), the implementer MUST perform a mini-replan cycle (max 2) instead of retrying blindly. Each cycle: classify error → determine corrective action → apply fix → re-run. Mini-replan cycles are separate from the retry budget. After 2 failed mini-replan cycles, escalate to the coordinator. Supported by `blocking_signal_classifier.py` library. FORBIDDEN: retrying the same command without a corrective action, ignoring recoverable error signals, exceeding 2 mini-replan cycles.
 **Pre-Execution Tool Documentation Research** (Issue #706): Before using an unfamiliar CLI tool, the implementer MUST read its `--help` output. Known-safe tools (git, python, pytest, pip, npm, etc.) are exempt. Graceful fallback if help unavailable.
 **Evidence Manifest Output** (Issue #727): After all tests pass, the implementer MUST output a structured Markdown table listing every file created or modified, its state (CREATED/MODIFIED/DELETED), and a verifiable signal (e.g., "contains class Foo", "contains 6 test functions"). Required in full pipeline mode; recommended in --fix and --light modes. FORBIDDEN: declaring "implementation complete" without an evidence manifest in full pipeline mode.
+**Root Cause Analysis HARD GATE** (Issue #856): In fix mode (`--fix` or fixing a known bug), the implementer MUST produce a `## Root Cause Analysis` section before declaring the fix complete. The section MUST include: (1) root cause statement (1 sentence — the underlying cause, not the symptom), (2) mechanism chain (how the root cause propagated to the observable failure, e.g., A → B → C → failure), (3) 5 Whys (minimum 3 levels, each level MUST introduce new information), and (4) root cause category (Wrong type / Wrong state / Race condition / Missing check / Stale data / Wrong assumption). The coordinator (implement-fix.md STEP F3) checks for `## Root Cause Analysis` in the output — if absent on first completion, the implementer is re-invoked once; if still absent, the pipeline is BLOCKED. FORBIDDEN: tautological 5 Whys, claiming the bug is "obvious" and skipping analysis, fixing the symptom without identifying the root cause, omitting the section in fix mode.
 
 ### reviewer
 

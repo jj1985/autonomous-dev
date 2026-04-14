@@ -90,15 +90,52 @@ Do NOT proceed past Step 5 until the plan-critic issues PROCEED.
 
 ---
 
-### STEP 6: Issue Decomposition (Optional)
+### STEP 6: Issue Decomposition (Required when multi-item)
 
-If the plan involves multiple independent work items:
+**HARD GATE**: If the Minimal Path from Step 4 contains **>=2 independent work items**, issue creation is REQUIRED. You MUST create GitHub issues for each independent item before proceeding to Step 7.
 
-1. Consider decomposing into separate GitHub issues
-2. Use `/create-issue` for each independent piece
-3. Link issues to the plan
+**FORBIDDEN**:
+- FORBIDDEN: Skipping issue creation when the Minimal Path contains >=2 independent work items
+- FORBIDDEN: Declaring work items as "not independent" to avoid issue creation without specific, stated justification
+- FORBIDDEN: Proceeding to Step 7 without either creating issues OR logging the single-item skip message below
 
-If the plan is a single coherent unit, skip this step.
+#### When to create issues (>=2 independent work items):
+
+1. Write each issue body to a temp file and create the command context file:
+   ```bash
+   python3 -c "
+   import json; from datetime import datetime, timezone
+   with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
+       json.dump({'command': 'plan', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
+   "
+   ```
+
+2. For each independent work item, create a GitHub issue:
+   ```bash
+   cat > /tmp/plan_issue_N.md << 'ISSUE_EOF'
+   <issue body: title, description, acceptance criteria>
+   ISSUE_EOF
+   gh issue create --title "feat: <sanitized item title>" --body-file /tmp/plan_issue_N.md
+   ```
+
+3. Collect created issue numbers (e.g., `#101`, `#102`).
+
+4. Clean up temp files:
+   ```bash
+   rm -f /tmp/plan_issue_*.md /tmp/autonomous_dev_cmd_context.json
+   ```
+
+**gh CLI unavailability fallback**: If `gh` is not available or authentication fails, log a warning and suggest running `/plan-to-issues` manually after plan creation. Do NOT block the plan file from being written.
+
+#### When to skip (single coherent unit — <2 independent items):
+
+Log the following message and proceed directly to Step 7:
+
+```
+Skipping Step 6: plan is a single coherent unit — no issue decomposition needed.
+```
+
+Record `N/A — single work item` in the `## Linked Issues` section of the plan file.
 
 ---
 
@@ -133,6 +170,9 @@ Write the validated plan to `.claude/plans/<slug>.md` with these required sectio
 
 ## Critique History
 [Summary of plan-critic rounds and resolutions]
+
+## Linked Issues
+[List of created issues: "- #NNN: Title" for each issue, or "N/A — single work item" if no issues were created, or "Issues not created — run `/plan-to-issues`" if gh was unavailable]
 ```
 
 ---
@@ -145,8 +185,9 @@ Display the plan file path and next steps:
 Plan created: .claude/plans/<slug>.md
 
 Next steps:
-  /implement "feature description"    -- implement the plan
-  /plan-to-issues                     -- convert plan into GitHub issues
+  /implement "feature description"            -- implement the plan directly
+  /implement --issues #N1,#N2,...             -- implement via linked issues (if issues were created)
+  /plan-to-issues                             -- convert plan into GitHub issues (if gh was unavailable)
 ```
 
 ---

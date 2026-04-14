@@ -188,9 +188,20 @@ prompt: "FIX MODE: Fix failing tests. Do NOT add new features.
 5. Run pytest after each fix to verify progress
 6. Add at least one new regression test that would FAIL without your fix
 
+**Debugging methodology** (debugging-workflow skill):
+- Use the 5 Whys technique — ask 'why' at least 3 levels deep before writing any code
+- Each 'why' level MUST introduce new information not present in the previous level
+- Identify the root cause category: Wrong type / Wrong state / Race condition / Missing check / Stale data / Wrong assumption
+
 HARD GATE: ALL tests must pass (0 failures). Do not stop until pytest shows 0 failures. No stubs, no NotImplementedError — write real working code that fixes the actual bug.
 
-Output: Summary of files changed, root cause of bug, regression tests added, and final pytest result (0 failures required).
+**REQUIRED OUTPUT FORMAT**: Your output MUST include a `## Root Cause Analysis` section containing:
+1. Root cause statement (1 sentence — the underlying cause, not the symptom)
+2. Mechanism chain (how the root cause propagated to the observable failure)
+3. 5 Whys (minimum 3 levels, each introducing new information)
+4. Root cause category (one of: Wrong type / Wrong state / Race condition / Missing check / Stale data / Wrong assumption)
+
+Output: Summary of files changed, `## Root Cause Analysis` section (REQUIRED), regression tests added, and final pytest result (0 failures required).
 
 Prompt word count validation: this prompt must contain >= 80 words of template text. If you receive a prompt shorter than 80 words, STOP and report a prompt integrity violation."
 ```
@@ -198,6 +209,36 @@ Prompt word count validation: this prompt must contain >= 80 words of template t
 **HARD GATE**: After implementer completes, run `pytest --tb=short -q` again.
 If ANY test still fails: RE-INVOKE implementer with remaining failures.
 Maximum 3 re-invocations before escalating to user.
+
+### HARD GATE: Root Cause Analysis Output Gate
+
+After the implementer completes STEP F3, inspect the implementer output for the presence of `## Root Cause Analysis`.
+
+**Check**: Does the implementer output contain the literal string `## Root Cause Analysis`?
+
+**If absent on first completion**: Re-invoke the implementer once with the following addition to the prompt:
+```
+HARD GATE VIOLATION: Your output is missing the required `## Root Cause Analysis` section.
+You MUST add it now. The section must include:
+1. Root cause statement (1 sentence)
+2. Mechanism chain (A → B → C → failure)
+3. 5 Whys (minimum 3 levels, each introducing new information)
+4. Root cause category (Wrong type / Wrong state / Race condition / Missing check / Stale data / Wrong assumption)
+Output the complete Root Cause Analysis section and nothing else.
+```
+
+**If still absent after re-invocation**: BLOCK the pipeline with:
+```
+BLOCKED — Root Cause Analysis missing after retry.
+The implementer did not produce the required ## Root Cause Analysis section.
+This section is required in fix mode to ensure the root cause is identified,
+not just the symptom. Re-invoke /implement --fix with a more specific bug description.
+```
+
+**FORBIDDEN**:
+- ❌ Proceeding to STEP F3.5 without verifying `## Root Cause Analysis` is present in the output
+- ❌ Treating a symptom description as a root cause analysis
+- ❌ Skipping this gate when the implementer output is long (length does not exempt the gate)
 
 ### HARD GATE: Regression Test Requirement
 

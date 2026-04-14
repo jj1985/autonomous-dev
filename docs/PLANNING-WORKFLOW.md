@@ -52,7 +52,9 @@ Minimum 2 critique rounds before PROCEED verdict.
 
 ### Step 6: Issue Decomposition
 
-Optionally break the plan into GitHub issues using `/create-issue`. Each issue should be independently implementable.
+**HARD GATE**: If the Minimal Path contains >=2 independent work items, issue creation is REQUIRED. GitHub issues are created directly via `gh issue create` (not via `/create-issue`). If `gh` is unavailable, a warning is logged and `/plan-to-issues` can be used manually afterward.
+
+When the plan is a single coherent unit (<2 independent items), this step is skipped and the plan file records `N/A — single work item` in the `## Linked Issues` section.
 
 ### Step 7: Plan Output
 
@@ -80,6 +82,9 @@ What might go wrong.
 
 ## Critique History
 Plan-critic feedback and resolutions.
+
+## Linked Issues
+List of created issues: "- #NNN: Title" for each issue, or "N/A — single work item" if no issues were created, or "Issues not created — run `/plan-to-issues`" if gh was unavailable.
 ```
 
 ## Hook Enforcement
@@ -118,7 +123,7 @@ When blocked, the message includes:
 | `plan_gate.py` hook | Enforces plan existence before complex edits |
 | `plan_validator.py` lib | Validates plan file contents and sections |
 | `planning-workflow` skill | Documents the workflow for context injection |
-| `/plan-to-issues` command | Can use plan files as input source |
+| `/plan-to-issues` command | Fallback when `gh` was unavailable during Step 6; converts plan files into issues |
 
 ## Rationale
 

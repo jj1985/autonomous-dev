@@ -127,11 +127,13 @@ Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](H
 3. **Research**: researcher agent finds patterns (Haiku model)
 3.5. **Research Self-Critique** (STEP 4.5, inline — no agent): One FEEDBACK pass on merged research output before passing to planner; implements Self-Refine pattern (GENERATE → FEEDBACK → REFINE). Also applied at `/advise` STEP 4.5 (post-analysis critique) and `/refactor --deep` STEP 1.5 (findings critique).
 4. **Planning**: planner agent creates architecture plan
+4.5. **Plan Validation Gate** (STEP 5.5, HARD GATE — Issue #855): Adversarial plan review before acceptance tests. Checks `.claude/plans/` for a pre-validated plan (Verdict: PROCEED); if absent, invokes plan-critic with a constrained budget (1 round, 3 axes: Assumption Audit, Existing Solution Search, Minimalism Pressure). Verdict PROCEED continues, REVISE re-invokes planner once, BLOCKED halts pipeline. Structural validation always runs: plan must contain ≥1 file path, an acceptance-criteria section, and a testing-strategy section.
 5. **Pause Control** (v3.45.0): Optional human-in-the-loop after planning
 6. **Acceptance Tests** (Issue #404, default): test-master writes specification-driven acceptance tests
    - Default mode: validation-first approach (specification → acceptance tests → implementation)
    - Optional `--tdd-first` flag reverts to legacy TDD-first (failing unit tests first)
 7. **Implementation**: implementer makes tests pass
+7.25. **Plan-Implementation Alignment Gate** (OUTPUT VALIDATION GATE, Issue #857): After tests pass, coordinator compares STEP 5 planned files (CREATE/MODIFY) against `git diff --name-only HEAD`. Test and doc files excluded. Files present in plan but absent in implementation → WARNING. Files implemented but not planned → WARNING. If >50% of non-excluded implemented files are unplanned → BLOCK.
 7.5. **Spec-Blind Validation** (STEP 8.5, HARD GATE): spec-validator writes behavioral tests from acceptance criteria only — without seeing implementation details — and validates the implementation against them
    - Strict context boundary: spec-validator receives ONLY acceptance criteria, feature description, and changed file paths (no implementer output, no code diffs, no research)
    - PASS → proceed to E2E testing / validation; FAIL → implementer remediation (max 2 cycles)
