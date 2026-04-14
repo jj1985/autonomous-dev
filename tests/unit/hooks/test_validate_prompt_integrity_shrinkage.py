@@ -70,6 +70,9 @@ class TestBaselineShrinkageEnforcement:
             patch("prompt_integrity.validate_prompt_word_count") as mock_validate,
             # Simulate no active pipeline context (issue_number=0 → seed_issue=0)
             patch.object(hook, "_get_current_issue_number", return_value=0),
+            # Isolate cumulative drift check from stale on-disk data (Issue #861)
+            patch("prompt_integrity.record_batch_observation"),
+            patch("prompt_integrity.get_cumulative_shrinkage", return_value=None),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
@@ -100,6 +103,9 @@ class TestBaselineShrinkageEnforcement:
             patch(
                 "prompt_integrity.validate_prompt_word_count", return_value=passing_result
             ),
+            # Isolate cumulative drift check from stale on-disk data (Issue #861)
+            patch("prompt_integrity.record_batch_observation"),
+            patch("prompt_integrity.get_cumulative_shrinkage", return_value=None),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
@@ -157,6 +163,9 @@ class TestBaselineShrinkageEnforcement:
             patch(
                 "prompt_integrity.validate_prompt_word_count", return_value=passing_result
             ),
+            # Isolate cumulative drift check from stale on-disk data (Issue #861)
+            patch("prompt_integrity.record_batch_observation"),
+            patch("prompt_integrity.get_cumulative_shrinkage", return_value=None),
         ):
             decision, reason = hook.validate_prompt_integrity(
                 "Agent",
@@ -272,3 +281,43 @@ class TestBaselineShrinkageEnforcement:
         assert kwargs.get("max_shrinkage") == 0.20, (
             f"Expected max_shrinkage=0.20 but got {kwargs.get('max_shrinkage')}"
         )
+
+    def test_stale_observations_file_does_not_cause_false_denial(self):
+        """Regression: stale on-disk observations with >15% cumulative drift must not deny (Issue #861).
+
+        Without mocking get_cumulative_shrinkage, a stale
+        .claude/logs/prompt_batch_observations.json with >15% cumulative shrinkage
+        causes `validate_prompt_integrity` to return 'deny' for tests that expect
+        'allow'. This regression test verifies the isolation: even when
+        get_cumulative_shrinkage returns a high value (simulating stale data),
+        the correct fix is to mock it to None so tests are environment-independent.
+        """
+        adequate_prompt = _make_prompt(140)
+        passing_result = PromptIntegrityResult(
+            agent_type="reviewer",
+            word_count=140,
+            baseline_word_count=169,
+            shrinkage_pct=17.2,
+            passed=True,
+            reason="Prompt for reviewer OK (140 words).",
+            should_reload=False,
+        )
+
+        # Simulate what stale data looks like: get_cumulative_shrinkage returns >15%
+        # This would cause a deny WITHOUT the mock isolation fix.
+        # With the fix (return_value=None), the test correctly allows.
+        with (
+            patch("prompt_integrity.get_prompt_baseline", return_value=169),
+            patch("prompt_integrity.validate_prompt_word_count", return_value=passing_result),
+            patch("prompt_integrity.record_batch_observation"),
+            patch("prompt_integrity.get_cumulative_shrinkage", return_value=None),
+        ):
+            decision, reason = hook.validate_prompt_integrity(
+                "Agent",
+                {"subagent_type": "reviewer", "prompt": adequate_prompt},
+            )
+
+        assert decision == "allow", (
+            "Expected 'allow' but got 'deny' — stale observations file is leaking into test"
+        )
+        assert "Prompt integrity OK" in reason

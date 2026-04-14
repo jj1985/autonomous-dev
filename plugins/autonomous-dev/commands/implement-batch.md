@@ -174,12 +174,15 @@ If the return value is empty, wait 3 seconds before retrying (filesystem flush d
   - If retry produces a verdict: use that verdict
   - If retry also fails: log `[DOC-VERDICT-MISSING] doc-master produced no verdict after retry for issue #N — proceeding with warning` and record `doc-drift-verdict: MISSING`
 
-**REQUIRED: Persist verdict to completion state** (Issue #837):
-After parsing the doc-master verdict for each issue, the coordinator MUST call `record_doc_verdict(session_id, issue_number, verdict)` from `pipeline_completion_state.py` to persist the verdict. This enables the batch doc-master gate hook to verify not just that doc-master ran, but that it produced a valid verdict. Without this call, the commit-time gate may block even when doc-master completed.
+**REQUIRED: Persist verdict to completion state** (Issues #837, #852):
+After parsing the doc-master verdict for each issue, the coordinator MUST call `record_doc_verdict(session_id, issue_number, verdict)` AND `record_agent_completion(session_id, 'doc-master', ...)` from `pipeline_completion_state.py`. The `record_doc_verdict` call persists the verdict for the batch gate hook. The `record_agent_completion` call is required because SubagentStop doesn't fire reliably for background agents, causing 'doc-master' to be absent from the completed agents set (Issue #852). Without both calls, the commit-time gate may block even when doc-master completed.
 
 ```python
-from pipeline_completion_state import record_doc_verdict
+from pipeline_completion_state import record_doc_verdict, record_agent_completion
 record_doc_verdict(session_id, issue_number, verdict)  # e.g., "PASS", "FAIL", "MISSING", "SHALLOW"
+# Issue #852: Explicitly record doc-master completion since SubagentStop
+# doesn't fire reliably for background agents
+record_agent_completion(session_id, 'doc-master', issue_number=issue_number, success=(verdict not in ('MISSING',)))
 ```
 
 Include `doc-drift-verdict: PASS/FAIL/MISSING/SHALLOW` in the per-issue agent verification display:
