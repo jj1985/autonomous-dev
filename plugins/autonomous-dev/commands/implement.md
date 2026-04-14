@@ -113,6 +113,34 @@ Total: 7:08 | Files changed: N | Tests: N passed, M failed | Security: PASS
 ========================================
 ```
 
+### Pre-Dispatch Ordering Protocol — REQUIRED
+
+Before EVERY Agent tool dispatch, you MUST run this inline verification. This catches ordering violations early (at dispatch time) instead of late (at hook time). Issue #850.
+
+```bash
+python3 -c "
+import sys, os
+sys.path.insert(0, 'plugins/autonomous-dev/lib')
+from agent_ordering_gate import check_ordering_with_session_fallback
+result = check_ordering_with_session_fallback(
+    'TARGET_AGENT',
+    os.environ.get('CLAUDE_SESSION_ID', 'unknown'),
+    issue_number=ISSUE_NUMBER_OR_0,
+    pipeline_mode='MODE'
+)
+if not result.passed:
+    print(f'ORDERING BLOCK: {result.reason}')
+else:
+    print(f'ORDERING OK: dispatching TARGET_AGENT')
+"
+```
+
+Replace `TARGET_AGENT` with the agent about to be dispatched (e.g., `planner`, `implementer`). Replace `ISSUE_NUMBER_OR_0` with the current issue number or `0`. Replace `MODE` with the pipeline mode (`full`, `light`, `fix`, or `tdd-first`).
+
+**HARD GATE**: If `result.passed` is False, you MUST NOT dispatch the agent. Resolve the missing prerequisite agents first.
+
+**FORBIDDEN**: Dispatching an Agent tool call when the pre-dispatch ordering check returns `passed=False`.
+
 ARGUMENTS: {{ARGUMENTS}}
 
 ---
@@ -361,6 +389,8 @@ Otherwise: proceed to STEP 4.
 
 **Progress**: Output step banner (STEP 4/15 — Research, Agents: researcher-local (Haiku), researcher (Sonnet)). Output agent completions after each returns.
 
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
+
 Invoke TWO agents in PARALLEL (single message, both Agent tool calls):
 1. **Agent**(subagent_type="researcher-local", model="haiku") — "Search codebase for patterns related to: {feature}. Output JSON with findings and sources."
 2. **Agent**(subagent_type="researcher", model="sonnet") — "Research best practices for: {feature}. MUST use WebSearch. Output JSON with findings, sources, security considerations."
@@ -384,6 +414,8 @@ If gaps are found, append a "**Research Gaps**" section to the merged research s
 ### STEP 5: Planner (1 agent)
 
 **Progress**: Output step banner (STEP 5/15 — Planning, Agent: planner (Opus)). Output agent completion after.
+
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
 
 If research came from the issue body (ISSUE_RESEARCH_HIT), prefix the research context with: "Research from GitHub Issue #$ISSUE_NUMBER:" followed by the extracted research sections from `detect_issue_research()`. The planner should treat this identically to merged research from STEP 4.
 
@@ -501,6 +533,8 @@ If `--tdd-first`: **Agent**(subagent_type="test-master", model="opus") — Pass 
 ### STEP 8: Implementer + Test Gate — HARD GATE
 
 **Progress**: Output step banner (STEP 8/15 — Implementation + Test Gate, Agent: implementer (Opus)). Output agent completion, then test gate result with pass/fail/skip counts and coverage after.
+
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
 
 **Agent**(subagent_type="implementer", model=PLANNER_RECOMMENDED_MODEL) — Pass planner output + acceptance tests (or test-master output if TDD). Must write WORKING code, no stubs. Use the model recommended by the planner (see STEP 5). Default to "opus" if planner did not specify.
 
@@ -647,6 +681,8 @@ Plan-Implementation Alignment Check:
 
 **Progress**: Output step banner (STEP 8.5/15 — Spec-Blind Validation, Agent: spec-validator (Opus)). Output agent completion and verdict after.
 
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
+
 **Context Boundary** — The spec-validator operates with strict isolation. You MUST pass ONLY the following to this agent:
 - Acceptance criteria from STEP 6
 - Feature description (from user input)
@@ -756,6 +792,8 @@ Validation mode: sequential (security-sensitive files detected: [list of matched
 
 **DEFAULT: Parallel mode** (no security-sensitive files in changeset)
 
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
+
 Invoke reviewer, security-auditor, and doc-master in a SINGLE message (all three parallel). Pass STEP 8 test results to the reviewer along with the implementer output (see VERBATIM PASSING requirement below).
 
 **VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. If the implementer output contains an Evidence Manifest section, it MUST be included in the passed content. When truncating long output, preserve the Evidence Manifest in addition to the file change list and test results. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
@@ -800,6 +838,8 @@ Prompt word count validation: this prompt must contain >= 80 words of template t
 Invoke agents in STRICT ORDER. Reviewer and security-auditor are SEQUENTIAL — they MUST NOT be launched in the same message.
 
 **STEP 10a: Reviewer (MUST complete before 10b)**
+
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
 
 **VERBATIM PASSING REQUIRED**: Pass the FULL implementer output from STEP 8 to the reviewer, including the STEP 8 test results (pass/fail/skip counts, coverage, any failure details). Do NOT summarize, condense, or paraphrase. If the output is too long, pass the first 3000 words plus the complete file change list and test results section. If the implementer output contains an Evidence Manifest section, it MUST be included in the passed content. When truncating long output, preserve the Evidence Manifest in addition to the file change list and test results. Log word counts: "Implementer output: N words → Reviewer input: M words (ratio: M/N)".
 
@@ -1049,6 +1089,8 @@ If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipp
 ### STEP 15: Continuous Improvement — HARD GATE
 
 **Progress**: Output step banner (STEP 15/15 — Continuous Improvement). Output agent launch confirmation.
+
+**Pre-dispatch**: Follow the Pre-Dispatch Ordering Protocol (above) for each agent before invoking.
 
 **REQUIRED**: **Agent**(subagent_type="continuous-improvement-analyst", model="sonnet", run_in_background=true) — Examines session logs for bypasses, test drift, pipeline completeness.
 

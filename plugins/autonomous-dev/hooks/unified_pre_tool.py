@@ -962,6 +962,12 @@ def _is_stale_session(state: dict, state_path: "Path") -> bool:
 
     Returns:
         True if state is stale (file removed), False if current or indeterminate.
+
+    Note: When either session_id is "unknown" or empty (e.g., first hook
+    invocation before stdin parsing), this returns False (indeterminate).
+    This is an accepted gap — callers fall back to safe defaults (0 for
+    issue_number, "full" for mode), and the 30-min mtime TTL in
+    _is_pipeline_active() provides a secondary staleness guard.
     """
     stored_sid = state.get("session_id", "")
     current_sid = os.getenv("CLAUDE_SESSION_ID") or _session_id
@@ -1052,6 +1058,9 @@ def _get_current_issue_number() -> int:
 
             with open(state_path) as f:
                 state = _json.load(f)
+            # Session staleness check (Issue #862)
+            if _is_stale_session(state, state_path):
+                return 0  # Stale session — safe default
             issue_num = state.get("issue_number", 0)
             if isinstance(issue_num, int) and issue_num > 0:
                 return issue_num
@@ -1085,6 +1094,9 @@ def _get_pipeline_mode_from_state() -> str:
 
             with open(state_path) as f:
                 state = _json.load(f)
+            # Session staleness check (Issue #862)
+            if _is_stale_session(state, state_path):
+                return "full"  # Stale session — safe default
             return state.get("mode", "full")
     except Exception:
         pass
@@ -3790,23 +3802,86 @@ def main():
 
                     # Issue #802: Pipeline agent completeness gate
                     # Block git commit when required pipeline agents haven't completed
+                    # Issue #853: In batch mode, check ALL issues rather than a single issue
                     if "git commit" in command or "git -c" in command and "commit" in command:
                         try:
                             if _is_pipeline_active():
                                 if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() not in ("1", "true", "yes"):
                                     _agent_gate_session_id = os.environ.get("CLAUDE_SESSION_ID", _session_id)
-                                    _agent_gate_result = _check_pipeline_agent_completions(_agent_gate_session_id)
-                                    if _agent_gate_result is not None:
-                                        _log_pretool_activity(tool_name, tool_input, "deny", _agent_gate_result)
-                                        output_decision(
-                                            "deny", _agent_gate_result,
-                                            system_message=(
-                                                "BLOCKED: Agent completeness gate -- required pipeline "
-                                                "agents have not completed. Run all required agents "
-                                                "before committing."
-                                            ),
-                                        )
-                                        sys.exit(0)
+                                    cwd = os.getcwd()
+                                    if ".worktrees/batch-" in cwd:
+                                        # Batch mode: check all issues in the state file
+                                        try:
+                                            hook_dir = Path(__file__).resolve().parent
+                                            lib_candidates = [
+                                                hook_dir.parent / "lib" / "pipeline_completion_state.py",
+                                                hook_dir.parents[2] / "lib" / "pipeline_completion_state.py",
+                                            ]
+                                            _batch_agent_mod = None
+                                            for lib_path in lib_candidates:
+                                                if lib_path.exists():
+                                                    spec = importlib.util.spec_from_file_location(
+                                                        "pipeline_completion_state", str(lib_path)
+                                                    )
+                                                    if spec and spec.loader:
+                                                        _batch_agent_mod = importlib.util.module_from_spec(spec)
+                                                        spec.loader.exec_module(_batch_agent_mod)
+                                                    break
+
+                                            if _batch_agent_mod is not None and hasattr(_batch_agent_mod, "_read_state") and hasattr(_batch_agent_mod, "verify_pipeline_agent_completions"):
+                                                _batch_agent_state = _batch_agent_mod._read_state(_agent_gate_session_id)
+                                                _batch_agent_completions = _batch_agent_state.get("completions", {}) if _batch_agent_state else {}
+                                                _batch_agent_pipeline_mode = os.environ.get("PIPELINE_MODE") or _get_pipeline_mode_from_state()
+                                                _batch_agent_failures: list = []
+                                                for _batch_agent_key in _batch_agent_completions:
+                                                    if _batch_agent_key == "0":
+                                                        continue  # skip non-batch issue 0
+                                                    try:
+                                                        _batch_agent_issue_num = int(_batch_agent_key)
+                                                    except (ValueError, TypeError):
+                                                        continue
+                                                    _batch_agent_passed, _batch_agent_completed, _batch_agent_missing = _batch_agent_mod.verify_pipeline_agent_completions(
+                                                        _agent_gate_session_id, _batch_agent_pipeline_mode, issue_number=_batch_agent_issue_num
+                                                    )
+                                                    if not _batch_agent_passed:
+                                                        _batch_agent_failures.append(
+                                                            f"#{_batch_agent_issue_num}: missing {', '.join(sorted(_batch_agent_missing))}"
+                                                        )
+
+                                                if _batch_agent_failures:
+                                                    _batch_agent_result = (
+                                                        f"BLOCKED: Batch agent completeness gate -- the following issues are missing "
+                                                        f"required pipeline agents: {'; '.join(_batch_agent_failures)}. "
+                                                        f"All required pipeline agents MUST complete for every issue before git commit. "
+                                                        f"REQUIRED NEXT ACTION: Run the missing agents for the listed issues before committing. "
+                                                        f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass. (Issue #853)"
+                                                    )
+                                                    _log_pretool_activity(tool_name, tool_input, "deny", _batch_agent_result)
+                                                    output_decision(
+                                                        "deny", _batch_agent_result,
+                                                        system_message=(
+                                                            "BLOCKED: Batch agent completeness gate -- required pipeline "
+                                                            "agents have not completed for all batch issues. Run all required "
+                                                            "agents before committing."
+                                                        ),
+                                                    )
+                                                    sys.exit(0)
+                                        except Exception:
+                                            pass  # Fail-open: don't block on errors
+                                    else:
+                                        # Non-batch mode: single-issue check (existing behavior)
+                                        _agent_gate_result = _check_pipeline_agent_completions(_agent_gate_session_id)
+                                        if _agent_gate_result is not None:
+                                            _log_pretool_activity(tool_name, tool_input, "deny", _agent_gate_result)
+                                            output_decision(
+                                                "deny", _agent_gate_result,
+                                                system_message=(
+                                                    "BLOCKED: Agent completeness gate -- required pipeline "
+                                                    "agents have not completed. Run all required agents "
+                                                    "before committing."
+                                                ),
+                                            )
+                                            sys.exit(0)
                         except Exception:
                             pass  # Fail-open: don't block on errors
 

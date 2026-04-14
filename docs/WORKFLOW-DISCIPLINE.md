@@ -252,11 +252,13 @@ ENFORCE_WORKFLOW_STRICT=true    # Maps to BLOCK
 
 Violations logged to: `logs/workflow_violations.log` (JSON Lines format)
 
-### Layer 3: Pipeline Order Enforcement (enforce_pipeline_order Hook)
+### Layer 3: Pipeline Order Enforcement (Pre-Dispatch Protocol + enforce_pipeline_order Hook)
 
-**PreToolUse hook that prevents skipping prerequisite agents**.
+**Two-tier enforcement that prevents skipping prerequisite agents** (Issue #850).
 
-This hook tracks Task tool calls and ensures that when running `/implement`, agents are invoked in the required order:
+**First-line defense — coordinator pre-dispatch check**: Before every Agent tool dispatch, `implement.md` requires the coordinator to call `check_ordering_with_session_fallback()` from `agent_ordering_gate` (see the Pre-Dispatch Ordering Protocol section in `implement.md`). This catches ordering violations at dispatch time, before any hook fires. If `result.passed` is False, the coordinator MUST NOT dispatch the agent.
+
+**Backstop — PreToolUse hook**: `enforce_pipeline_order` tracks Task tool calls and ensures that when running `/implement`, agents are invoked in the required order:
 
 1. researcher-local (codebase analysis)
 2. researcher-web or general-purpose (web best practices research)
