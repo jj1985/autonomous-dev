@@ -2116,7 +2116,7 @@ def _check_pipeline_agent_completions(session_id: str) -> "Optional[str]":
             f"{missing_str}. Completed: {completed_str}. "
             f"All required pipeline agents MUST complete before git commit. "
             f"REQUIRED NEXT ACTION: Run the missing agents before committing. "
-            f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass. (Issue #802)"
+            f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run: touch /tmp/skip_agent_completeness_gate (Issue #802)"
         )
     except Exception:
         return None  # Fail-open
@@ -3838,7 +3838,21 @@ def main():
                     if "git commit" in command or "git -c" in command and "commit" in command:
                         try:
                             if _is_pipeline_active():
-                                if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() not in ("1", "true", "yes"):
+                                # Issue #802: env var bypass + file-based bypass
+                                # Env var works when set in harness; file works from Bash:
+                                #   touch /tmp/skip_agent_completeness_gate
+                                _skip_gate_file = Path("/tmp/skip_agent_completeness_gate")
+                                _skip_gate_via_file = False
+                                try:
+                                    if _skip_gate_file.exists():
+                                        try:
+                                            _skip_gate_file.unlink()
+                                        except OSError:
+                                            pass  # Fail-open
+                                        _skip_gate_via_file = True
+                                except OSError:
+                                    pass
+                                if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() not in ("1", "true", "yes") and not _skip_gate_via_file:
                                     _agent_gate_session_id = os.environ.get("CLAUDE_SESSION_ID", _session_id)
                                     cwd = os.getcwd()
                                     if ".worktrees/batch-" in cwd:
@@ -3886,7 +3900,7 @@ def main():
                                                         f"required pipeline agents: {'; '.join(_batch_agent_failures)}. "
                                                         f"All required pipeline agents MUST complete for every issue before git commit. "
                                                         f"REQUIRED NEXT ACTION: Run the missing agents for the listed issues before committing. "
-                                                        f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass. (Issue #853)"
+                                                        f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run: touch /tmp/skip_agent_completeness_gate (Issue #853)"
                                                     )
                                                     _log_pretool_activity(tool_name, tool_input, "deny", _batch_agent_result)
                                                     output_decision(

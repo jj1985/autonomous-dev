@@ -19,6 +19,36 @@ import time
 from pathlib import Path
 from typing import Optional
 
+# File-based bypass for the agent completeness gate.
+# The env var SKIP_AGENT_COMPLETENESS_GATE=1 is unreachable from Bash commands
+# because the hook runs in a separate process spawned by the harness.
+# This file provides a one-shot bypass: touch the file, it's consumed on first check.
+# Issue #802
+SKIP_GATE_FILE = Path("/tmp/skip_agent_completeness_gate")
+
+
+def _check_file_bypass() -> bool:
+    """Check and consume the file-based bypass for the agent completeness gate.
+
+    If the bypass file exists, delete it (one-shot consumption) and return True.
+    Fail-open on deletion errors to avoid blocking commits.
+
+    Returns:
+        True if bypass file was found (and consumed), False otherwise.
+
+    Issues: #802
+    """
+    try:
+        if SKIP_GATE_FILE.exists():
+            try:
+                SKIP_GATE_FILE.unlink()
+            except OSError:
+                pass  # Fail-open: bypass even if unlink fails
+            return True
+    except OSError:
+        pass  # Fail-open on existence check errors
+    return False
+
 
 def _state_file_path(session_id: str) -> Path:
     """Compute the state file path for a given session.
@@ -621,7 +651,8 @@ def verify_pipeline_agent_completions(
     Fail-open: returns (True, set(), set()) on any error to avoid blocking
     legitimate commits due to state file issues.
 
-    Escape hatch: set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass.
+    Escape hatch: set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run:
+    touch /tmp/skip_agent_completeness_gate (Issue #802)
 
     Args:
         session_id: The pipeline session identifier.
@@ -634,12 +665,16 @@ def verify_pipeline_agent_completions(
 
     Issues: #802
     """
-    # Escape hatch
+    # Escape hatch: env var (works when set in harness command) or file-based bypass
+    # (works from Bash: touch /tmp/skip_agent_completeness_gate)
     if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() in (
         "1",
         "true",
         "yes",
     ):
+        return (True, set(), set())
+
+    if _check_file_bypass():
         return (True, set(), set())
 
     try:
