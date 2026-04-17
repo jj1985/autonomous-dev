@@ -16072,13 +16072,13 @@ result = check_ordering_prerequisites(
 - v1.1.0 (2026-04-07) - Defense-in-depth: `launched_agents` parameter blocks parallel mode bypass when prerequisite not launched; `GateResult.warning` field for observability; fail-open logging in `unified_pre_tool.py` (Issue #669)
 - v1.0.0 (2026-03-30) - Initial release for hook-level pipeline ordering enforcement (Issues #625, #629, #632)
 
-## 176+4. pipeline_completion_state.py (v1.5.0 - Issues #625, #629, #632, #686, #712, #786, #802, #837, #838)
+## 176+4. pipeline_completion_state.py (v1.5.0 - Issues #625, #629, #632, #686, #712, #786, #802, #837, #838, #878)
 
 **Purpose**: Shared state for agent ordering enforcement. Manages a per-session JSON state file that tracks which pipeline agents have completed and which have been launched. Written by `unified_session_tracker.py` (SubagentStop for completions) and `unified_pre_tool.py` (PreToolUse for launches), read by `unified_pre_tool.py` to enforce ordering.
 
 **State file path**: `/tmp/pipeline_agent_completions_{sha256(session_id)[:8]}.json` (auto-expires after 2 hours)
 
-**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #686 — Agent launch tracking for parallel-mode defense-in-depth; #838 — pytest-gate virtual agent: `record_pytest_gate_passed()` and `get_pytest_gate_passed()` convenience wrappers; `SKIP_PYTEST_GATE=1` escape hatch
+**GitHub Issues**: #625, #629, #632 — Hook-level enforcement for pipeline agent ordering; #686 — Agent launch tracking for parallel-mode defense-in-depth; #838 — pytest-gate virtual agent: `record_pytest_gate_passed()` and `get_pytest_gate_passed()` convenience wrappers; `SKIP_PYTEST_GATE=1` escape hatch; #878 — plan-critic skip recording: `record_plan_critic_skipped()` and `get_plan_critic_skipped()` convenience functions so the completeness gate excludes plan-critic when a pre-validated plan bypasses its invocation
 
 ### Public API
 
@@ -16127,6 +16127,8 @@ record_doc_verdict(session_id="abc123", issue_number=42, verdict="PASS")
 - **`verify_pipeline_agent_completions(session_id, pipeline_mode="full", *, issue_number=0) -> tuple[bool, set[str], set[str]]`** — Verify all required agents completed for a pipeline run. Reads completed agents from state, determines required agents based on `pipeline_mode` and `research_skipped` flag, and returns `(passed, completed_agents, missing_agents)`. Fail-open on any error or missing state. `pipeline_mode` accepts `"full"`, `"light"`, `"fix"`, or `"tdd-first"`. Bypass via `SKIP_AGENT_COMPLETENESS_GATE=1`. Called by `unified_pre_tool.py` via `_check_pipeline_agent_completions()` before allowing git commit during an active pipeline session. (Issue #802)
 - **`record_pytest_gate_passed(session_id, *, issue_number=0, passed=True) -> None`** — Record pytest gate result as a virtual agent completion using `agent_type="pytest-gate"`. Delegates to `record_agent_completion()` so `get_completed_agents()` automatically includes `"pytest-gate"` when the gate has passed. Called by the coordinator after STEP 8 (quality gate) completes. Bypass via `SKIP_PYTEST_GATE=1`. (Issue #838)
 - **`get_pytest_gate_passed(session_id, *, issue_number=0) -> bool`** — Check if pytest gate has been recorded as passed. Returns `True` if `"pytest-gate"` is in completed agents OR `SKIP_PYTEST_GATE=1` is set. Returns `False` if not recorded or recorded as failed. Used by the ordering gate to enforce pytest-gate → reviewer/security-auditor/doc-master prerequisites. (Issue #838)
+- **`record_plan_critic_skipped(session_id, *, issue_number=0) -> None`** — Record that plan-critic was skipped for a given session/issue. Called by the coordinator at STEP 5.5a when a pre-validated plan is found in `.claude/plans/` (containing "Verdict: PROCEED"), bypassing plan-critic invocation. When recorded, `verify_pipeline_agent_completions()` excludes plan-critic from the required agent set so the completeness gate does not block the commit. (Issue #878)
+- **`get_plan_critic_skipped(session_id, *, issue_number=0) -> bool`** — Check whether plan-critic was recorded as skipped for a given session/issue. Returns `True` if skipped, `False` otherwise (fail-open on read error). (Issue #878)
 
 ### State File Format
 
@@ -16142,6 +16144,9 @@ record_doc_verdict(session_id="abc123", issue_number=42, verdict="PASS")
     "42": {"reviewer": true, "security-auditor": true}
   },
   "research_skipped": {
+    "42": true
+  },
+  "plan_critic_skipped": {
     "42": true
   },
   "prompt_baselines": {}

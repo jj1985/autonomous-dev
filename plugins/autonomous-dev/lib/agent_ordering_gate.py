@@ -20,6 +20,7 @@ except ImportError:
         "researcher-local": 2,
         "researcher": 2,
         "planner": 3,
+        "plan-critic": 3.5,
         "test-master": 4,
         "implementer": 5,
         "pytest-gate": 5.5,
@@ -28,6 +29,8 @@ except ImportError:
         "doc-master": 6.0,
     }
     SEQUENTIAL_REQUIRED = [
+        ("planner", "plan-critic"),
+        ("plan-critic", "implementer"),
         ("planner", "implementer"),
         ("implementer", "reviewer"),
         ("implementer", "security-auditor"),
@@ -51,6 +54,7 @@ FULL_PIPELINE_AGENTS = {
     "researcher-local",
     "researcher",
     "planner",
+    "plan-critic",
     "implementer",
     "pytest-gate",
     "reviewer",
@@ -126,6 +130,7 @@ def check_ordering_prerequisites(
     validation_mode: str = "sequential",
     launched_agents: Optional[set[str]] = None,
     pipeline_mode: str = "full",
+    plan_critic_skipped: bool = False,
 ) -> GateResult:
     """Check if ordering prerequisites are met for a target agent.
 
@@ -150,6 +155,8 @@ def check_ordering_prerequisites(
         pipeline_mode: Pipeline mode — "full", "light", "fix", or "tdd-first".
             Used to filter prerequisites to only those agents that are part of
             the current mode's required set. Issue #697.
+        plan_critic_skipped: If True, excludes plan-critic from required agents
+            (pre-validated plan bypass, Step 5.5a). Issue #878.
 
     Returns:
         GateResult indicating whether the agent may proceed.
@@ -164,7 +171,7 @@ def check_ordering_prerequisites(
     # Issue #697: In --fix mode, planner is not part of the pipeline, so the
     # planner->implementer prerequisite must be skipped.
     missing = []
-    mode_agents = get_required_agents(pipeline_mode)
+    mode_agents = get_required_agents(pipeline_mode, plan_critic_skipped=plan_critic_skipped)
     core_prereqs = CORE_PREREQUISITES.get(target, set())
     for prereq in core_prereqs:
         if prereq not in mode_agents:
@@ -246,6 +253,7 @@ def get_required_agents(
     mode: str = "full",
     *,
     research_skipped: bool = False,
+    plan_critic_skipped: bool = False,
 ) -> Set[str]:
     """Return the set of required agents for a given pipeline mode.
 
@@ -254,6 +262,9 @@ def get_required_agents(
         research_skipped: If True and mode is "full", excludes researcher-local
             and researcher (they are legitimately skipped when issue body
             contains pre-researched content).
+        plan_critic_skipped: If True and mode is "full", excludes plan-critic
+            (legitimately skipped when a pre-validated plan exists in
+            `.claude/plans/`). Issue #878.
 
     Returns:
         A new set of required agent names (copy, not reference).
@@ -270,6 +281,8 @@ def get_required_agents(
         if research_skipped:
             agents.discard("researcher-local")
             agents.discard("researcher")
+        if plan_critic_skipped:
+            agents.discard("plan-critic")
         return agents
 
 
@@ -326,7 +339,11 @@ def check_ordering_with_session_fallback(
         GateResult indicating whether the agent may proceed.
     """
     try:
-        from pipeline_completion_state import get_completed_agents, get_launched_agents
+        from pipeline_completion_state import (
+            get_completed_agents,
+            get_launched_agents,
+            get_plan_critic_skipped,
+        )
     except ImportError:
         # If state module not available, fall back to pure logic (no completions)
         return check_ordering_prerequisites(
@@ -338,6 +355,7 @@ def check_ordering_with_session_fallback(
 
     completed = get_completed_agents(session_id, issue_number=issue_number)
     launched = get_launched_agents(session_id, issue_number=issue_number)
+    plan_critic_skipped = get_plan_critic_skipped(session_id, issue_number=issue_number)
 
     return check_ordering_prerequisites(
         target_agent,
@@ -345,6 +363,7 @@ def check_ordering_with_session_fallback(
         validation_mode=validation_mode,
         launched_agents=launched,
         pipeline_mode=pipeline_mode,
+        plan_critic_skipped=plan_critic_skipped,
     )
 
 

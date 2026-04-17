@@ -712,27 +712,39 @@ def _write_jsonl_entry(
 PLAN_MODE_EXIT_MARKER = ".claude/plan_mode_exit.json"
 
 
-def _advance_plan_mode_stage() -> None:
+_PLAN_TO_ISSUES_SUGGESTION = (
+    "Plan approved. Next steps:\n"
+    "- `/plan-to-issues --quick` to create GitHub issues from this plan\n"
+    "- `/implement` to begin implementation directly"
+)
+
+
+def _advance_plan_mode_stage() -> Optional[str]:
     """Advance plan mode exit marker from plan_exited to critique_done.
 
     Called when plan-critic SubagentStop fires. If the marker exists and
     is at stage ``plan_exited``, advances it to ``critique_done`` so that
     unified_prompt_validator allows /implement and related commands.
 
-    Never raises — failures are silently ignored to avoid blocking the
-    SubagentStop hook.
+    Returns:
+        A suggestion message string when the stage successfully advances
+        from ``plan_exited`` to ``critique_done``, otherwise ``None``.
+        Never raises — failures are silently ignored to avoid blocking
+        the SubagentStop hook.
     """
     try:
         marker_path = Path(os.getcwd()) / PLAN_MODE_EXIT_MARKER
         if not marker_path.exists():
-            return
+            return None
         marker_data = json.loads(marker_path.read_text())
         if marker_data.get("stage") == "plan_exited":
             marker_data["stage"] = "critique_done"
             marker_data["critique_completed_at"] = datetime.now(timezone.utc).isoformat()
             marker_path.write_text(json.dumps(marker_data, indent=2))
+            return _PLAN_TO_ISSUES_SUGGESTION
+        return None
     except Exception:
-        pass  # Never crash on stage advance failure
+        return None  # Never crash on stage advance failure
 
 
 # ============================================================================
@@ -825,7 +837,12 @@ def main() -> int:
 
         # Plan-critic stage advance (Staged Plan-Exit Pipeline)
         if agent_name == "plan-critic":
-            _advance_plan_mode_stage()
+            suggestion = _advance_plan_mode_stage()
+            if suggestion is not None:
+                try:
+                    print(json.dumps({"systemMessage": suggestion}))
+                except Exception:
+                    pass  # Non-blocking: message output is advisory only
 
         # PROJECT.md progress updates (only for doc-master)
         if should_trigger_progress_update(agent_name) and check_pipeline_complete():

@@ -242,7 +242,7 @@ class TestSubagentTypePriority:
         self, mock_mode, mock_completed
     ):
         """When subagent_type is missing, text extraction should still work."""
-        mock_completed.return_value = {"planner", "test-master"}
+        mock_completed.return_value = {"planner", "plan-critic", "test-master"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -261,7 +261,7 @@ class TestSubagentTypePriority:
         self, mock_mode, mock_completed
     ):
         """Empty string subagent_type should fall back to text extraction."""
-        mock_completed.return_value = {"planner", "test-master"}
+        mock_completed.return_value = {"planner", "plan-critic", "test-master"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True), \
@@ -317,7 +317,7 @@ class TestTddFirstModeDependentPairs:
         self, mock_mode, mock_completed
     ):
         """In acceptance-first mode, implementer should not require test-master."""
-        mock_completed.return_value = {"researcher", "planner"}
+        mock_completed.return_value = {"researcher", "planner", "plan-critic"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True),              patch.object(hook, "_session_id", "test-session"):
@@ -332,7 +332,7 @@ class TestTddFirstModeDependentPairs:
         self, mock_mode, mock_completed
     ):
         """In TDD-first mode, implementer should pass when test-master completed."""
-        mock_completed.return_value = {"researcher", "planner", "test-master"}
+        mock_completed.return_value = {"researcher", "planner", "plan-critic", "test-master"}
         mock_mode.return_value = "sequential"
 
         with patch.object(hook, "_is_pipeline_active", return_value=True),              patch.object(hook, "_session_id", "test-session"):

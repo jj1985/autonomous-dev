@@ -13,7 +13,7 @@ import pytest
 HOOKS_DIR = Path(__file__).parent.parent.parent.parent / "plugins" / "autonomous-dev" / "hooks"
 sys.path.insert(0, str(HOOKS_DIR))
 
-from unified_session_tracker import _advance_plan_mode_stage
+from unified_session_tracker import _advance_plan_mode_stage, _PLAN_TO_ISSUES_SUGGESTION
 
 
 MARKER_REL_PATH = ".claude/plan_mode_exit.json"
@@ -106,3 +106,66 @@ class TestPlanCriticStageAdvance:
         # Marker should still exist (not deleted by advance logic)
         assert marker_path.exists()
         assert marker_path.read_text() == "not valid json {{{"
+
+    # ------------------------------------------------------------------
+    # Tests for return value (suggestion message)
+    # ------------------------------------------------------------------
+
+    def test_advance_returns_suggestion_on_stage_change(self, tmp_path: Path):
+        """_advance_plan_mode_stage returns non-None string when advancing plan_exited -> critique_done."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert result is not None
+        assert isinstance(result, str)
+
+    def test_suggestion_contains_plan_to_issues(self, tmp_path: Path):
+        """Returned suggestion includes /plan-to-issues --quick."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert "/plan-to-issues --quick" in result
+
+    def test_suggestion_contains_implement(self, tmp_path: Path):
+        """Returned suggestion includes /implement."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert "/implement" in result
+
+    def test_advance_returns_none_when_already_done(self, tmp_path: Path):
+        """Returns None when marker is already at critique_done."""
+        _write_marker(tmp_path, stage="critique_done")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert result is None
+
+    def test_advance_returns_none_when_no_marker(self, tmp_path: Path):
+        """Returns None when no marker file exists."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert result is None
+
+    def test_advance_returns_none_on_corrupted_marker(self, tmp_path: Path):
+        """Returns None when marker JSON is corrupted."""
+        marker_path = tmp_path / MARKER_REL_PATH
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.write_text("not valid json {{{")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert result is None
+
+    def test_suggestion_constant_matches_return_value(self, tmp_path: Path):
+        """Returned suggestion matches the exported _PLAN_TO_ISSUES_SUGGESTION constant."""
+        _write_marker(tmp_path, stage="plan_exited")
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            result = _advance_plan_mode_stage()
+
+        assert result == _PLAN_TO_ISSUES_SUGGESTION

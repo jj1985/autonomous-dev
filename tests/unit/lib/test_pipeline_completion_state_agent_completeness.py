@@ -86,7 +86,7 @@ class TestVerifyPipelineAgentCompletions:
     def test_all_agents_present_full_mode(self, session_id):
         """All full-mode agents present: gate passes."""
         full_agents = {
-            "researcher-local", "researcher", "planner",
+            "researcher-local", "researcher", "planner", "plan-critic",
             "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master",
         }
         self._record_agents(session_id, full_agents)
@@ -125,7 +125,7 @@ class TestVerifyPipelineAgentCompletions:
     def test_research_skipped_excludes_researchers(self, session_id):
         """When research_skipped, researchers are not required but security-auditor is."""
         agents = {
-            "planner", "implementer", "pytest-gate", "reviewer",
+            "planner", "plan-critic", "implementer", "pytest-gate", "reviewer",
             "security-auditor", "doc-master",
         }
         self._record_agents(session_id, agents)
@@ -214,7 +214,7 @@ class TestVerifyPipelineAgentCompletions:
     def test_specific_issue_number(self, session_id):
         """Verify with a specific issue number."""
         agents = {
-            "researcher-local", "researcher", "planner",
+            "researcher-local", "researcher", "planner", "plan-critic",
             "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master",
         }
         self._record_agents(session_id, agents, issue_number=802)

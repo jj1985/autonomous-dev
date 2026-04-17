@@ -107,7 +107,7 @@ class TestPytestGateOrdering:
 
     def test_implementer_not_blocked_by_pytest_gate(self):
         """Implementer does NOT depend on pytest-gate (it runs before it)."""
-        completed = {"planner"}
+        completed = {"planner", "plan-critic"}
         result = check_ordering_prerequisites(
             "implementer", completed, validation_mode="sequential"
         )

@@ -130,6 +130,7 @@ def test_spec_issue802_2_allowed_when_all_agents_completed(state_file_cleanup):
         "researcher-local",
         "researcher",
         "planner",
+        "plan-critic",
         "implementer",
         "pytest-gate",
         "reviewer",
@@ -164,7 +165,7 @@ def test_spec_issue802_3_allowed_when_research_skipped(state_file_cleanup):
     record_research_skipped(session_id, issue_number=0)
 
     # Record all agents EXCEPT researchers (which were legitimately skipped)
-    for agent in ["planner", "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master"]:
+    for agent in ["planner", "plan-critic", "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master"]:
         record_agent_completion(session_id, agent, issue_number=0, success=True)
 
     passed, completed, missing = verify_pipeline_agent_completions(

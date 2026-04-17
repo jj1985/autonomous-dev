@@ -448,6 +448,11 @@ Search `.claude/plans/` for a file whose name or content matches the current fea
 
 - **Skip plan-critic invocation** and continue to 5.5c (structural validation still runs)
 - Log: `Plan validation: SKIPPED (pre-validated plan: {path})`
+- **Record plan-critic skip in pipeline state** (Issue #878): When plan-critic is skipped, record it so the agent completeness gate knows plan-critic is not required:
+```python
+from pipeline_completion_state import record_plan_critic_skipped
+record_plan_critic_skipped(SESSION_ID, issue_number=ISSUE_NUM)
+```
 
 If no matching file with "Verdict: PROCEED" is found, proceed to 5.5b.
 
