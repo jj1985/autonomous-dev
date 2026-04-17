@@ -56,10 +56,10 @@ class TestAgentOrderingPrerequisites:
 
     def test_agent_tool_met_prerequisites_allowed(self):
         """Security-auditor with all prerequisites completed should be allowed."""
-        # security-auditor requires both implementer (core) and reviewer (sequential)
+        # security-auditor requires implementer, pytest-gate, and reviewer
         result = check_ordering_prerequisites(
             "security-auditor",
-            completed_agents={"implementer", "reviewer"},
+            completed_agents={"implementer", "pytest-gate", "reviewer"},
             validation_mode="sequential",
         )
         assert result.passed is True

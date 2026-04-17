@@ -63,8 +63,8 @@ class TestSequentialOrdering:
         assert not result.passed
         assert "planner" in result.missing_agents
 
-    def test_implementer_allowed_with_planner_and_test_master(self):
-        completed = {"planner", "test-master"}
+    def test_implementer_allowed_with_planner_plan_critic_and_test_master(self):
+        completed = {"planner", "plan-critic", "test-master"}
         result = check_ordering_prerequisites(
             "implementer", completed, validation_mode="sequential"
         )
@@ -369,11 +369,11 @@ class TestGetRequiredAgents:
         result = get_required_agents()
         assert result == FULL_PIPELINE_AGENTS
 
-    def test_full_with_research_skipped_has_6_agents(self):
-        """Issue #838: pytest-gate added, so 6 agents with research skipped."""
+    def test_full_with_research_skipped_has_7_agents(self):
+        """Issue #878: plan-critic added, so 7 agents with research skipped."""
         result = get_required_agents("full", research_skipped=True)
-        assert len(result) == 6
-        assert result == {"planner", "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master"}
+        assert len(result) == 7
+        assert result == {"planner", "plan-critic", "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master"}
 
 
 # ---------------------------------------------------------------------------
@@ -686,3 +686,124 @@ class TestCIAInFixAndLightPipelines:
         assert "continuous-improvement-analyst" in result
         assert "pytest-gate" in result
         assert len(result) == 5
+
+
+# ---------------------------------------------------------------------------
+# Issue #878 — plan-critic ordering enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestPlanCriticOrdering:
+    """Tests for plan-critic in the ordering gate. Issue #878."""
+
+    def test_plan_critic_in_full_pipeline_agents(self):
+        """FULL_PIPELINE_AGENTS must include plan-critic."""
+        assert "plan-critic" in FULL_PIPELINE_AGENTS
+
+    def test_plan_critic_not_in_fix_pipeline_agents(self):
+        """FIX_PIPELINE_AGENTS must NOT include plan-critic (fix mode skips planning)."""
+        assert "plan-critic" not in FIX_PIPELINE_AGENTS
+
+    def test_plan_critic_not_in_light_pipeline_agents(self):
+        """LIGHT_PIPELINE_AGENTS must NOT include plan-critic."""
+        assert "plan-critic" not in LIGHT_PIPELINE_AGENTS
+
+    def test_implementer_blocked_without_plan_critic_in_full_mode(self):
+        """In full mode, implementer requires plan-critic to complete first."""
+        completed = {"planner"}  # plan-critic missing
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="full"
+        )
+        assert not result.passed
+        assert "plan-critic" in result.missing_agents
+
+    def test_implementer_allowed_with_planner_and_plan_critic(self):
+        """In full mode, implementer passes when both planner and plan-critic completed."""
+        completed = {"planner", "plan-critic"}
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="full"
+        )
+        assert result.passed
+
+    def test_plan_critic_blocked_without_planner(self):
+        """plan-critic requires planner to complete first."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "plan-critic", completed, pipeline_mode="full"
+        )
+        assert not result.passed
+        assert "planner" in result.missing_agents
+
+    def test_plan_critic_allowed_with_planner(self):
+        """plan-critic passes when planner has completed."""
+        completed = {"planner"}
+        result = check_ordering_prerequisites(
+            "plan-critic", completed, pipeline_mode="full"
+        )
+        assert result.passed
+
+    def test_fix_mode_implementer_not_blocked_by_plan_critic(self):
+        """In fix mode, plan-critic is not part of the pipeline, so not enforced."""
+        completed = set()
+        result = check_ordering_prerequisites(
+            "implementer", completed, pipeline_mode="fix"
+        )
+        # In fix mode, neither planner nor plan-critic are required
+        assert result.passed
+
+    def test_get_required_agents_full_includes_plan_critic(self):
+        """get_required_agents('full') must include plan-critic."""
+        result = get_required_agents("full")
+        assert "plan-critic" in result
+
+    def test_get_required_agents_full_plan_critic_skipped(self):
+        """get_required_agents('full', plan_critic_skipped=True) excludes plan-critic."""
+        result = get_required_agents("full", plan_critic_skipped=True)
+        assert "plan-critic" not in result
+
+    def test_plan_critic_skipped_only_affects_full_mode(self):
+        """plan_critic_skipped should have no effect on non-full modes."""
+        fix_normal = get_required_agents("fix")
+        fix_skipped = get_required_agents("fix", plan_critic_skipped=True)
+        assert fix_normal == fix_skipped
+
+        light_normal = get_required_agents("light")
+        light_skipped = get_required_agents("light", plan_critic_skipped=True)
+        assert light_normal == light_skipped
+
+    def test_full_with_both_skips(self):
+        """Full mode with both research and plan-critic skipped."""
+        result = get_required_agents("full", research_skipped=True, plan_critic_skipped=True)
+        assert "researcher-local" not in result
+        assert "researcher" not in result
+        assert "plan-critic" not in result
+        assert "planner" in result
+        assert "implementer" in result
+        assert len(result) == 6  # 9 full - 2 researchers - 1 plan-critic
+
+    def test_ordering_gate_respects_plan_critic_skipped(self):
+        """check_ordering_prerequisites must respect plan_critic_skipped parameter.
+
+        Without the fix (Issue #878 BLOCKING FINDING 1), check_ordering_prerequisites
+        called get_required_agents without plan_critic_skipped, so plan-critic was
+        always required even when the bypass was active.
+        """
+        # With plan_critic_skipped=True, implementer should pass with only planner
+        result = check_ordering_prerequisites(
+            "implementer",
+            {"planner"},
+            pipeline_mode="full",
+            plan_critic_skipped=True,
+        )
+        assert result.passed, f"Should pass with plan_critic_skipped=True: {result.reason}"
+
+    def test_ordering_gate_blocks_without_plan_critic_skipped(self):
+        """Without plan_critic_skipped, implementer requires plan-critic."""
+        result = check_ordering_prerequisites(
+            "implementer",
+            {"planner"},
+            pipeline_mode="full",
+            plan_critic_skipped=False,
+        )
+        assert not result.passed
+        assert "plan-critic" in result.missing_agents

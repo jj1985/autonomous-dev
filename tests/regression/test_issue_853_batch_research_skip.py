@@ -49,7 +49,7 @@ def session_id(tmp_path, monkeypatch):
 # Full required agents for the "full" pipeline mode (must include researchers)
 # ---------------------------------------------------------------------------
 FULL_REQUIRED_AGENTS = {
-    "researcher-local", "researcher", "planner",
+    "researcher-local", "researcher", "planner", "plan-critic",
     "implementer", "pytest-gate", "reviewer", "security-auditor", "doc-master",
 }
 

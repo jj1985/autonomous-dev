@@ -64,6 +64,7 @@ STEP_ORDER = {
     "researcher-local": 2,
     "researcher": 2,
     "planner": 3,
+    "plan-critic": 3.5,
     "test-master": 4,
     "implementer": 5,
     "pytest-gate": 5.5,
@@ -74,6 +75,8 @@ STEP_ORDER = {
 
 # Agent pairs that MUST be sequential (first must complete before second starts)
 SEQUENTIAL_REQUIRED = [
+    ("planner", "plan-critic"),
+    ("plan-critic", "implementer"),
     ("planner", "implementer"),
     ("implementer", "reviewer"),
     ("implementer", "security-auditor"),

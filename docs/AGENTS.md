@@ -55,7 +55,7 @@ Deep reasoning for complex synthesis:
 - **implementer**: Code implementation
 - **test-master**: Quality Diamond test generation
 - **spec-validator**: Spec-blind behavioral validation (STEP 8.5) — validates implementation against acceptance criteria without seeing implementation details
-- **plan-critic**: Adversarial plan reviewer — challenges assumptions, detects scope creep, enforces minimalism before implementation begins (Issue #814)
+- **plan-critic**: Adversarial plan reviewer — challenges assumptions, detects scope creep, enforces minimalism before implementation begins. Scores each axis on a 1-5 Likert scale; composite mean >=3.0 with no axis below 2 yields PROCEED, <3.0 or any axis at 1 yields REVISE, <2.0 or 2+ axes at 1 yields BLOCKED. Delta tracking added to Scores table from round 2 onward. Budget mode (single-pass) evaluates only 3 axes. (Issue #814, Issue #880)
 
 ### Rationale
 

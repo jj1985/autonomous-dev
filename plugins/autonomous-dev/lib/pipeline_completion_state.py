@@ -637,6 +637,53 @@ def get_research_skipped(
     return bool(research_skipped.get(issue_key, False))
 
 
+def record_plan_critic_skipped(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+) -> None:
+    """Record that plan-critic was skipped for a given session/issue.
+
+    Called by the coordinator at STEP 5.5a when a pre-validated plan
+    is found in `.claude/plans/`, bypassing plan-critic invocation.
+
+    Args:
+        session_id: The pipeline session identifier.
+        issue_number: The issue number (0 for non-batch).
+
+    Issues: #878
+    """
+    state = _ensure_state(session_id)
+    plan_critic_skipped = state.setdefault("plan_critic_skipped", {})
+    issue_key = str(issue_number)
+    plan_critic_skipped[issue_key] = True
+    _write_state(session_id, state)
+
+
+def get_plan_critic_skipped(
+    session_id: str,
+    *,
+    issue_number: int = 0,
+) -> bool:
+    """Check if plan-critic was skipped for a given session/issue.
+
+    Args:
+        session_id: The pipeline session identifier.
+        issue_number: The issue number (0 for non-batch).
+
+    Returns:
+        True if plan-critic was recorded as skipped, False otherwise.
+
+    Issues: #878
+    """
+    state = _read_state(session_id)
+    if not state:
+        return False
+    plan_critic_skipped = state.get("plan_critic_skipped", {})
+    issue_key = str(issue_number)
+    return bool(plan_critic_skipped.get(issue_key, False))
+
+
 def verify_pipeline_agent_completions(
     session_id: str,
     pipeline_mode: str = "full",
@@ -680,6 +727,7 @@ def verify_pipeline_agent_completions(
     try:
         completed = get_completed_agents(session_id, issue_number=issue_number)
         research_skipped = get_research_skipped(session_id, issue_number=issue_number)
+        plan_critic_skipped = get_plan_critic_skipped(session_id, issue_number=issue_number)
 
         # Import agent_ordering_gate for get_required_agents
         try:
@@ -702,7 +750,11 @@ def verify_pipeline_agent_completions(
             else:
                 return (True, set(), set())  # Fail-open
 
-        required = get_required_agents(pipeline_mode, research_skipped=research_skipped)
+        required = get_required_agents(
+            pipeline_mode,
+            research_skipped=research_skipped,
+            plan_critic_skipped=plan_critic_skipped,
+        )
         missing = required - completed
 
         if missing:

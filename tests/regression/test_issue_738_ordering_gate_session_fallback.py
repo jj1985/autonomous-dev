@@ -174,8 +174,9 @@ class TestOrderingGateWithSessionFallback:
 
         real_sid = "test-real-gate-session"
 
-        # Coordinator writes planner completion under 'unknown'
+        # Coordinator writes planner and plan-critic completion under 'unknown'
         record_agent_completion("unknown", "planner", issue_number=0)
+        record_agent_completion("unknown", "plan-critic", issue_number=0)
 
         # Gate checks with real session ID
         result = check_ordering_with_session_fallback(
