@@ -11,6 +11,8 @@ user-invocable: true
 
 Convert plan mode output (or any discussed plan) into individual, trackable GitHub issues.
 
+> **Note**: `/plan` automatically runs issue creation in quick mode after plan-critic PROCEED. Use `/plan-to-issues` directly for thorough mode (full section templates) or if auto-creation was skipped (`--no-issues`).
+
 ## Modes
 
 | Mode | Time | Description |
@@ -38,9 +40,9 @@ If `--quick` is present, set quick_mode=true. Everything else is ignored (plan c
 
 ---
 
-### STEP 0.5: Check for Plan Files
+### STEP 0.5: Detect Plan Files
 
-Check if `.claude/plans/` directory exists and contains plan files:
+Detect whether `.claude/plans/` directory exists and contains plan files:
 
 ```bash
 ls -la .claude/plans/*.md 2>/dev/null
@@ -78,7 +80,7 @@ The plan is in the **current conversation context** (or from a `.claude/plans/` 
 - A short title (suitable for GitHub issue title, prefixed with `feat:`, `fix:`, `refactor:`, etc.)
 - A description (the content/details associated with that item)
 
-**Plan mode exit marker**: Check for `.claude/plan_mode_exit.json`. If it exists, note it as confirmation that plan mode was used. Read any `plan_content` field from the marker to supplement extraction.
+**Plan mode exit marker**: Detect `.claude/plan_mode_exit.json`. If it exists, note it as confirmation that plan mode was used. Read any `plan_content` field from the marker to supplement extraction.
 
 **If no items can be extracted**: Prompt the user to describe the plan items explicitly. Do NOT proceed without items.
 

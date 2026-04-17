@@ -1,7 +1,7 @@
 ---
 name: plan
 description: "Create a validated planning document with adversarial critique before implementation"
-argument-hint: "Feature description (e.g., '/plan Add JWT authentication for API endpoints')"
+argument-hint: "Feature description [--no-issues] (e.g., '/plan Add JWT authentication for API endpoints')"
 allowed-tools: [Task, Read, Bash, Grep, Glob, WebSearch, Write]
 disable-model-invocation: false
 user-invocable: true
@@ -21,7 +21,13 @@ ARGUMENTS: {{ARGUMENTS}}
 
 ### STEP 0: Parse Arguments
 
-Parse the `{{ARGUMENTS}}` placeholder for the feature description.
+Parse the `{{ARGUMENTS}}` placeholder for the feature description and flags:
+
+```
+--no-issues       Skip automatic GitHub issue creation in Step 6
+```
+
+If `--no-issues` is present, set no_issues=true. Strip the flag from the feature description string before use.
 
 If no description provided, prompt the user for a feature description.
 
@@ -90,18 +96,46 @@ Do NOT proceed past Step 5 until the plan-critic issues PROCEED.
 
 ---
 
-### STEP 6: Issue Decomposition (Required when multi-item)
+### STEP 6: Auto-Create GitHub Issues (--quick mode, PROCEED only)
 
-**HARD GATE**: If the Minimal Path from Step 4 contains **>=2 independent work items**, issue creation is REQUIRED. You MUST create GitHub issues for each independent item before proceeding to Step 7.
+**This step runs ONLY after a PROCEED verdict from Step 5.** If the plan-critic issued REVISE or BLOCKED, do NOT run this step — return to Step 5 to address the feedback first.
+
+**HARD GATE**: When >=2 independent work items exist, you MUST create GitHub issues before proceeding to Step 7. Issue creation is REQUIRED for multi-item plans — it is not optional.
 
 **FORBIDDEN**:
-- FORBIDDEN: Skipping issue creation when the Minimal Path contains >=2 independent work items
+- FORBIDDEN: Running issue creation after a REVISE verdict
+- FORBIDDEN: Running issue creation after a BLOCKED verdict
+- FORBIDDEN: Blocking plan file creation (Step 7) if issue creation fails
 - FORBIDDEN: Declaring work items as "not independent" to avoid issue creation without specific, stated justification
-- FORBIDDEN: Proceeding to Step 7 without either creating issues OR logging the single-item skip message below
+- FORBIDDEN: Skipping issue creation when >=2 independent work items exist (use --no-issues flag instead if intentional)
+- FORBIDDEN: Proceeding to Step 7 without either creating issues or logging an explicit skip reason
 
-#### When to create issues (>=2 independent work items):
+#### Guard: --no-issues flag
 
-1. Write each issue body to a temp file and create the command context file:
+If `--no-issues` was set in Step 0, log the following and proceed directly to Step 7:
+
+```
+Skipping Step 6: --no-issues flag set — issue creation suppressed.
+Run /plan-to-issues for thorough issue creation with full section templates.
+```
+
+Record `Issues not created — --no-issues flag was set` in the `## Linked Issues` section of the plan file.
+
+#### Guard: single work item
+
+If the Minimal Path from Step 4 contains **<2 independent work items**, log the following and proceed directly to Step 7:
+
+```
+Skipping Step 6: plan is a single coherent unit — no issue decomposition needed.
+```
+
+Record `N/A — single work item` in the `## Linked Issues` section of the plan file.
+
+#### When to create issues (>=2 independent work items, after PROCEED):
+
+Issue creation uses quick mode: Summary + Implementation Approach + Acceptance Criteria only (no full template).
+
+1. Create the command context file (required by hook):
    ```bash
    python3 -c "
    import json; from datetime import datetime, timezone
@@ -110,32 +144,37 @@ Do NOT proceed past Step 5 until the plan-critic issues PROCEED.
    "
    ```
 
-2. For each independent work item, create a GitHub issue:
+2. For each independent work item, write the issue body and create the issue:
    ```bash
    cat > /tmp/plan_issue_N.md << 'ISSUE_EOF'
-   <issue body: title, description, acceptance criteria>
+   ## Summary
+   <1-2 sentence description of the work item>
+
+   ## Implementation Approach
+   <Key steps and technical approach>
+
+   ## Acceptance Criteria
+   - [ ] <criterion 1>
+   - [ ] <criterion 2>
    ISSUE_EOF
    gh issue create --title "feat: <sanitized item title>" --body-file /tmp/plan_issue_N.md
    ```
 
-3. Collect created issue numbers (e.g., `#101`, `#102`).
+3. Collect created issue URLs (e.g., `https://github.com/owner/repo/issues/101`).
 
 4. Clean up temp files:
    ```bash
    rm -f /tmp/plan_issue_*.md /tmp/autonomous_dev_cmd_context.json
    ```
 
-**gh CLI unavailability fallback**: If `gh` is not available or authentication fails, log a warning and suggest running `/plan-to-issues` manually after plan creation. Do NOT block the plan file from being written.
+5. Display created issue URLs to the user.
 
-#### When to skip (single coherent unit — <2 independent items):
-
-Log the following message and proceed directly to Step 7:
+**Non-blocking error handling**: If `gh issue create` fails for any reason (not installed, not authenticated, network error), log a warning and continue to Step 7. Do NOT halt or block plan file creation. Suggest running `/plan-to-issues` manually.
 
 ```
-Skipping Step 6: plan is a single coherent unit — no issue decomposition needed.
+Warning: gh issue create failed — <error message>
+Run /plan-to-issues after plan creation to create issues manually.
 ```
-
-Record `N/A — single work item` in the `## Linked Issues` section of the plan file.
 
 ---
 
@@ -172,22 +211,40 @@ Write the validated plan to `.claude/plans/<slug>.md` with these required sectio
 [Summary of plan-critic rounds and resolutions]
 
 ## Linked Issues
-[List of created issues: "- #NNN: Title" for each issue, or "N/A — single work item" if no issues were created, or "Issues not created — run `/plan-to-issues`" if gh was unavailable]
+[One of:
+- "- #NNN: Title (https://github.com/owner/repo/issues/NNN)" for each auto-created issue
+- "N/A — single work item" if no issue decomposition was needed
+- "Issues not created — --no-issues flag was set" if --no-issues was passed
+- "Issues not created — run /plan-to-issues" if gh was unavailable or failed]
 ```
 
 ---
 
 ### Output
 
-Display the plan file path and next steps:
+Display the plan file path, created issues (if any), and next steps:
+
+```
+Plan created: .claude/plans/<slug>.md
+
+Issues created:
+  https://github.com/owner/repo/issues/101 — feat: <item 1>
+  https://github.com/owner/repo/issues/102 — feat: <item 2>
+
+Next steps:
+  /implement "feature description"            -- implement the plan directly
+  /implement --issues #101,#102              -- implement via linked issues
+```
+
+If issues were NOT created (--no-issues flag, single work item, or gh failure):
 
 ```
 Plan created: .claude/plans/<slug>.md
 
 Next steps:
   /implement "feature description"            -- implement the plan directly
-  /implement --issues #N1,#N2,...             -- implement via linked issues (if issues were created)
-  /plan-to-issues                             -- convert plan into GitHub issues (if gh was unavailable)
+  /plan-to-issues                             -- create GitHub issues (thorough mode)
+  /plan-to-issues --quick                     -- create GitHub issues (quick mode)
 ```
 
 ---
@@ -201,7 +258,7 @@ Next steps:
 | Existing Solutions | 2-3 min | Search codebase + web |
 | Minimal Path | 1-2 min | Design smallest change |
 | Adversarial Critique | 3-5 min | plan-critic review (2+ rounds) |
-| Issue Decomposition | 0-2 min | Optional breakdown |
+| Issue Decomposition | 0-2 min | Auto-create GitHub issues (--quick mode, PROCEED only) |
 | Write Plan | 30 sec | Output to .claude/plans/ |
 | **Total** | **8-15 min** | Full planning workflow |
 
