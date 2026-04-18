@@ -45,6 +45,8 @@ Estimate the number of files that will be created or modified.
 
 Invoke the **plan-critic** agent for initial feedback on the problem statement. The plan-critic provides adversarial review to challenge assumptions and find gaps.
 
+**Agent**(subagent_type="plan-critic", model="opus")
+
 ---
 
 ### STEP 2: Scope Check
@@ -79,20 +81,67 @@ This section becomes the "## Minimal Path" in the plan output.
 
 ---
 
-### STEP 5: Adversarial Critique
+### STEP 5: Adversarial Critique — Iterative Loop
 
 Invoke the **plan-critic** agent with the full plan draft.
 
-The plan-critic MUST complete minimum 2 critique rounds:
-- Round 1: Identify issues across all 5 critique axes
-- Round 2: Verify fixes and probe deeper
+**Agent**(subagent_type="plan-critic", model="opus")
 
-Verdicts:
-- **PROCEED**: Plan is adequate, continue to Step 6
-- **REVISE**: Address feedback and re-submit to plan-critic
-- **BLOCKED**: Rethink the approach entirely
+**IMPORTANT — MODEL ENFORCEMENT**: The plan-critic MUST run as `model="opus"`. Do NOT invoke plan-critic with sonnet, haiku, or any other model. Opus is required for adversarial critique quality.
+
+Run plan-critic in a **sequential iterative loop**. Each round is a SEPARATE agent invocation. Output from round N is input to round N+1.
+
+**Loop rules:**
+- **Minimum**: 3 rounds (not 2 — 2 rounds catches surface issues, 3rd round validates the fixes)
+- **Maximum**: 5 rounds (beyond 5, error introduction exceeds correction — per iterative review-fix convergence formula)
+- **Convergence**: Stop after round ≥ 3 IF composite score ≥ 3.0 AND no axis below 2. Otherwise continue.
+- **NEVER run rounds concurrently** — each round MUST complete before the next starts
+
+**Round protocol:**
+
+**Round 1**: Pass the full plan draft. Instruct: "This is your FIRST critique round — identify issues across all 5 critique axes."
+
+**Round 2+**: Pass the plan (revised if REVISE verdict) AND the previous round's full verdict output. Instruct: "This is ROUND N. Previous round verdict: {verdict}, score: {composite}. Previous findings: {key issues}. Verify fixes and probe deeper."
+
+**After each round**, parse the verdict:
+- **PROCEED** (score ≥ 3.0, no axis below 2): If round ≥ 3, exit loop. If round < 3, continue (minimum rounds not met).
+- **REVISE**: Revise the plan based on feedback. Feed revised plan + critique into next round.
+- **BLOCKED**: Rethink approach. Either revise fundamentally and restart critique loop, or escalate to user.
+
+**Score tracking**: Maintain a running table of scores across rounds:
+
+| Round | Verdict | Composite | Assumption | Scope | Existing | Minimalism | Uncertainty |
+|-------|---------|-----------|------------|-------|----------|------------|-------------|
+
+Track delta between rounds. Score regression (lower than previous) is EXPECTED and ACCEPTABLE — it means deeper issues were found.
+
+**Exit condition**: The FINAL round's verdict determines the outcome. Not the best score, not the average — the last round.
+
+**Convergence Trap Detection** — Check after each round:
+
+1. **Plateau/Divergence**: If finding count plateaus or INCREASES across 2+ consecutive rounds → issue BLOCKED (loop is stuck, not converging)
+2. **Critic Instability**: If composite score drops > 1 point with NO corresponding plan revision → flag as critic instability, escalate to user: "Critic scores inconsistent — composite dropped {delta} without plan changes. Review manually or continue?"
+3. **Sycophantic Drift**: If scores rose but plan text is UNCHANGED between rounds → do NOT accept PROCEED. Force one more round with instruction: "Scores improved without plan changes — re-evaluate from scratch."
+
+**FORBIDDEN**:
+- FORBIDDEN: Invoking plan-critic with any model other than `"opus"`
+- FORBIDDEN: Omitting the `model="opus"` parameter when calling plan-critic
+- FORBIDDEN: Running fewer than 3 critique rounds
+- FORBIDDEN: Running critique rounds concurrently (each round MUST complete before the next)
+- FORBIDDEN: Proceeding past Step 5 before the final round issues PROCEED
+- FORBIDDEN: Using the best or average score instead of the final round's verdict
 
 Do NOT proceed past Step 5 until the plan-critic issues PROCEED.
+
+**HARD GATE: Transition to STEP 6**
+
+After the final PROCEED verdict from Step 5, you MUST immediately proceed to STEP 6 (issue creation). Do NOT skip to Step 7.
+
+**FORBIDDEN**:
+- FORBIDDEN: Writing the plan file (Step 7) before completing Step 6
+- FORBIDDEN: Skipping Step 6 without logging an explicit skip reason (--no-issues flag or single work item)
+
+The plan file MUST contain a "## Linked Issues" section with either issue URLs or an explicit skip reason before Step 7 can proceed.
 
 ---
 
@@ -257,7 +306,7 @@ Next steps:
 | Scope Check | 30 sec | Validate file count estimate |
 | Existing Solutions | 2-3 min | Search codebase + web |
 | Minimal Path | 1-2 min | Design smallest change |
-| Adversarial Critique | 3-5 min | plan-critic review (2+ rounds) |
+| Adversarial Critique | 5-10 min | plan-critic review (3-5 rounds) |
 | Issue Decomposition | 0-2 min | Auto-create GitHub issues (--quick mode, PROCEED only) |
 | Write Plan | 30 sec | Output to .claude/plans/ |
 | **Total** | **8-15 min** | Full planning workflow |
