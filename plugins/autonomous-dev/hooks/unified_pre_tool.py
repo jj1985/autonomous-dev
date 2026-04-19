@@ -68,6 +68,7 @@ Agent: implementer
 
 import importlib.util
 import json
+import re
 import shlex
 import sys
 import os
@@ -2116,7 +2117,7 @@ def _check_pipeline_agent_completions(session_id: str) -> "Optional[str]":
             f"{missing_str}. Completed: {completed_str}. "
             f"All required pipeline agents MUST complete before git commit. "
             f"REQUIRED NEXT ACTION: Run the missing agents before committing. "
-            f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run: touch /tmp/skip_agent_completeness_gate (Issue #802)"
+            f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run `touch /tmp/skip_agent_completeness_gate` as a SEPARATE command first, then retry the commit (Issue #802)"
         )
     except Exception:
         return None  # Fail-open
@@ -3852,7 +3853,20 @@ def main():
                                         _skip_gate_via_file = True
                                 except OSError:
                                     pass
-                                if os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() not in ("1", "true", "yes") and not _skip_gate_via_file:
+                                # Issue #802 fix: Also check for inline env var in the command string
+                                # Models naturally write "SKIP_AGENT_COMPLETENESS_GATE=1 git commit ..."
+                                # but inline vars only affect the child process, not this hook's os.environ
+                                # Security fix: Only match at START of command (not in commit messages)
+                                _skip_gate_via_command = bool(re.match(r'(?i)SKIP_AGENT_COMPLETENESS_GATE=[1]', command.strip())) or bool(re.match(r'(?i)skip_agent_completeness_gate=true', command.strip()))
+                                # Log bypass activations for audit trail
+                                _skip_gate_via_env = os.environ.get("SKIP_AGENT_COMPLETENESS_GATE", "").strip().lower() in ("1", "true", "yes")
+                                if _skip_gate_via_file:
+                                    _log_pretool_activity(tool_name, tool_input, "allow", "bypass: file-based gate skip consumed")
+                                if _skip_gate_via_command:
+                                    _log_pretool_activity(tool_name, tool_input, "allow", "bypass: inline env var in command string")
+                                if _skip_gate_via_env:
+                                    _log_pretool_activity(tool_name, tool_input, "allow", "bypass: SKIP_AGENT_COMPLETENESS_GATE set in process environment")
+                                if not _skip_gate_via_env and not _skip_gate_via_file and not _skip_gate_via_command:
                                     _agent_gate_session_id = os.environ.get("CLAUDE_SESSION_ID", _session_id)
                                     cwd = os.getcwd()
                                     if ".worktrees/batch-" in cwd:
@@ -3900,7 +3914,7 @@ def main():
                                                         f"required pipeline agents: {'; '.join(_batch_agent_failures)}. "
                                                         f"All required pipeline agents MUST complete for every issue before git commit. "
                                                         f"REQUIRED NEXT ACTION: Run the missing agents for the listed issues before committing. "
-                                                        f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run: touch /tmp/skip_agent_completeness_gate (Issue #853)"
+                                                        f"Set SKIP_AGENT_COMPLETENESS_GATE=1 to bypass, or run `touch /tmp/skip_agent_completeness_gate` as a SEPARATE command first, then retry the commit (Issue #853)"
                                                     )
                                                     _log_pretool_activity(tool_name, tool_input, "deny", _batch_agent_result)
                                                     output_decision(
