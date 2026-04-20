@@ -74,4 +74,51 @@ Component counts: 15 agents, 19 skills, 22 commands, 24 hooks, 196 libraries.
 
 `SessionStart-batch-recovery.sh` auto-restores batch state after `/clear` or auto-compact. Activity logged to `.claude/logs/activity/` by `session_activity_logger.py`.
 
-**Last Updated**: 2026-04-12
+## Session History & Analytics
+
+Every Claude Code session is archived by `conversation_archiver.py` (Stop hook). Full transcripts + SQLite index at `~/.claude/archive/`.
+
+**Locations:**
+| What | Where |
+|------|-------|
+| SQLite index (17-column summary per session) | `~/.claude/archive/sessions.db` |
+| Full raw transcripts (per-turn, every prompt/response/tool call) | `~/.claude/archive/conversations/{YYYY-MM}/{session_id}.jsonl` |
+| JSONL index (dedup'd session metadata) | `~/.claude/archive/index.jsonl` |
+
+**Schema columns:** `session_id, project, cwd, archive_path, first_seen, last_updated, message_count, user_messages, assistant_messages, tool_calls, total_input_tokens, total_output_tokens, transcript_bytes, model, first_user_prompt, cache_read_tokens, cache_creation_tokens`
+
+**Common queries:**
+
+```bash
+# Per-repo totals (sessions, tokens, tool calls)
+sqlite3 -header -column ~/.claude/archive/sessions.db \
+  "SELECT project, COUNT(*) n, SUM(total_output_tokens) out_tok, SUM(tool_calls) tools
+   FROM sessions GROUP BY project ORDER BY out_tok DESC;"
+
+# Recent sessions for a specific repo
+sqlite3 -header -column ~/.claude/archive/sessions.db \
+  "SELECT substr(session_id,1,8) sid, last_updated, message_count, model, substr(first_user_prompt,1,60) prompt
+   FROM sessions WHERE project='autonomous-dev' ORDER BY last_updated DESC LIMIT 10;"
+
+# Biggest sessions by output tokens
+sqlite3 -header -column ~/.claude/archive/sessions.db \
+  "SELECT project, substr(session_id,1,8) sid, total_output_tokens, tool_calls, substr(first_user_prompt,1,50) prompt
+   FROM sessions ORDER BY total_output_tokens DESC LIMIT 10;"
+
+# Cache hit rate (higher cache_read_tokens vs input_tokens = better caching)
+sqlite3 -header -column ~/.claude/archive/sessions.db \
+  "SELECT project, SUM(total_input_tokens) fresh_in, SUM(cache_read_tokens) cache_read,
+          ROUND(100.0 * SUM(cache_read_tokens) / NULLIF(SUM(cache_read_tokens + total_input_tokens), 0), 1) cache_pct
+   FROM sessions GROUP BY project ORDER BY cache_read DESC;"
+
+# Find transcript file for a session
+sqlite3 ~/.claude/archive/sessions.db \
+  "SELECT archive_path FROM sessions WHERE session_id LIKE 'abc12345%';"
+
+# Search every transcript for a past prompt or command
+grep -l "search term" ~/.claude/archive/conversations/**/*.jsonl
+```
+
+**Note on `project` values:** Derived from `cwd` basename — worktrees and subdirectories (e.g., `spektiv/frontend`) get their own project row rather than rolling into the parent repo.
+
+**Last Updated**: 2026-04-21
