@@ -18,7 +18,9 @@ This document describes the agent architecture, including core workflow agents, 
 
 **Active Agents**: continuous-improvement-analyst, doc-master, implementer, issue-creator, mobile-tester, plan-critic, planner, researcher, researcher-local, retrospective-analyst, reviewer, security-auditor, spec-validator, test-coverage-auditor, test-master, ui-tester
 
-**Archived Agents** (18, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
+**Archived Agents** (20, in `agents/archived/`): advisor, alignment-analyzer, alignment-validator, brownfield-analyzer, commit-message-generator, data-curator, data-quality-validator, distributed-training-coordinator, experiment-critic, orchestrator, postmortem-analyst, pr-description-generator, project-bootstrapper, project-progress-tracker, project-status-analyzer, quality-validator, setup-wizard, sync-validator
+
+**Which agents run in which pipeline mode**: See [docs/PIPELINE-MODES.md](PIPELINE-MODES.md) for the full mode matrix (full / `--tdd-first` / `--light` / `--fix` / `--batch`).
 
 ---
 

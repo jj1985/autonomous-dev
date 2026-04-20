@@ -110,4 +110,4 @@ assignees: ''
 ---
 
 *Auto-created by `/test system-performance --track-issues`*
-*See: [SYSTEM-PERFORMANCE-GUIDE.md](docs/SYSTEM-PERFORMANCE-GUIDE.md)*
+*See: [PERFORMANCE.md](../../docs/PERFORMANCE.md)*

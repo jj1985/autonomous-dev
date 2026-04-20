@@ -29,7 +29,7 @@ This registry provides a comprehensive view of:
 
 ### Unified Hooks
 
-The plugin uses 24 active hooks (files on disk in `plugins/autonomous-dev/hooks/`, 61 archived):
+The plugin uses 30 active hooks (files on disk in `plugins/autonomous-dev/hooks/`, 62 archived):
 
 | Hook File | Lifecycle/Trigger | Status | Purpose |
 |-----------|------------------|--------|---------|

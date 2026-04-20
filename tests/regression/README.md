@@ -459,7 +459,7 @@ def isolation_guard(monkeypatch):
 - [pytest docs](https://docs.pytest.org/)
 - [pytest-xdist docs](https://pytest-xdist.readthedocs.io/)
 - [syrupy docs](https://github.com/tophat/syrupy)
-- [Testing guide skill](../../docs/skills/testing-guide.md)
+- [Testing guide skill](../../plugins/autonomous-dev/skills/testing-guide/SKILL.md)
 
 **Project Docs**:
 - [CHANGELOG.md](../../CHANGELOG.md) - Version history

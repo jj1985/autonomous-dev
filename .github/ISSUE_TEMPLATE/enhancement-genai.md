@@ -71,4 +71,4 @@ assignees: ''
 ---
 
 *Auto-created by `/test uat-genai --track-issues`*
-*See: [GENAI-TESTING-GUIDE.md](docs/GENAI-TESTING-GUIDE.md)*
+*See: [TESTING-STRATEGY.md](../../docs/TESTING-STRATEGY.md)*

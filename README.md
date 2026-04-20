@@ -26,18 +26,21 @@ A *harness* is the software and structure that wraps an AI model to keep it on t
 
 ## What Does It Actually Do?
 
-When you type `/implement "#72"`, Claude coordinates specialist agents through an 8-step pipeline:
+When you type `/implement "#72"`, Claude coordinates specialist agents through a multi-stage pipeline:
 
 | Step | Agent | What It Does |
 |------|-------|--------------|
 | 1 | **alignment check** | Checks if the feature fits your PROJECT.md goals and scope. Blocks if it doesn't. |
 | 2 | **researcher** (x2) | Searches codebase + web for patterns, best practices, existing solutions |
 | 3 | **planner** | Designs the architecture and creates a file-by-file implementation plan |
+| 3.5 | **plan-critic** | Adversarial review across 5 axes (assumption audit, scope creep, existing solutions, minimalism, uncertainty). Iterates planner until verdict is PROCEED. |
 | 4 | **acceptance tests** | Writes acceptance tests that define what "done" means |
 | 5 | **implementer** | Writes code + unit tests to make the acceptance tests pass |
-| 6 | **reviewer** | Reviews code quality, checks patterns, flags issues |
-| 7 | **security-auditor** | Scans for vulnerabilities (OWASP top 10) |
-| 8 | **doc-master** | Updates documentation to match the new code |
+| 5.5 | **plan-implementation alignment gate** | Compares planned files vs implemented files. Blocks on >50% divergence. |
+| 6 | **spec-validator** | Spec-blind behavioral validation — writes tests from acceptance criteria *without seeing* the implementation, then validates against it |
+| 7 | **reviewer** | Reviews code quality across 6 dimensions (correctness, tests, security, performance, maintainability, observability) |
+| 8 | **security-auditor** | Scans for vulnerabilities (OWASP top 10, 29 security-sensitive path patterns) |
+| 9 | **doc-master** | Updates documentation to match the new code |
 
 After all agents complete:
 - Code is committed with a descriptive message
@@ -81,6 +84,26 @@ autonomous-dev enforces process through three layers, each addressing a differen
 
 **The result**: Every feature goes through every step. Not because Claude remembers to, but because the harness won't let it skip.
 
+### Recent Improvements
+
+The harness shipped substantial enforcement hardening in the last week. Highlights:
+
+- **Planning workflow system** — New `/plan` command runs a 7-step structured planning process (problem → existing solutions → minimal path) with adversarial review by a `plan-critic` agent. The critic scores plans on a 1-5 Likert scale across 5 axes (assumption audit, scope creep, existing solutions, minimalism, uncertainty); composite ≥3.0 yields PROCEED, <3.0 forces REVISE, <2.0 BLOCKS. `plan_gate.py` PreToolUse hook blocks complex Write/Edit operations without a validated plan in `.claude/plans/`. On PROCEED, GitHub issues are auto-created when the plan contains ≥2 independent work items.
+- **Plan-critic iterative loop** — Multi-round orchestration with convergence detection. Re-invokes planner with verbatim feedback until verdict converges or max rounds hit. Threaded output between rounds preserves critique history.
+- **Plan Validation Gate (STEP 5.5)** and **Plan-Implementation Alignment Gate (STEP 7.25)** — Adversarial review between planner and acceptance tests; post-implementation comparison of planned vs `git diff` files (blocks on >50% divergence).
+- **Iterative refinement loops (Self-Refine pattern)** — `/implement`, `/advise`, and `/refactor` now include inline FEEDBACK passes (~20% quality improvement per NeurIPS 2023 research). One pass only — two-pass optimum per the paper.
+- **Prompt quality gate (Layer 6)** — Write-time enforcement on `agents/*.md` and `commands/*.md`: blocks expert-persona openers (PRISM-validated anti-pattern), casual register words (`check for`, `make sure`, `try to`), and constraint sections exceeding 8 bullets (MOSAIC compliance threshold).
+- **Pipeline ordering enforcement** — `pytest-gate` is now a virtual prerequisite for STEP 10 agents; `reviewer → security-auditor` is always sequential regardless of validation mode. Pre-Dispatch Ordering Protocol calls `check_ordering_with_session_fallback()` before every Agent dispatch.
+- **Root Cause Analysis HARD GATE** — `/implement --fix` requires implementer output to contain a `## Root Cause Analysis` section (root cause + mechanism chain + 5 Whys + category) before declaring complete.
+- **Agent completeness gate (batch-aware)** — `git commit` is blocked during active pipeline runs when required agents haven't completed; per-issue checks in batch mode with `research_skipped` and `plan_critic_skipped` flags.
+- **Opportunistic fix-forward classification** — Captures pre-existing failing tests at STEP 1; classifies STEP 8 failures into `fixed` / `pre_existing_remaining` / `new_failures`. Auto-files GitHub issues for pre-existing failures with `pre-existing-failure` label.
+- **Prompt integrity calibration** — Per-issue threshold tightened to 20%, cumulative drift threshold calibrated to 30% based on real batch observations. Cross-issue baseline fallback prevents undetected shrinkage on first batch issue.
+- **Staged plan-exit pipeline** — 2-state machine (`plan_exited` → `critique_done`) prevents the model from skipping plan-critic after exiting plan mode.
+- **Multi-candidate lib path resolver** — `/implement` and 9 other commands now probe `.claude/lib` → `plugins/autonomous-dev/lib` → `~/.claude/lib`; consumer-repo installs no longer fail with `ModuleNotFoundError`.
+- **Conversation archiver + SQLite index** — Every session archived to `~/.claude/archive/` with full transcripts and queryable SQLite index for cross-month analytics.
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete list with issue references.
+
 ### The 12 Elements of Harness Engineering
 
 The core insight of harness engineering: reliability in multi-step AI workflows is difficult because failures compound. A 10-step process with 90% accuracy per step fails over 60% of the time. "Agent skills" that are just prompts or markdown files — where you *hope* the AI follows instructions — lack the dependability required for production work.
@@ -94,7 +117,7 @@ The solution is **deterministic rails**: a software layer that gates and validat
 | 3 | **Isolated Sub-Agents** | Specialist agents, each spawned with fresh context and constrained tools. Model selection per agent (Haiku/Sonnet/Opus) |
 | 4 | **Virtual File System** | Git worktree isolation for batch mode. `checkpoint.py` + `artifacts.py` persist outputs to `.claude/artifacts/` per phase |
 | 5 | **Human-in-the-Loop** | Plan mode (STEP 5) requires user approval before implementation. `pause_controller.py` for explicit gates |
-| 6 | **Hook Enforcement** | 23 hooks with JSON `{"decision": "block"}` hard gates — not prompt-level nudges. Research-confirmed: nudges produce unreliable compliance |
+| 6 | **Hook Enforcement** | 27 hooks with JSON `{"decision": "block"}` hard gates — not prompt-level nudges. Research-confirmed: nudges produce unreliable compliance. Includes `plan_gate.py` (blocks complex Write/Edit without validated plan) and Layer 6 prompt quality gate (blocks anti-pattern prompts to `agents/*.md` and `commands/*.md`) |
 | 7 | **State Persistence** | `CheckpointManager` for resume after failure. `batch_state_manager.py` for multi-feature recovery. `/implement --resume` |
 | 8 | **Context Management** | Progressive skill injection loads domain knowledge per-step. `/clear` between features. Agent isolation prevents context rot |
 | 9 | **Deterministic Ordering** | `agent_ordering_gate.py` enforces pipeline sequence. "You MUST NOT run STEP 10 before STEP 8 test gate passes" |
@@ -211,11 +234,23 @@ For existing projects, use:
 ### Pipeline Modes
 
 ```bash
-/implement "#72"              # Full pipeline (default) - 7 agents, acceptance-first
+/implement "#72"              # Full pipeline (default) - acceptance-first
 /implement --light "#72"      # Light pipeline - docs/config/simple changes
 /implement --tdd-first "#72"  # TDD-first - unit tests before implementation
-/implement --fix "#72"        # Fix mode - minimal pipeline for test fixes
+/implement --fix "#72"        # Fix mode - root-cause analysis HARD GATE for bug fixes
 ```
+
+### Planning Workflow
+
+Use `/plan` for changes touching >3 files, >100 lines, or with uncertain approach. The 7-step planning process is enforced by `plan_gate.py` (blocks complex Write/Edit without a validated plan in `.claude/plans/`).
+
+```bash
+/plan "Add OAuth login"       # 7-step structured planning + iterative plan-critic
+/plan --no-issues "..."       # Skip auto-creation of GitHub issues
+/plan-to-issues               # Thorough-mode fallback for batch issue creation
+```
+
+The `/plan` flow: problem statement → existing solutions search → minimal path → adversarial critique by plan-critic (1-5 Likert score across 5 axes, iterates planner until composite ≥3.0) → on PROCEED, automatically creates GitHub issues when ≥2 independent work items exist. See [docs/PLANNING-WORKFLOW.md](docs/PLANNING-WORKFLOW.md).
 
 ### Batch Processing
 
@@ -228,10 +263,11 @@ For existing projects, use:
 ### Project Management
 
 ```bash
+/plan "..."              # 7-step planning workflow with adversarial plan-critic
 /status                  # View PROJECT.md goal progress
 /align                   # Check alignment (--project, --docs, --retrofit)
 /create-issue "..."      # Create GitHub issue with automated research
-/plan-to-issues          # Batch-convert plan mode output into GitHub issues
+/plan-to-issues          # Thorough-mode batch issue creation from plan output
 /health-check            # Verify plugin installation
 ```
 
@@ -270,6 +306,8 @@ Inspired by the adversarial evaluation pattern (generator creates, evaluator jud
      |
 PROJECT.md Alignment Check (blocks if misaligned)
      |
+Research Self-Critique (inline FEEDBACK pass, Self-Refine pattern)
+     |
 +------------------+------------------+
 | Research-Local   | Research-Web     |  <- Parallel research
 | (Haiku)          | (Sonnet)         |
@@ -277,21 +315,33 @@ PROJECT.md Alignment Check (blocks if misaligned)
      |
 Planning (Opus)
      |
-Acceptance Tests (test-master)     <- Acceptance-first (default)
-     |                                 or TDD-first (--tdd-first)
-Implementation (Opus) -> HARD GATE: 0 test failures
-     |                 -> HARD GATE: No stubs/placeholders
-     |                 -> HARD GATE: Hook registration verified
+Plan Validation Gate (plan-critic, Opus)  <- HARD GATE: adversarial review
+     |                                       5 axes, ≥3.0 composite to PROCEED
+     |                                       REVISE re-invokes planner
+     |
+Acceptance Tests (test-master)            <- Acceptance-first (default)
+     |                                       or TDD-first (--tdd-first)
+Implementation (Opus)            -> HARD GATE: 0 test failures
+     |                           -> HARD GATE: No stubs/placeholders
+     |                           -> HARD GATE: Root cause analysis (--fix)
+     |                           -> HARD GATE: Hook registration verified
+     |
+Plan-Implementation Alignment Gate -> HARD GATE: planned vs diff files
+     |                               (blocks on >50% divergence)
      |
 Spec-Blind Validation (spec-validator) <- HARD GATE: behavioral tests
      |                                    from criteria only, no impl
      |
 +----------+------------+-----------+
-| Review   | Security   | Docs      |  <- Ordered validation
-| (Sonnet) | (Sonnet)   | (Sonnet)  |
+| Review   | Security   | Docs      |  <- Parallel for low-risk,
+| (Sonnet) | (Sonnet)   | (Sonnet)  |     sequential for security-sensitive
 +----------+------------+-----------+
      |
+Remediation Gate (max 2 cycles on findings)
+     |
 Git Operations (commit, push, close issue)
+     |
+Agent Completeness Gate (blocks commit if required agents missing)
      |
 Continuous Improvement (background analysis)
      |
@@ -338,15 +388,16 @@ Batch processing handles this automatically with worktree isolation and checkpoi
 
 autonomous-dev doesn't just run pipelines — it learns from them.
 
-**Long-term session analytics**: Every conversation is archived to `~/.claude/archive/` with full transcripts and a SQLite index. Query your usage patterns across months of sessions:
+**Long-term session analytics**: Every conversation is archived to `~/.claude/archive/` with full transcripts and a 17-column SQLite index (per-session tokens, cache hit rates, tool calls, model, per-repo attribution). See [docs/SESSION-ANALYTICS.md](docs/SESSION-ANALYTICS.md) for schema + queries.
 
 ```sql
 sqlite3 ~/.claude/archive/sessions.db \
-  "SELECT project, COUNT(*) sessions, SUM(total_output_tokens) tokens
-   FROM sessions GROUP BY project ORDER BY tokens DESC;"
+  "SELECT project, COUNT(*) sessions,
+          SUM(total_output_tokens) out_tok, SUM(cache_read_tokens) cache_read
+   FROM sessions GROUP BY project ORDER BY out_tok DESC;"
 ```
 
-**Closed-loop improvement**: The system detects its own weaknesses and fixes them:
+**Closed-loop improvement**: The system detects its own weaknesses and fixes them. See [docs/EVALUATION.md](docs/EVALUATION.md) for the full measurement surface (skill-eval, reviewer benchmark, /improve workflow, autoresearch).
 
 ```
 pipeline runs → session logs → /improve detects drift → files GitHub issues
@@ -369,11 +420,11 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| Commands | 22 | Slash commands for workflows |
-| Agents | 15 | Specialized AI for each SDLC stage |
-| Skills | 17 | Domain knowledge (progressive disclosure) |
-| Hooks | 22 | Automatic validation and enforcement |
-| Libraries | 196 | Python utilities |
+| Commands | 23 | Slash commands for workflows |
+| Agents | 16 | Specialized AI for each SDLC stage (added: plan-critic) |
+| Skills | 19 | Domain knowledge (added: planning-workflow, prompt-engineering) |
+| Hooks | 30 | Automatic validation and enforcement (added: plan_gate, conversation_archiver, prompt quality gate) |
+| Libraries | 181 | Python utilities |
 
 ---
 
@@ -381,12 +432,24 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 
 ### Core Concepts
 - [Architecture](docs/ARCHITECTURE-OVERVIEW.md) - Three-layer system (hooks + agents + continuous improvement)
+- [Harness Evolution](docs/HARNESS-EVOLUTION.md) - How the harness has evolved across releases
 - [Maintaining Philosophy](docs/MAINTAINING-PHILOSOPHY.md) - Why alignment-first works
+- [Model Behavior Notes](docs/model-behavior-notes.md) - Production-validated patterns for prompt design
 
 ### Workflows
-- [Batch Processing](docs/BATCH-PROCESSING.md) - Multi-feature workflows
+- [Planning Workflow](docs/PLANNING-WORKFLOW.md) - 7-step `/plan` + plan-critic adversarial review
+- [Pipeline Modes](docs/PIPELINE-MODES.md) - `/implement` mode matrix (full / light / fix / batch) with per-mode agent sets
+- [Batch Processing](docs/BATCH-PROCESSING.md) - Multi-feature workflows with worktree isolation
 - [Git Automation](docs/GIT-AUTOMATION.md) - Auto-commit, push, issue close
-- [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) - Pipeline enforcement
+- [Workflow Discipline](docs/WORKFLOW-DISCIPLINE.md) - Pipeline ordering enforcement (two-tier)
+
+### Observability & Self-Improvement
+- [Session Analytics](docs/SESSION-ANALYTICS.md) - sessions.db schema, archive layout, query recipes
+- [Evaluation](docs/EVALUATION.md) - Skill-eval, reviewer benchmark, the closed-loop self-improvement cycle
+
+### Prompt & Agent Design
+- [Prompt Engineering](docs/PROMPT-ENGINEERING.md) - Constraint budgets (MOSAIC), register shifting, HARD GATE patterns
+- [Agents Reference](docs/AGENTS.md) - All 16 specialist agents with model tiers
 
 ### Testing
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model (acceptance-first, 6 layers)
@@ -396,8 +459,14 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 
 ### Reference
 - [Commands](plugins/autonomous-dev/commands/) - All 23 commands
-- [Hooks](docs/HOOKS.md) - 23 active hooks
-- [Libraries](docs/LIBRARIES.md) - 178 Python utilities
+- [Hooks](docs/HOOKS.md) - 30 active hooks
+- [Hook Registry](docs/HOOK-REGISTRY.md) - Sidecar metadata schema
+- [Libraries](docs/LIBRARIES.md) - 181 Python utilities
+
+### Security
+- [Sandboxing](docs/SANDBOXING.md) - Command classification and shell injection detection
+- [MCP Security](docs/MCP-SECURITY.md) - Path traversal, command injection, SSRF prevention
+- [Security Audit](docs/SECURITY.md) - Security scanning architecture
 
 ### Troubleshooting
 - [Troubleshooting Guide](plugins/autonomous-dev/docs/TROUBLESHOOTING.md) - Common issues

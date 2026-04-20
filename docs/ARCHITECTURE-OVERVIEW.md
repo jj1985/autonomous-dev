@@ -11,7 +11,9 @@ covers:
 
 Complete technical architecture for the autonomous-dev plugin, including agents, skills, libraries, hooks, and model tier strategy.
 
-**Component Counts**: 16 agents (18 archived), 19 skills, 23 active commands, 178 libraries, 23 active hooks (61 archived).
+**Component Counts**: 16 agents (18 archived), 19 skills, 23 active commands, 206 libraries, 30 active hooks (62 archived).
+
+**Last Updated**: 2026-04-20
 
 ---
 
@@ -108,11 +110,13 @@ Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](H
 **Hook Output Visibility** (Issue #660): `permissionDecisionReason` on deny is model-visible — block messages include `REQUIRED NEXT ACTION:` carrots that the model reads and acts on. `systemMessage` is user-visible (injected into the conversation). These are distinct channels: enforcement directives belong in `permissionDecisionReason`; user notifications belong in `systemMessage`. See [HOOKS.md](HOOKS.md) for full output format specification.
 
 **Active Hooks**:
-- **PreToolUse**: unified_pre_tool.py (4-layer MCP validation: Sandbox → MCP Security → Agent Auth → Batch Permission; native tools bypass MCP layers but Agent/Task tool calls also pass through the Pipeline Ordering Gate before extensions — Issues #625, #629, #632), plan_gate.py (blocks complex Write/Edit without validated plan in .claude/plans/ — Issue #814)
-- **PrePromptSubmit**: unified_prompt_validator.py (workflow enforcement)
+- **PreToolUse**: unified_pre_tool.py (6-layer enforcement: Sandbox → MCP Security → Agent Auth → Batch Permission → Pipeline Ordering Gate → Prompt Quality Gate; native tools bypass MCP layers — Issues #625, #629, #632, #842), plan_gate.py (blocks complex Write/Edit without validated plan in .claude/plans/ — Issue #814)
+- **PrePromptSubmit**: unified_prompt_validator.py (workflow enforcement; staged plan-exit 2-state machine: `plan_exited` requires plan-critic before any non-question prompt; `critique_done` allows `/implement`, `/create-issue`, `/plan-to-issues`)
 - **PostToolUse**: auto_format.py, auto_test.py, security_scan.py, auto_fix_docs.py
-- **PreCommit**: validate_project_alignment.py, enforce_orchestrator.py, enforce_tdd.py, validate_session_quality.py
-- **See**: [HOOKS.md](HOOKS.md) for complete hook reference
+- **PreCommit**: validate_project_alignment.py, enforce_orchestrator.py, enforce_tdd.py, validate_session_quality.py, enforce_prunable_threshold.py (opt-in via `settings.strict-mode.json` — blocks commits when prunable test count exceeds 100)
+- **SessionStart**: SessionStart-batch-recovery.sh (auto-restores batch state after `/clear` or auto-compact)
+- **SubagentStop / Stop**: unified_session_tracker.py (advances plan-exit stage marker on plan-critic completion; emits post-PROCEED systemMessage suggesting `/plan-to-issues --quick` or `/implement`), conversation_archiver.py (writes session transcript + SQLite index for long-term analytics)
+- **See**: [HOOKS.md](HOOKS.md) and [HOOK-REGISTRY.md](HOOK-REGISTRY.md) for complete reference
 
 ---
 
@@ -127,7 +131,7 @@ Unified hooks using dispatcher pattern for quality enforcement. See [HOOKS.md](H
 3. **Research**: researcher agent finds patterns (Haiku model)
 3.5. **Research Self-Critique** (STEP 4.5, inline — no agent): One FEEDBACK pass on merged research output before passing to planner; implements Self-Refine pattern (GENERATE → FEEDBACK → REFINE). Also applied at `/advise` STEP 4.5 (post-analysis critique) and `/refactor --deep` STEP 1.5 (findings critique).
 4. **Planning**: planner agent creates architecture plan
-4.5. **Plan Validation Gate** (STEP 5.5, HARD GATE — Issue #855): Adversarial plan review before acceptance tests. Checks `.claude/plans/` for a pre-validated plan (Verdict: PROCEED); if absent, invokes plan-critic with a constrained budget (1 round, 3 axes: Assumption Audit, Existing Solution Search, Minimalism Pressure). Verdict PROCEED continues, REVISE re-invokes planner once, BLOCKED halts pipeline. Structural validation always runs: plan must contain ≥1 file path, an acceptance-criteria section, and a testing-strategy section.
+4.5. **Plan Validation Gate** (STEP 5.5, HARD GATE — Issues #855, #878, #880, #889-#893): Adversarial plan review before acceptance tests. Checks `.claude/plans/` for a pre-validated plan (Verdict: PROCEED); if absent, invokes plan-critic with a constrained budget (1 round, 3 axes: Assumption Audit, Existing Solution Search, Minimalism Pressure). When invoked from `/plan` (multi-round mode), plan-critic iterates planner with verbatim feedback until convergence at composite ≥3.0. Scoring is a 1-5 Likert scale per-axis; verdict mapping is deterministic (≥3.0 with no axis below 2 → PROCEED; <3.0 or any axis at 1 → REVISE; <2.0 or 2+ axes at 1 → BLOCKED). plan-critic is in `SEQUENTIAL_REQUIRED` ordering pairs (`planner → plan-critic`, `plan-critic → implementer`); skip is recorded via `record_plan_critic_skipped()` so the agent completeness gate excludes plan-critic when a pre-validated plan exists. Structural validation always runs: plan must contain ≥1 file path, an acceptance-criteria section, and a testing-strategy section.
 5. **Pause Control** (v3.45.0): Optional human-in-the-loop after planning
 6. **Acceptance Tests** (Issue #404, default): test-master writes specification-driven acceptance tests
    - Default mode: validation-first approach (specification → acceptance tests → implementation)
@@ -282,5 +286,14 @@ autonomous-dev uses a **Diamond Model** — not the traditional TDD pyramid. Acc
 - [AGENTS.md](AGENTS.md) - Complete agent reference
 - [LIBRARIES.md](LIBRARIES.md) - Library API documentation
 - [HOOKS.md](HOOKS.md) - Hook reference
+- [HOOK-REGISTRY.md](HOOK-REGISTRY.md) - Sidecar metadata schema
+- [PIPELINE-MODES.md](PIPELINE-MODES.md) - `/implement` mode matrix (full / light / fix / batch) with per-mode agent sets
+- [SESSION-ANALYTICS.md](SESSION-ANALYTICS.md) - sessions.db schema and queries (Layer 3 observability)
+- [EVALUATION.md](EVALUATION.md) - Effectiveness measurement and self-improvement closed loop (Layer 4)
 - [PERFORMANCE.md](PERFORMANCE.md) - Performance benchmarks
 - [SECURITY.md](SECURITY.md) - Security guide
+- [PLANNING-WORKFLOW.md](PLANNING-WORKFLOW.md) - 7-step `/plan` + plan-critic adversarial review
+- [PROMPT-ENGINEERING.md](PROMPT-ENGINEERING.md) - Constraint budgets, register shifting, HARD GATE patterns
+- [model-behavior-notes.md](model-behavior-notes.md) - Production-validated patterns for prompt design
+- [WORKFLOW-DISCIPLINE.md](WORKFLOW-DISCIPLINE.md) - Two-tier ordering enforcement (coordinator + hook)
+- [HARNESS-EVOLUTION.md](HARNESS-EVOLUTION.md) - How the harness has evolved across releases

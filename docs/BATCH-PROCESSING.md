@@ -2387,6 +2387,6 @@ Migration:
 - [lib/github_issue_fetcher.py](/plugins/autonomous-dev/lib/github_issue_fetcher.py) - GitHub integration
 - [lib/feature_dependency_analyzer.py](/plugins/autonomous-dev/lib/feature_dependency_analyzer.py) - Dependency ordering (Issue #157)
 - [lib/failure_classifier.py](/plugins/autonomous-dev/lib/failure_classifier.py) - Error classification logic (Issue #89)
-- [lib/batch_retry_manager.py](/plugins/autonomous-dev/lib/batch_retry_manager.py) - Retry orchestration (Issue #89)
-- [lib/batch_retry_consent.py](/plugins/autonomous-dev/lib/batch_retry_consent.py) - User consent handling (Issue #89)
-- [docs/LIBRARIES.md](/docs/LIBRARIES.md) - Complete library API reference
+- [lib/batch_retry_manager.py](../plugins/autonomous-dev/lib/batch_retry_manager.py) - Retry orchestration (Issue #89)
+- [lib/batch_retry_consent.py](../plugins/autonomous-dev/lib/batch_retry_consent.py) - User consent handling (Issue #89)
+- [docs/LIBRARIES.md](./LIBRARIES.md) - Complete library API reference

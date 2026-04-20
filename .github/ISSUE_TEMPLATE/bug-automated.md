@@ -69,4 +69,4 @@ pytest {{ test_file }}::{{ test_name }} -vv -s
 ---
 
 *Auto-created by `/test --track-issues`*
-*See: [GITHUB-ISSUES-INTEGRATION.md](docs/GITHUB-ISSUES-INTEGRATION.md)*
+*See: [GIT-AUTOMATION.md](../../docs/GIT-AUTOMATION.md)*

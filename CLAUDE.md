@@ -50,7 +50,7 @@ pytest --cov=plugins/autonomous-dev/hooks --cov=plugins/autonomous-dev/lib --cov
 - **Agents**: 15 specialists with fresh context per invocation, model-tiered (Haiku/Sonnet/Opus)
 - **Skills**: 19 domain packages, progressively injected per-step to prevent context bloat
 
-Component counts: 15 agents, 19 skills, 22 commands, 24 hooks, 196 libraries.
+Component counts: 16 agents, 19 skills, 23 commands, 30 hooks, 181 libraries.
 
 ## Commands
 
@@ -76,7 +76,7 @@ Component counts: 15 agents, 19 skills, 22 commands, 24 hooks, 196 libraries.
 
 ## Session History & Analytics
 
-Every Claude Code session is archived by `conversation_archiver.py` (Stop hook). Full transcripts + SQLite index at `~/.claude/archive/`.
+Every Claude Code session is archived by `conversation_archiver.py` (Stop hook). Full transcripts + SQLite index at `~/.claude/archive/`. See [docs/SESSION-ANALYTICS.md](docs/SESSION-ANALYTICS.md) for full schema and [docs/EVALUATION.md](docs/EVALUATION.md) for how this feeds the self-improvement loop.
 
 **Locations:**
 | What | Where |

@@ -76,7 +76,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/akaszubski/autonomous-dev/mas
 ```
 
 **What it installs:**
-- Global infrastructure: `~/.claude/hooks/` (22 hooks), `~/.claude/lib/` (196 libraries), `~/.claude/settings.json`
+- Global infrastructure: `~/.claude/hooks/` (30 hooks), `~/.claude/lib/` (181 libraries), `~/.claude/settings.json`
 - Project files: `.claude/commands/`, `.claude/agents/`, `.claude/skills/`
 - Git hooks: Pre-commit validation, auto-formatting
 
@@ -135,10 +135,11 @@ bash install.sh
 ### Project Management
 
 ```bash
+/plan "..."              # 7-step planning workflow with adversarial plan-critic (--no-issues)
 /status                  # View PROJECT.md goal progress
 /align                   # Check alignment (--project, --docs, --retrofit)
 /create-issue "..."      # Create GitHub issue with automated research (--quick)
-/plan-to-issues          # Batch-convert plan mode output into GitHub issues (--quick)
+/plan-to-issues          # Thorough-mode batch issue creation from plan output (--quick)
 /health-check            # Verify plugin installation
 /setup                   # Interactive PROJECT.md creation
 ```
@@ -173,21 +174,21 @@ bash install.sh
 
 autonomous-dev enforces process through three layers, each addressing a different failure mode:
 
-- **Hooks** (deterministic enforcement) — 22 hooks with JSON `{"decision": "block"}` hard gates. Run on every tool call, commit, and prompt. If the model tries to skip a step, it's physically blocked. Research-confirmed: prompt-level nudges produce unreliable compliance.
+- **Hooks** (deterministic enforcement) — 27 hooks with JSON `{"decision": "block"}` hard gates. Run on every tool call, commit, and prompt. If the model tries to skip a step, it's physically blocked. Research-confirmed: prompt-level nudges produce unreliable compliance.
 
-- **Agents** (adversarial evaluation) — 15 specialist agents, each spawned with fresh context and constrained tools. The implementer never reviews its own work. A separate reviewer and security-auditor evaluate it. A spec-validator writes behavioral tests from acceptance criteria without seeing the implementation.
+- **Agents** (adversarial evaluation) — 16 specialist agents, each spawned with fresh context and constrained tools. The implementer never reviews its own work. A separate reviewer and security-auditor evaluate it. A spec-validator writes behavioral tests from acceptance criteria without seeing the implementation. A plan-critic adversarially reviews plans before implementation begins.
 
-- **Skills** (progressive context injection) — 17 domain knowledge packages injected only when relevant. Testing standards load during test writing. Security patterns load during security review. Prevents context bloat and drift.
+- **Skills** (progressive context injection) — 19 domain knowledge packages injected only when relevant. Testing standards load during test writing. Security patterns load during security review. Prompt engineering patterns load when editing agent files. Prevents context bloat and drift.
 
 ### Component Overview
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
-| **Agents** | 15 | Specialist AI for each SDLC stage |
-| **Skills** | 17 | Domain expertise (progressive disclosure) |
-| **Hooks** | 22 | Deterministic enforcement and validation |
-| **Libraries** | 196 | Python utilities (security, validation, automation) |
-| **Commands** | 22 | Slash commands for workflows |
+| **Agents** | 16 | Specialist AI for each SDLC stage |
+| **Skills** | 19 | Domain expertise (progressive disclosure) |
+| **Hooks** | 27 | Deterministic enforcement and validation |
+| **Libraries** | 180 | Python utilities (security, validation, automation) |
+| **Commands** | 23 | Slash commands for workflows |
 
 ### Agent Specialization
 
@@ -197,18 +198,19 @@ autonomous-dev enforces process through three layers, each addressing a differen
 |------|-------|--------|---------|
 | Tier 1 | Haiku | researcher-local, test-coverage-auditor, issue-creator | Fast pattern matching |
 | Tier 2 | Sonnet | researcher, reviewer, security-auditor, doc-master, continuous-improvement-analyst, retrospective-analyst, ui-tester, mobile-tester | Balanced reasoning |
-| Tier 3 | Opus | planner, implementer, test-master, spec-validator | Deep reasoning |
+| Tier 3 | Opus | planner, implementer, test-master, spec-validator, plan-critic | Deep reasoning |
 
 ### Hook Enforcement
 
-**22 hooks enforce quality without manual intervention:**
+**27 hooks enforce quality without manual intervention:**
 
 | Hook Type | Trigger | What It Enforces |
 |-----------|---------|-----------------|
-| **PreToolUse** | Before tool execution | 4-layer MCP validation: Sandbox, MCP Security, Agent Auth, Batch Permission |
-| **PrePromptSubmit** | Before user prompt | Workflow discipline violations |
+| **PreToolUse** | Before tool execution | 6-layer enforcement: Sandbox, MCP Security, Agent Auth, Batch Permission, Pipeline Ordering Gate, Prompt Quality Gate. `plan_gate.py` blocks complex Write/Edit without validated plan. |
+| **PrePromptSubmit** | Before user prompt | Workflow discipline; staged plan-exit 2-state machine (`plan_exited` → `critique_done`) requires plan-critic before non-question prompts |
 | **PostToolUse** | After tool execution | Auto-format, auto-test, security scan, doc sync |
-| **PreCommit** | Before git commit | Project alignment, orchestrator enforcement, TDD, session quality |
+| **PreCommit** | Before git commit | Project alignment, orchestrator enforcement, TDD, session quality, agent completeness gate (per-issue in batch mode) |
+| **SubagentStop / Stop** | After agent / session ends | Plan-exit stage advancement, conversation archival to SQLite index for long-term analytics |
 
 ### Testing: The Diamond Model
 
@@ -283,10 +285,10 @@ LOG_LEVEL=INFO                  # Options: DEBUG, INFO, WARNING, ERROR
 
 ```bash
 # Check what was installed
-echo "Hooks: $(ls ~/.claude/hooks/*.py 2>/dev/null | wc -l)"        # Should be ~22
-echo "Libs: $(ls ~/.claude/lib/*.py 2>/dev/null | wc -l)"           # Should be ~196
-echo "Commands: $(ls .claude/commands/*.md 2>/dev/null | wc -l)"    # Should be ~22
-echo "Agents: $(ls .claude/agents/*.md 2>/dev/null | wc -l)"        # Should be ~15
+echo "Hooks: $(ls ~/.claude/hooks/*.py 2>/dev/null | wc -l)"        # Should be ~27
+echo "Libs: $(ls ~/.claude/lib/*.py 2>/dev/null | wc -l)"           # Should be ~180
+echo "Commands: $(ls .claude/commands/*.md 2>/dev/null | wc -l)"    # Should be ~23
+echo "Agents: $(ls .claude/agents/*.md 2>/dev/null | wc -l)"        # Should be ~16
 
 # Test health check
 /health-check
@@ -354,13 +356,18 @@ Every `/implement` validates alignment against PROJECT.md:
 |-------|-------------|
 | [CLAUDE.md](../../CLAUDE.md) | Project instructions and quick reference |
 | [Architecture](../../docs/ARCHITECTURE-OVERVIEW.md) | Technical architecture deep-dive |
+| [Planning Workflow](../../docs/PLANNING-WORKFLOW.md) | 7-step `/plan` + plan-critic adversarial review |
+| [Prompt Engineering](../../docs/PROMPT-ENGINEERING.md) | Constraint budgets, register shifting, HARD GATE patterns |
 | [Testing Strategy](../../docs/TESTING-STRATEGY.md) | Diamond testing model (6 layers) |
-| [Agents](../../docs/AGENTS.md) | Agent pipeline and specialization |
-| [Hooks](../../docs/HOOKS.md) | 22 active hooks reference |
-| [Libraries](../../docs/LIBRARIES.md) | 196 Python utilities |
+| [Agents](../../docs/AGENTS.md) | Agent pipeline and specialization (16 agents) |
+| [Hooks](../../docs/HOOKS.md) | 30 active hooks reference |
+| [Hook Registry](../../docs/HOOK-REGISTRY.md) | Sidecar metadata schema |
+| [Libraries](../../docs/LIBRARIES.md) | 181 Python utilities |
 | [Performance](../../docs/PERFORMANCE.md) | Benchmarks and optimization history |
 | [Git Automation](../../docs/GIT-AUTOMATION.md) | Zero manual git operations |
-| [Batch Processing](../../docs/BATCH-PROCESSING.md) | Multi-feature workflows |
+| [Batch Processing](../../docs/BATCH-PROCESSING.md) | Multi-feature workflows with worktree isolation |
+| [Workflow Discipline](../../docs/WORKFLOW-DISCIPLINE.md) | Two-tier ordering enforcement (coordinator + hook) |
+| [Harness Evolution](../../docs/HARNESS-EVOLUTION.md) | How the harness has evolved across releases |
 | [Security](../../docs/SECURITY.md) | Security model and hardening guide |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues and solutions |
 

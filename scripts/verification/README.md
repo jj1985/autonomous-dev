@@ -30,4 +30,4 @@ For ongoing development, use:
 ## See Also
 
 - [tests/README.md](../../tests/README.md) - Test suite overview
-- [docs/TESTING.md](../../docs/TESTING.md) - Testing strategy
+- [docs/TESTING-STRATEGY.md](../../docs/TESTING-STRATEGY.md) - Diamond testing model

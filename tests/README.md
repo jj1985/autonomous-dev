@@ -4,11 +4,9 @@ Unit and integration tests for the autonomous-dev plugin.
 
 ## Setup
 
-**Development Environment**: Before running tests, ensure you've completed the
-development setup in [DEVELOPMENT.md](../docs/DEVELOPMENT.md), including creating
-the `autonomous_dev` symlink.
+**Development Environment**: Before running tests, ensure the `autonomous_dev` symlink is in place (created by `bash scripts/deploy-all.sh` or the install.sh bootstrap).
 
-If you encounter `ModuleNotFoundError`, see [TROUBLESHOOTING.md](../docs/TROUBLESHOOTING.md).
+If you encounter `ModuleNotFoundError`, see [TROUBLESHOOTING.md](../plugins/autonomous-dev/docs/TROUBLESHOOTING.md).
 
 ## Running Tests
 

@@ -11,10 +11,16 @@
 |---------|----------|
 | Commands not appearing | Run `/reload-plugins` to reload commands/agents/skills. If hooks or settings changed, do a full restart (Cmd+Q / Ctrl+Q) instead |
 | ModuleNotFoundError in hooks | Re-run `install.sh` or copy libs to `~/.claude/lib/` (see below) |
-| ModuleNotFoundError in commands | Commands auto-resolve libs via multi-candidate resolver — re-run `install.sh` if libs are missing |
+| ModuleNotFoundError in commands | Commands auto-resolve libs via multi-candidate resolver (`.claude/lib` → `plugins/autonomous-dev/lib` → `~/.claude/lib`) — re-run `install.sh` if libs are missing |
 | Hook not running | Check `~/.claude/settings.json` |
 | Context exceeded | Run `/clear` |
 | Plugin changes not visible | Run `/sync --plugin-dev` then `/reload-plugins` (or full restart if hooks/settings changed) |
+| Pipeline stuck mid-run (auto-compact, crash) | Run `/implement --resume <run_id>` — run_id is printed at STEP 0 |
+| "Agent completeness gate BLOCKED" | Don't bypass. Run the missing agents. If this is a known false positive, escape hatch: `export SKIP_AGENT_COMPLETENESS_GATE=1` (audit-logged) |
+| "Ordering violation: X requires Y" | The hook enforces pipeline sequence. Run the prerequisite agent first, or if it already ran, the session-state tracker has the wrong key (see "Session ID mismatch" below) |
+| Deploy timed out to Mac Studio | Check `tailscale status`; if peer is on DERP relay, SSH handshake may exceed the 5s probe timeout — wait for P2P or deploy via LAN IP |
+| sessions.db missing token counts | Pre-fix hook bug (Issue #901). Deploy latest, then re-run a session to repopulate. Existing rows can be backfilled by re-parsing `~/.claude/archive/conversations/**/*.jsonl` |
+| doc-master returned empty verdict | Known background-agent race — the coordinator retries once with reduced context. If it still fails, the verdict is logged as `MISSING` and the pipeline proceeds with warning |
 
 ---
 
