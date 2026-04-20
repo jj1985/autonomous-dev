@@ -120,7 +120,10 @@ Before EVERY Agent tool dispatch, you MUST run this inline verification. This ca
 ```bash
 python3 -c "
 import sys, os
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', os.path.expanduser('~/.claude/lib')):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from agent_ordering_gate import check_ordering_with_session_fallback
 result = check_ordering_with_session_fallback(
     'TARGET_AGENT',
@@ -197,7 +200,11 @@ Activate pipeline state:
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 PIPELINE_START=$(date +%s)
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from pipeline_state import create_pipeline, save_pipeline
 state = create_pipeline('$RUN_ID', 'FEATURE_DESC', mode='MODE')
 save_pipeline(state)
@@ -205,7 +212,10 @@ print(f'Pipeline {state.run_id} initialized')
 "
 python3 -c "
 import sys, os, json
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', os.path.expanduser('~/.claude/lib')):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from pipeline_state import sign_state
 sid = os.environ.get('CLAUDE_SESSION_ID', 'unknown')
 state = {
@@ -266,7 +276,11 @@ Do NOT proceed to STEP 2 until the staging area is clean.
 
 ```bash
 BASELINE_TEST_COUNT=$(python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from bugfix_detector import get_test_count
 from pathlib import Path
 print(get_test_count(Path('.')))
@@ -279,7 +293,11 @@ echo "Baseline test count: $BASELINE_TEST_COUNT"
 ```bash
 BASELINE_FAILING_FILE="/tmp/baseline_failing_tests.txt"
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from fix_forward import parse_failing_tests
 import subprocess
 result = subprocess.run(['pytest', '--tb=no', '-q'], capture_output=True, text=True, timeout=120)
@@ -302,7 +320,10 @@ Read `.claude/PROJECT.md`. If missing: BLOCK ("Run `/setup` or `/align --retrofi
 ```bash
 python3 -c "
 import sys, os, json
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', os.path.expanduser('~/.claude/lib')):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from pipeline_state import sign_state
 state_path = '/tmp/implement_pipeline_state.json'
 if os.path.exists(state_path):
@@ -334,7 +355,11 @@ If `ISSUE_BODY` is set (from STEP 0) AND `--no-cache` was NOT specified, DETECT 
 # Write issue body to temp file to avoid shell escaping issues
 echo "$ISSUE_BODY" > /tmp/implement_issue_body_$RUN_ID.txt
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from research_persistence import detect_issue_research
 with open('/tmp/implement_issue_body_$RUN_ID.txt') as f:
     body = f.read()
@@ -363,7 +388,11 @@ If `--no-cache` was specified, skip this check entirely (force fresh research).
 
 ```bash
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from research_persistence import check_cache, load_cached_research
 cached = check_cache('FEATURE_TOPIC', max_age_days=7)
 print('CACHE_HIT' if cached else 'CACHE_MISS')
@@ -600,7 +629,11 @@ After achieving 0 test failures OR when remaining failures are all pre-existing,
 
 ```bash
 python3 -c "
-import sys, os; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', os.path.expanduser('~/.claude/lib')):
+    if os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from fix_forward import parse_failing_tests, classify_failures
 import subprocess
 # Capture current pytest output inline (not via shell variable)
@@ -644,7 +677,11 @@ If the feature being implemented is a bug fix, at least one NEW test must be add
 **Bug-fix detection** (inline — coordinator checks):
 ```bash
 IS_BUGFIX=$(python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from bugfix_detector import is_bugfix_feature
 desc = '''FEATURE_DESCRIPTION'''
 labels = ISSUE_LABELS  # from STEP 0 gh issue view, or empty list
@@ -656,7 +693,11 @@ If `IS_BUGFIX` is `true`:
 
 ```bash
 CURRENT_TEST_COUNT=$(python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from bugfix_detector import get_test_count
 from pathlib import Path
 print(get_test_count(Path('.')))
@@ -1000,7 +1041,11 @@ This ensures deferred findings are tracked as searchable artifacts, not lost in 
 Check if any changed files match `skills/*/SKILL.md`:
 ```bash
 CHANGED_SKILLS=$(python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from skill_change_detector import detect_skill_changes
 import subprocess
 files = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD'], text=True).strip().split('\n')
@@ -1016,7 +1061,11 @@ If skills were modified:
 2. For each skill, check eval status:
    ```bash
    python3 -c "
-   import sys, json; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+   import sys, json, os as _os
+   for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+       if _os.path.isdir(_p):
+           sys.path.insert(0, _p)
+           break
    from skill_change_detector import get_eval_status, format_skill_eval_report
    from pathlib import Path
    skills = '$CHANGED_SKILLS'.split(',')
@@ -1090,7 +1139,11 @@ record_agent_completion(session_id, 'doc-master', issue_number=issue_number, suc
 ```bash
 # Finalize pipeline state to session record (before cleanup)
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from pipeline_state import finalize_to_session
 finalize_to_session('$RUN_ID')
 " 2>/dev/null || true
@@ -1100,7 +1153,11 @@ git push origin $(git branch --show-current) 2>/dev/null || echo "Warning: Push 
 
 # Dependabot security tracking (non-blocking, Issue #767)
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 try:
     from dependabot_tracker import run_dependabot_tracker, parse_owner_repo
     import subprocess
@@ -1120,7 +1177,11 @@ gh issue close <number> -c "Implemented in $COMMIT_SHA" 2>/dev/null || echo "War
 
 # Test-tracing warning (Issue #675) — non-blocking, informational only
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 try:
     from test_issue_tracer import TestIssueTracer
     from pathlib import Path
@@ -1156,7 +1217,7 @@ If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipp
 - ❌ You MUST NOT inline the analysis yourself instead of invoking the agent
 - ❌ You MUST NOT treat STEP 13 as the final step — STEP 15 is mandatory
 
-After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib'); from pipeline_state import cleanup_pipeline; cleanup_pipeline('RUN_ID'); from pipeline_completion_state import clear_session; clear_session('SESSION_ID')" 2>/dev/null || true`
+After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from pipeline_state import cleanup_pipeline;cleanup_pipeline('RUN_ID');from pipeline_completion_state import clear_session;clear_session('SESSION_ID')" 2>/dev/null || true`
 
 **FORBIDDEN** (Issue #559): Cleaning up pipeline state before confirming the STEP 15 analyst agent launch succeeded. The analyst reads pipeline state — cleanup before launch loses context.
 

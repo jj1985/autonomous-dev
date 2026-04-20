@@ -73,7 +73,11 @@ When `--test-tracing` is passed (or as part of full audit), perform test-to-issu
 
 **STEP 1: Scan test references**
 ```python
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from test_issue_tracer import TestIssueTracer
 tracer = TestIssueTracer(Path('.'))
 report = tracer.analyze()

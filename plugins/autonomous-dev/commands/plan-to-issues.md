@@ -152,7 +152,7 @@ Create these N issues? Reply 'yes' to proceed, 'no' to cancel.
 
 For each confirmed item, use the Bash tool:
 
-1. Write the issue body to a temp file (include `**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` at the end of the body):
+1. Write the issue body to a temp file (include `**Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` at the end of the body):
    ```bash
    cat > /tmp/plan_issue_N.md << 'ISSUE_EOF'
    <issue body content>

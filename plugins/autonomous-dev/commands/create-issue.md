@@ -89,7 +89,7 @@ Generate a markdown body with EXACTLY these 4 sections (no more, no less):
 2. **Implementation Approach**: Brief technical plan
 3. **Test Scenarios**: 3-5 test cases (happy path, error cases, edge cases)
 4. **Acceptance Criteria**: Checkboxes for verifiable conditions
-5. **Plugin Version**: Include the plugin version stamp: `$(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)`
+5. **Plugin Version**: Include the plugin version stamp: `$(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)`
 
 Capture the current Unix timestamp:
 ```bash
@@ -133,7 +133,7 @@ Launch TWO agents in parallel using the Task tool:
 **Agent 2: issue-scanner** (subagent_type="Explore", run_in_background=true)
 - Quick scan of existing issues for duplicates/related
 - Use: `gh issue list --state all --limit 100 --json number,title,body,state`
-- Look for semantic similarity to the feature request
+- Identify semantic similarity to the feature request
 - Confidence threshold: >80% for duplicate, >50% for related
 
 **CRITICAL**: Use a single message with TWO Task tool calls to run in parallel.
@@ -166,7 +166,7 @@ Use the Task tool to invoke the **issue-creator** agent (subagent_type="issue-cr
 
 **Deep Thinking Template** (issue-creator should follow - GitHub Issue #118):
 
-**ALWAYS include** (also include `**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` at the end of the body):
+**ALWAYS include** (also include `**Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)` at the end of the body):
 
 1. **Summary**: 1-2 sentences describing the feature/fix
 

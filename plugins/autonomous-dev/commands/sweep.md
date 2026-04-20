@@ -25,8 +25,11 @@ Run the TestPruningAnalyzer directly. Execute the following Python script via Ba
 
 ```bash
 cd {{PROJECT_ROOT}} && python3 -c "
-import sys
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from test_pruning_analyzer import TestPruningAnalyzer
 from pathlib import Path
 
@@ -49,8 +52,11 @@ Run the pruner to delete fully-flagged test files (safe categories only, securit
 
 ```bash
 cd {{PROJECT_ROOT}} && python3 -c "
-import sys
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from test_pruning_analyzer import TestPruningAnalyzer
 from pathlib import Path
 

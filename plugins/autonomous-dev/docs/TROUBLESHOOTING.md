@@ -10,7 +10,8 @@
 | Problem | Solution |
 |---------|----------|
 | Commands not appearing | Run `/reload-plugins` to reload commands/agents/skills. If hooks or settings changed, do a full restart (Cmd+Q / Ctrl+Q) instead |
-| ModuleNotFoundError | Create symlink (see below) |
+| ModuleNotFoundError in hooks | Re-run `install.sh` or copy libs to `~/.claude/lib/` (see below) |
+| ModuleNotFoundError in commands | Commands auto-resolve libs via multi-candidate resolver — re-run `install.sh` if libs are missing |
 | Hook not running | Check `~/.claude/settings.json` |
 | Context exceeded | Run `/clear` |
 | Plugin changes not visible | Run `/sync --plugin-dev` then `/reload-plugins` (or full restart if hooks/settings changed) |
@@ -146,6 +147,8 @@ cp plugins/autonomous-dev/lib/*.py ~/.claude/lib/
 # 3. Verify imports work
 python3 -c "import sys; sys.path.insert(0, '$HOME/.claude/lib'); import security_utils; print('OK')"
 ```
+
+**Note**: Commands (`/implement`, `/sweep`, etc.) now use a multi-candidate path resolver that automatically finds libs in `.claude/lib`, `plugins/autonomous-dev/lib`, or `~/.claude/lib` — in that priority order. Creating a symlink is no longer required for commands to work in consumer repos; the resolver handles both dev and installed layouts.
 
 ---
 

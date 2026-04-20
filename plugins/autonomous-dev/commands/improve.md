@@ -50,7 +50,7 @@ ls -la .claude/logs/activity/*.jsonl 2>/dev/null
 If `--date` specified, load that date's log. Otherwise load today's.
 If `--session` specified, filter entries to that session ID.
 
-If no logs found, report: "No activity logs found. The session_activity_logger hook must be active to generate logs. Check that your settings include all 4 hook layers (UserPromptSubmit, PreToolUse, PostToolUse, Stop)."
+If no logs found, report: "No activity logs found. The session_activity_logger hook must be active to generate logs. Verify that your settings include all 4 hook layers (UserPromptSubmit, PreToolUse, PostToolUse, Stop)."
 
 ### STEP 2: Gather Ground Truth Context
 
@@ -67,11 +67,15 @@ Read autonomous-dev's source-of-truth documents to provide to the analyst:
 
 ### STEP 2.5: Skill Effectiveness Report
 
-Check skill baselines for weak, low-quality, or stale skills:
+Scan skill baselines for weak, low-quality, or stale skills:
 
 ```bash
 python3 -c "
-import sys, json; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, json, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from skill_change_detector import get_weak_skills
 from pathlib import Path
 
@@ -95,7 +99,11 @@ Run the TestLifecycleManager to generate a unified test health dashboard:
 
 ```bash
 python3 -c "
-import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from test_lifecycle_manager import TestLifecycleManager
 from pathlib import Path
 
@@ -120,7 +128,7 @@ Launch the `continuous-improvement-analyst` agent (Task tool, subagent_type: con
 3. **CLAUDE.md** Critical Rules
 4. **known_bypass_patterns.json** content
 5. **Registered hooks context** from Step 2.5 (so the analyst can calibrate for consumer repos)
-6. Instructions to run in full mode and check for pipeline enforcement, gate integrity, suspicious agents, hook health, and rule bypasses
+6. Instructions to run in full mode and scan for pipeline enforcement, gate integrity, suspicious agents, hook health, and rule bypasses
 
 ### STEP 4: Report Findings
 
@@ -134,7 +142,7 @@ Present the analysis report to the user with:
 
 If `--auto-file` flag is set:
 
-1. Check for duplicate issues in **autonomous-dev repo** (not current repo):
+1. Verify no duplicate issues exist in the **autonomous-dev repo** (not current repo):
    ```bash
    gh issue list -R akaszubski/autonomous-dev --label auto-improvement --state open
    ```
@@ -149,7 +157,7 @@ If `--auto-file` flag is set:
    gh issue create -R akaszubski/autonomous-dev \
      --title "[CI-{severity}] {title}" \
      --label "continuous-improvement,auto-improvement" \
-     --body "{evidence + rule violated + suggested fix + **Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
+     --body "{evidence + rule violated + suggested fix + **Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
    ```
 
 3. After all issues are filed, clean up the context file:
@@ -211,7 +219,7 @@ For each category, answer:
 
 ### STEP T4: Identify systemic gaps
 
-Look for patterns that span categories:
+Examine patterns that span categories:
 - **Progressive degradation**: Later pipeline steps consistently weaker (context pressure)
 - **Enforcement holes**: Same workaround pattern appearing repeatedly
 - **Agent quality drift**: Specific agents consistently flagged (ghost invocations, shallow output)
@@ -254,6 +262,6 @@ import json; from datetime import datetime, timezone
 with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
     json.dump({'command': 'improve', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
 "
-gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report + **Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
+gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report + **Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
 rm -f /tmp/autonomous_dev_cmd_context.json
 ```

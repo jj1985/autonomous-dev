@@ -553,7 +553,11 @@ Same as BATCH FILE MODE:
    ```bash
    ISSUE_RUN_ID="issue-${ISSUE_NUMBER}-$(date +%Y%m%d-%H%M%S)"
    python3 -c "
-   import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+   import sys, os as _os
+   for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+       if _os.path.isdir(_p):
+           sys.path.insert(0, _p)
+           break
    from pipeline_state import create_pipeline, save_pipeline
    state = create_pipeline('$ISSUE_RUN_ID', 'Issue #$ISSUE_NUMBER: $ISSUE_TITLE', mode='batch')
    save_pipeline(state)
@@ -571,7 +575,11 @@ Same as BATCH FILE MODE:
 
    ```bash
    python3 -c "
-   import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+   import sys, os as _os
+   for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+       if _os.path.isdir(_p):
+           sys.path.insert(0, _p)
+           break
    from prompt_integrity import COMPRESSION_CRITICAL_AGENTS, get_agent_prompt_template
    for agent in sorted(COMPRESSION_CRITICAL_AGENTS):
        template = get_agent_prompt_template(agent)
@@ -589,7 +597,11 @@ Same as BATCH FILE MODE:
    After each issue's pipeline completes, cleanup the per-issue pipeline state between issues:
    ```bash
    python3 -c "
-   import sys; sys.path.insert(0, 'plugins/autonomous-dev/lib')
+   import sys, os as _os
+   for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+       if _os.path.isdir(_p):
+           sys.path.insert(0, _p)
+           break
    from pipeline_state import cleanup_pipeline
    cleanup_pipeline('$ISSUE_RUN_ID')
    " 2>/dev/null || true

@@ -31,8 +31,11 @@ Run the autoresearch engine validators:
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 python3 -c "
-import sys
-sys.path.insert(0, '$REPO_ROOT/plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from autoresearch_engine import validate_target, validate_metric
 from pathlib import Path
 
@@ -93,8 +96,11 @@ Run the metric script and capture the new metric value:
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 python3 -c "
-import sys
-sys.path.insert(0, '$REPO_ROOT/plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from autoresearch_engine import run_metric
 from pathlib import Path
 
@@ -128,8 +134,11 @@ Check if the experiment has stalled (too many consecutive failures):
 ```bash
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 python3 -c "
-import sys
-sys.path.insert(0, '$REPO_ROOT/plugins/autonomous-dev/lib')
+import sys, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from autoresearch_engine import ExperimentHistory, check_stall
 from pathlib import Path
 

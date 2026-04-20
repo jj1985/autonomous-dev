@@ -52,8 +52,11 @@ Use the `retrospective_analyzer.py` library to load session data:
 
 ```bash
 cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && python3 -c "
-import sys, json
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, json, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from retrospective_analyzer import load_session_summaries, RetrospectiveConfig
 from pathlib import Path
 
@@ -95,8 +98,11 @@ Run all three detection functions:
 
 ```bash
 cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && python3 -c "
-import sys, json
-sys.path.insert(0, 'plugins/autonomous-dev/lib')
+import sys, json, os as _os
+for _p in ('.claude/lib', 'plugins/autonomous-dev/lib', _os.path.expanduser('~/.claude/lib')):
+    if _os.path.isdir(_p):
+        sys.path.insert(0, _p)
+        break
 from retrospective_analyzer import (
     load_session_summaries, detect_repeated_corrections,
     detect_config_drift, detect_memory_rot, format_as_unified_diff,
@@ -168,7 +174,7 @@ ARCHIVE (safe to remove/archive):
 
 If `--auto-file` flag is set, file issues for IMMEDIATE findings only:
 
-1. Check for duplicate issues:
+1. REQUIRED: Verify no duplicate issues exist before creating new ones:
    ```bash
    gh issue list -R akaszubski/autonomous-dev --label retrospective --state open
    ```
@@ -185,7 +191,7 @@ If `--auto-file` flag is set, file issues for IMMEDIATE findings only:
      --label "retrospective,auto-improvement" \
      --body "{evidence + proposed edit}
 
-**Plugin Version**: $(python3 -c "import sys;sys.path.insert(0,'plugins/autonomous-dev/lib');from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)"
+**Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)"
    ```
 
 3. Clean up:
