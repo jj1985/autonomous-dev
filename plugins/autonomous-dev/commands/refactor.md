@@ -157,13 +157,13 @@ with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
 gh issue create --title "Refactor: [genai] Doc-code drift in docs/SECURITY.md" \
   --body "Found by /refactor --deep analysis...
 
-**Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)" --label "refactor"
+**Plugin Version**: $(python3 -c "import sys,os;next((sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)),None);from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)" --label "refactor"
 
 # Example for aggregated LOW/MEDIUM:
 gh issue create --title "Refactor sweep: N optimization opportunities" \
   --body "Aggregated findings from /refactor analysis...
 
-**Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)" --label "refactor"
+**Plugin Version**: $(python3 -c "import sys,os;next((sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)),None);from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)" --label "refactor"
 
 # Clean up context file after issue creation
 rm -f /tmp/autonomous_dev_cmd_context.json

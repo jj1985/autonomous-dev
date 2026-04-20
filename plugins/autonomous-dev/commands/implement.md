@@ -1217,7 +1217,7 @@ If FAIL: invoke doc-master to fix, re-run until 0 failures. **FORBIDDEN**: skipp
 - ❌ You MUST NOT inline the analysis yourself instead of invoking the agent
 - ❌ You MUST NOT treat STEP 13 as the final step — STEP 15 is mandatory
 
-After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from pipeline_state import cleanup_pipeline;cleanup_pipeline('RUN_ID');from pipeline_completion_state import clear_session;clear_session('SESSION_ID')" 2>/dev/null || true`
+After launching analyst, confirm the agent task ID is valid, THEN cleanup: `rm -f /tmp/implement_pipeline_state.json && python3 -c "import sys,os;next((sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)),None);from pipeline_state import cleanup_pipeline;cleanup_pipeline('RUN_ID');from pipeline_completion_state import clear_session;clear_session('SESSION_ID')" 2>/dev/null || true`
 
 **FORBIDDEN** (Issue #559): Cleaning up pipeline state before confirming the STEP 15 analyst agent launch succeeded. The analyst reads pipeline state — cleanup before launch loses context.
 

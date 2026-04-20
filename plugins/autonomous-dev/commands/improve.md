@@ -157,7 +157,7 @@ If `--auto-file` flag is set:
    gh issue create -R akaszubski/autonomous-dev \
      --title "[CI-{severity}] {title}" \
      --label "continuous-improvement,auto-improvement" \
-     --body "{evidence + rule violated + suggested fix + **Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
+     --body "{evidence + rule violated + suggested fix + **Plugin Version**: $(python3 -c "import sys,os;next((sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)),None);from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
    ```
 
 3. After all issues are filed, clean up the context file:
@@ -262,6 +262,6 @@ import json; from datetime import datetime, timezone
 with open('/tmp/autonomous_dev_cmd_context.json', 'w') as f:
     json.dump({'command': 'improve', 'timestamp': datetime.now(timezone.utc).isoformat()}, f)
 "
-gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report + **Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
+gh issue create -R akaszubski/autonomous-dev   --title "[TRENDS] Aggregate analysis $(date +%Y-%m-%d)"   --label "auto-improvement,trends"   --body "{full trend report + **Plugin Version**: $(python3 -c "import sys,os;next((sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)),None);from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)}"
 rm -f /tmp/autonomous_dev_cmd_context.json
 ```

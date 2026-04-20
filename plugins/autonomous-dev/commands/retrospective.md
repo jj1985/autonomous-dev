@@ -191,7 +191,7 @@ If `--auto-file` flag is set, file issues for IMMEDIATE findings only:
      --label "retrospective,auto-improvement" \
      --body "{evidence + proposed edit}
 
-**Plugin Version**: $(python3 -c "import sys,os;[sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)][:1];from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)"
+**Plugin Version**: $(python3 -c "import sys,os;next((sys.path.insert(0,p) for p in ('.claude/lib','plugins/autonomous-dev/lib',os.path.expanduser('~/.claude/lib')) if os.path.isdir(p)),None);from version_reader import get_plugin_version;print(get_plugin_version())" 2>/dev/null || echo unknown)"
    ```
 
 3. Clean up:

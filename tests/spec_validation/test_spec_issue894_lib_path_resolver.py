@@ -214,3 +214,187 @@ def test_spec_issue894_10_unit_test_file_exists():
         "Resolver unit test file missing `falls_back_to_plugins_lib` test "
         "(Criterion 11)."
     )
+
+
+# ============================================================================
+# Issue #896: Broken list-comprehension resolver does not short-circuit.
+# The form `[sys.path.insert(0,p) for p in (...) if os.path.isdir(p)][:1]`
+# trims the returned list but every matching candidate has already been
+# inserted into sys.path — reversing the intended priority. Replacement:
+# `next((sys.path.insert(0,p) for p in (...) if os.path.isdir(p)), None)`.
+# ============================================================================
+
+
+BROKEN_LIST_COMPREHENSION_PATTERN = re.compile(
+    r"\[sys\.path\.insert\(\s*0\s*,\s*p\s*\)\s+for\s+p\s+in\s*\("
+)
+
+
+# Replacement expression (without the `import sys,os;` prelude, which is kept).
+RESOLVER_EXPR = (
+    "next((sys.path.insert(0,p) for p in "
+    "('.claude/lib','plugins/autonomous-dev/lib',"
+    "os.path.expanduser('~/.claude/lib')) "
+    "if os.path.isdir(p)),None)"
+)
+
+
+# Regex to extract the python3 -c "..." argument from a shell-string snippet.
+# Matches: python3 -c "<code>" where <code> may not contain an unescaped ".
+# Command sites use single-quoted tuple literals inside, so no internal escaping.
+PYTHON_DASH_C_PATTERN = re.compile(
+    r'python3\s+-c\s+"(?P<code>[^"]*next\(\(sys\.path\.insert[^"]*)"'
+)
+
+
+@pytest.fixture
+def sys_path_guard():
+    """Snapshot and restore sys.path around each test that mutates it.
+
+    Prevents cross-test pollution when exec()-ing the resolver expression.
+    """
+    import sys as _sys
+
+    saved = list(_sys.path)
+    try:
+        yield
+    finally:
+        _sys.path[:] = saved
+
+
+@pytest.mark.parametrize("fname", CHANGED_COMMANDS)
+def test_spec_issue896_1_no_broken_list_comprehension(fname):
+    """Issue #896: zero occurrences of the broken list-comprehension form
+    `[sys.path.insert(0,p) for p in ...]` remain in any command file.
+
+    The broken form does NOT short-circuit — `[:1]` only trims the returned
+    list, but each matching candidate is already appended to sys.path.
+    """
+    path = COMMANDS_DIR / fname
+    content = path.read_text()
+    matches = BROKEN_LIST_COMPREHENSION_PATTERN.findall(content)
+    assert not matches, (
+        f"{fname} still contains the broken "
+        f"`[sys.path.insert(0,p) for p in ...]` list-comprehension form — "
+        f"found {len(matches)} occurrence(s). Use "
+        f"`next((sys.path.insert(0,p) for p in ...),None)` instead so the "
+        f"resolver short-circuits and inserts exactly one path."
+    )
+
+
+def test_spec_issue896_2_resolver_inserts_exactly_one_path(
+    tmp_path, monkeypatch, sys_path_guard
+):
+    """Issue #896: when both CWD candidates exist, the replacement expression
+    inserts exactly ONE path into sys.path, and that path is `.claude/lib`
+    (priority order preserved).
+    """
+    import sys as _sys
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".claude" / "lib").mkdir(parents=True)
+    (tmp_path / "plugins" / "autonomous-dev" / "lib").mkdir(parents=True)
+
+    before_len = len(_sys.path)
+    # Execute the exact replacement expression as used in commands/*.md.
+    exec_globals = {"sys": _sys, "os": os}
+    exec(RESOLVER_EXPR, exec_globals)
+    after_len = len(_sys.path)
+
+    assert after_len == before_len + 1, (
+        f"Expected exactly 1 insertion, got {after_len - before_len}. "
+        f"sys.path[:3]={_sys.path[:3]}"
+    )
+    assert _sys.path[0] == ".claude/lib", (
+        f"Expected `.claude/lib` at sys.path[0], got {_sys.path[0]!r}"
+    )
+
+
+def test_spec_issue896_3_resolver_fallback_plugins_lib(
+    tmp_path, monkeypatch, sys_path_guard
+):
+    """Issue #896: only `plugins/autonomous-dev/lib` exists → that path is
+    inserted (and only that path)."""
+    import sys as _sys
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "plugins" / "autonomous-dev" / "lib").mkdir(parents=True)
+
+    before_len = len(_sys.path)
+    exec_globals = {"sys": _sys, "os": os}
+    exec(RESOLVER_EXPR, exec_globals)
+    after_len = len(_sys.path)
+
+    assert after_len == before_len + 1
+    assert _sys.path[0] == "plugins/autonomous-dev/lib"
+
+
+def test_spec_issue896_4_resolver_fallback_home(
+    tmp_path, monkeypatch, sys_path_guard
+):
+    """Issue #896: neither CWD candidate exists; home candidate is real →
+    home path is inserted (and only home path)."""
+    import sys as _sys
+
+    monkeypatch.chdir(tmp_path)
+    # Pre-create a real home-lib dir and make expanduser resolve to it.
+    home_lib = tmp_path / "fake_home" / ".claude" / "lib"
+    home_lib.mkdir(parents=True)
+
+    def fake_expanduser(p):
+        if p == "~/.claude/lib":
+            return str(home_lib)
+        return os.path.expanduser(p)
+
+    monkeypatch.setattr(os.path, "expanduser", fake_expanduser)
+
+    before_len = len(_sys.path)
+    exec_globals = {"sys": _sys, "os": os}
+    exec(RESOLVER_EXPR, exec_globals)
+    after_len = len(_sys.path)
+
+    assert after_len == before_len + 1
+    assert _sys.path[0] == str(home_lib)
+
+
+def test_spec_issue896_5_shell_string_snippets_parse():
+    """Issue #896: every one of the 9 `python3 -c "..."` snippets parses and
+    runs without SyntaxError. Downstream import failures (e.g. version_reader
+    not on sys.path in the test env) are tolerated — we only check that the
+    python fragment itself is syntactically valid and exits cleanly.
+
+    We achieve that by stripping any trailing `;from <module> import ...`
+    clauses so the snippet is a pure sys.path-resolver exercise.
+    """
+    import subprocess
+
+    sites = []
+    for fname in CHANGED_COMMANDS:
+        path = COMMANDS_DIR / fname
+        content = path.read_text()
+        for match in PYTHON_DASH_C_PATTERN.finditer(content):
+            sites.append((fname, match.group("code")))
+
+    assert len(sites) == 9, (
+        f"Expected 9 `python3 -c \"...\"` resolver snippets across commands, "
+        f"found {len(sites)}. Sites: {[s[0] for s in sites]}"
+    )
+
+    for fname, code in sites:
+        # Strip trailing `;from ... import ...;...` to isolate the resolver
+        # expression — the downstream imports legitimately fail in this test
+        # env (version_reader/pipeline_state not on sys.path). Syntax validity
+        # is what we care about for Issue #896.
+        head, _, _ = code.partition(";from ")
+        # head is `import sys,os;next((sys.path.insert(0,p) ...),None)`.
+        result = subprocess.run(
+            ["python3", "-c", head],
+            check=False,
+            capture_output=True,
+        )
+        assert result.returncode == 0, (
+            f"{fname}: resolver snippet failed with returncode "
+            f"{result.returncode}\n"
+            f"code: {head!r}\n"
+            f"stderr: {result.stderr.decode(errors='replace')}"
+        )
