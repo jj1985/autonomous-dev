@@ -86,23 +86,16 @@ autonomous-dev enforces process through three layers, each addressing a differen
 
 ### Recent Improvements
 
-The harness shipped substantial enforcement hardening in the last week. Highlights:
+Substantial enforcement hardening shipped recently. Current focus areas:
 
-- **Planning workflow system** — New `/plan` command runs a 7-step structured planning process (problem → existing solutions → minimal path) with adversarial review by a `plan-critic` agent. The critic scores plans on a 1-5 Likert scale across 5 axes (assumption audit, scope creep, existing solutions, minimalism, uncertainty); composite ≥3.0 yields PROCEED, <3.0 forces REVISE, <2.0 BLOCKS. `plan_gate.py` PreToolUse hook blocks complex Write/Edit operations without a validated plan in `.claude/plans/`. On PROCEED, GitHub issues are auto-created when the plan contains ≥2 independent work items.
-- **Plan-critic iterative loop** — Multi-round orchestration with convergence detection. Re-invokes planner with verbatim feedback until verdict converges or max rounds hit. Threaded output between rounds preserves critique history.
-- **Plan Validation Gate (STEP 5.5)** and **Plan-Implementation Alignment Gate (STEP 7.25)** — Adversarial review between planner and acceptance tests; post-implementation comparison of planned vs `git diff` files (blocks on >50% divergence).
-- **Iterative refinement loops (Self-Refine pattern)** — `/implement`, `/advise`, and `/refactor` now include inline FEEDBACK passes (~20% quality improvement per NeurIPS 2023 research). One pass only — two-pass optimum per the paper.
-- **Prompt quality gate (Layer 6)** — Write-time enforcement on `agents/*.md` and `commands/*.md`: blocks expert-persona openers (PRISM-validated anti-pattern), casual register words (`check for`, `make sure`, `try to`), and constraint sections exceeding 8 bullets (MOSAIC compliance threshold).
-- **Pipeline ordering enforcement** — `pytest-gate` is now a virtual prerequisite for STEP 10 agents; `reviewer → security-auditor` is always sequential regardless of validation mode. Pre-Dispatch Ordering Protocol calls `check_ordering_with_session_fallback()` before every Agent dispatch.
-- **Root Cause Analysis HARD GATE** — `/implement --fix` requires implementer output to contain a `## Root Cause Analysis` section (root cause + mechanism chain + 5 Whys + category) before declaring complete.
-- **Agent completeness gate (batch-aware)** — `git commit` is blocked during active pipeline runs when required agents haven't completed; per-issue checks in batch mode with `research_skipped` and `plan_critic_skipped` flags.
-- **Opportunistic fix-forward classification** — Captures pre-existing failing tests at STEP 1; classifies STEP 8 failures into `fixed` / `pre_existing_remaining` / `new_failures`. Auto-files GitHub issues for pre-existing failures with `pre-existing-failure` label.
-- **Prompt integrity calibration** — Per-issue threshold tightened to 20%, cumulative drift threshold calibrated to 30% based on real batch observations. Cross-issue baseline fallback prevents undetected shrinkage on first batch issue.
-- **Staged plan-exit pipeline** — 2-state machine (`plan_exited` → `critique_done`) prevents the model from skipping plan-critic after exiting plan mode.
-- **Multi-candidate lib path resolver** — `/implement` and 9 other commands now probe `.claude/lib` → `plugins/autonomous-dev/lib` → `~/.claude/lib`; consumer-repo installs no longer fail with `ModuleNotFoundError`.
-- **Conversation archiver + SQLite index** — Every session archived to `~/.claude/archive/` with full transcripts and queryable SQLite index for cross-month analytics.
+- **Planning workflow** — 7-step `/plan` + adversarial `plan-critic` review (1-5 Likert across 5 axes, composite ≥3.0 → PROCEED)
+- **Iterative refinement** — Self-Refine pattern integrated into `/implement`, `/advise`, `/refactor`
+- **Pipeline ordering** — Deterministic sequencing; `reviewer → security-auditor` always sequential on security-sensitive changes
+- **Session analytics** — Every conversation archived to `~/.claude/archive/` with 17-column SQLite index
+- **Prompt quality gate** — Write-time enforcement on `agents/*.md` and `commands/*.md` (PRISM-validated anti-patterns blocked)
+- **Closed-loop self-improvement** — Benchmark → modify → re-benchmark → commit-or-revert (see [EVALUATION.md](docs/EVALUATION.md))
 
-See [CHANGELOG.md](CHANGELOG.md) for the complete list with issue references.
+See [CHANGELOG.md](CHANGELOG.md) for complete release-over-release details with issue references.
 
 ### The 12 Elements of Harness Engineering
 
@@ -450,6 +443,7 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 ### Prompt & Agent Design
 - [Prompt Engineering](docs/PROMPT-ENGINEERING.md) - Constraint budgets (MOSAIC), register shifting, HARD GATE patterns
 - [Agents Reference](docs/AGENTS.md) - All 16 specialist agents with model tiers
+- [Skills Reference](docs/SKILLS.md) - All 19 progressive skill packages with trigger conditions
 
 ### Testing
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model (acceptance-first, 6 layers)
@@ -462,6 +456,8 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 - [Hooks](docs/HOOKS.md) - 30 active hooks
 - [Hook Registry](docs/HOOK-REGISTRY.md) - Sidecar metadata schema
 - [Libraries](docs/LIBRARIES.md) - 181 Python utilities
+- [Scripts](docs/SCRIPTS.md) - Operational tooling (deploy, validate, benchmark, mine)
+- [Label Taxonomy](docs/LABEL-TAXONOMY.md) - GitHub labels + `[BYPASS]`/`[INCOMPLETE]`/`[ORDERING]` finding tags
 
 ### Security
 - [Sandboxing](docs/SANDBOXING.md) - Command classification and shell injection detection
