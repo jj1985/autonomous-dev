@@ -72,12 +72,19 @@ def _extract_metadata(
 ) -> dict[str, Any]:
     """Parse transcript JSONL to extract session metadata.
 
+    Reads the canonical Claude Code transcript schema where each line is a JSON
+    object whose top-level ``type`` field acts as the message discriminator
+    (``user``/``assistant`` vs noise like ``attachment``/``permission-mode``).
+    The actual message payload (role, model, content, usage) is nested under
+    ``entry["message"]``.
+
     Args:
         transcript_path: Path to the transcript JSONL file.
         hook_input: The hook input JSON from stdin.
 
     Returns:
-        Dict with message counts, token stats, model, and first user prompt.
+        Dict with message counts, token stats (including cache tokens), model,
+        and first user prompt.
     """
     message_count = 0
     user_messages = 0
@@ -85,6 +92,8 @@ def _extract_metadata(
     tool_calls = 0
     total_input_tokens = 0
     total_output_tokens = 0
+    total_cache_read_tokens = 0
+    total_cache_creation_tokens = 0
     model: Optional[str] = None
     first_user_prompt: Optional[str] = None
 
@@ -97,41 +106,65 @@ def _extract_metadata(
                 try:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
+                    # Malformed JSONL lines skipped (defense in depth against partial writes)
+                    continue
+
+                entry_type = entry.get("type")
+
+                # Only user/assistant entries are conversation messages. Skip noise
+                # (attachment, permission-mode, file-history-snapshot, last-prompt,
+                # summary, system) without incrementing message_count.
+                if entry_type not in ("user", "assistant"):
                     continue
 
                 message_count += 1
-                entry_type = entry.get("type", "")
+
+                raw_msg = entry.get("message")
+                msg = raw_msg if isinstance(raw_msg, dict) else {}
 
                 if entry_type == "user":
                     user_messages += 1
                     if first_user_prompt is None:
-                        content = entry.get("content", "")
+                        content = msg.get("content")
                         if isinstance(content, str):
                             first_user_prompt = content[:MAX_PROMPT_LENGTH]
                         elif isinstance(content, list):
-                            # Content blocks format
                             for block in content:
-                                if isinstance(block, dict) and block.get("type") == "text":
-                                    first_user_prompt = block.get("text", "")[:MAX_PROMPT_LENGTH]
+                                if (
+                                    isinstance(block, dict)
+                                    and block.get("type") == "text"
+                                ):
+                                    first_user_prompt = block.get("text", "")[
+                                        :MAX_PROMPT_LENGTH
+                                    ]
                                     break
 
-                elif entry_type == "assistant":
+                else:  # entry_type == "assistant"
                     assistant_messages += 1
-                    # Extract model from assistant messages
-                    if model is None and entry.get("model"):
-                        model = entry.get("model")
-                    # Extract token usage
-                    usage = entry.get("usage", {})
-                    if usage:
-                        total_input_tokens += usage.get("input_tokens", 0)
-                        total_output_tokens += usage.get("output_tokens", 0)
 
-                elif entry_type in ("tool_use", "tool_call"):
-                    tool_calls += 1
+                    if model is None and msg.get("model"):
+                        model = msg.get("model")
 
-                elif entry_type == "tool_result":
-                    # tool_result is a response, not a call
-                    pass
+                    raw_usage = msg.get("usage")
+                    usage = raw_usage if isinstance(raw_usage, dict) else {}
+                    total_input_tokens += int(usage.get("input_tokens") or 0)
+                    total_output_tokens += int(usage.get("output_tokens") or 0)
+                    total_cache_read_tokens += int(
+                        usage.get("cache_read_input_tokens") or 0
+                    )
+                    total_cache_creation_tokens += int(
+                        usage.get("cache_creation_input_tokens") or 0
+                    )
+
+                    # tool_use blocks live inside assistant message content
+                    content = msg.get("content")
+                    if isinstance(content, list):
+                        for block in content:
+                            if (
+                                isinstance(block, dict)
+                                and block.get("type") == "tool_use"
+                            ):
+                                tool_calls += 1
 
     except (OSError, IOError):
         pass
@@ -147,6 +180,8 @@ def _extract_metadata(
         "tool_calls": tool_calls,
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
+        "total_cache_read_tokens": total_cache_read_tokens,
+        "total_cache_creation_tokens": total_cache_creation_tokens,
         "model": model,
         "first_user_prompt": first_user_prompt,
     }
@@ -268,13 +303,15 @@ def _update_index(
 def _update_sqlite_index(db_path: Path, metadata: dict[str, Any]) -> None:
     """Write session metadata to SQLite index for fast queryable access.
 
-    Creates the sessions table on first use. Upserts the row identified by
-    session_id, preserving the original first_seen value from a previous write
-    so repeated Stop events do not reset the session start time.
+    Creates the sessions table on first use and idempotently migrates legacy
+    databases to include the cache-token columns. Upserts the row identified
+    by session_id, preserving the original first_seen value from a previous
+    write so repeated Stop events do not reset the session start time.
 
     Args:
         db_path: Path to the SQLite database file (e.g. archive/sessions.db).
-        metadata: Session metadata dict containing all 15 column values.
+        metadata: Session metadata dict containing all 17 column values
+            (15 legacy + total_cache_read_tokens + total_cache_creation_tokens).
     """
     try:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,12 +331,25 @@ def _update_sqlite_index(db_path: Path, metadata: dict[str, Any]) -> None:
                     tool_calls INTEGER,
                     total_input_tokens INTEGER,
                     total_output_tokens INTEGER,
+                    total_cache_read_tokens INTEGER,
+                    total_cache_creation_tokens INTEGER,
                     transcript_bytes INTEGER,
                     model TEXT,
                     first_user_prompt TEXT
                 )
                 """
             )
+
+            # Idempotent migration for databases created before the cache-token
+            # columns were added. Running this block repeatedly is safe.
+            existing_cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            for col in ("total_cache_read_tokens", "total_cache_creation_tokens"):
+                if col not in existing_cols:
+                    conn.execute(f"ALTER TABLE sessions ADD COLUMN {col} INTEGER")
+
             # Preserve first_seen from an existing row
             session_id = metadata.get("session_id")
             row = conn.execute(
@@ -315,8 +365,9 @@ def _update_sqlite_index(db_path: Path, metadata: dict[str, Any]) -> None:
                     first_seen, last_updated,
                     message_count, user_messages, assistant_messages, tool_calls,
                     total_input_tokens, total_output_tokens,
+                    total_cache_read_tokens, total_cache_creation_tokens,
                     transcript_bytes, model, first_user_prompt
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -331,6 +382,8 @@ def _update_sqlite_index(db_path: Path, metadata: dict[str, Any]) -> None:
                     metadata.get("tool_calls"),
                     metadata.get("total_input_tokens"),
                     metadata.get("total_output_tokens"),
+                    metadata.get("total_cache_read_tokens"),
+                    metadata.get("total_cache_creation_tokens"),
                     metadata.get("transcript_bytes"),
                     metadata.get("model"),
                     metadata.get("first_user_prompt"),
@@ -415,6 +468,8 @@ def main() -> None:
             "tool_calls": meta["tool_calls"],
             "total_input_tokens": meta["total_input_tokens"],
             "total_output_tokens": meta["total_output_tokens"],
+            "total_cache_read_tokens": meta["total_cache_read_tokens"],
+            "total_cache_creation_tokens": meta["total_cache_creation_tokens"],
             "transcript_bytes": transcript_size,
             "model": meta["model"],
             "first_user_prompt": meta["first_user_prompt"],

@@ -37,27 +37,82 @@ def archive_dir(tmp_path):
 
 @pytest.fixture
 def sample_transcript(tmp_path):
-    """Create a sample JSONL transcript file with realistic content."""
+    """Create a sample JSONL transcript file using the real Claude Code schema.
+
+    Layout (4 entries, all user/assistant — no standalone tool_use/tool_result lines
+    because in the real schema tool_use blocks live INSIDE assistant content):
+      1. user string prompt
+      2. assistant with 1 text block + 1 tool_use block; usage 500/200
+      3. user prompt (follow-up)
+      4. assistant with 1 tool_use block; usage 800/350
+
+    Expected:
+      message_count=4, user=2, assistant=2, tool_calls=2
+      total_input_tokens=1300, total_output_tokens=550
+      model="claude-opus-4-6"
+      first_user_prompt="How do I implement a retry pattern in Python?"
+    """
     transcript = tmp_path / "session_abc123.jsonl"
     lines = [
-        json.dumps({"type": "user", "content": "How do I implement a retry pattern in Python?"}),
-        json.dumps({
-            "type": "assistant",
-            "content": "Here is a retry pattern...",
-            "model": "claude-opus-4-6",
-            "usage": {"input_tokens": 500, "output_tokens": 200},
-        }),
-        json.dumps({"type": "tool_use", "name": "Read", "input": {"path": "/tmp/foo.py"}}),
-        json.dumps({"type": "tool_result", "content": "file contents..."}),
-        json.dumps({"type": "user", "content": "Can you also add exponential backoff?"}),
-        json.dumps({
-            "type": "assistant",
-            "content": "Sure, here is the updated version...",
-            "model": "claude-opus-4-6",
-            "usage": {"input_tokens": 800, "output_tokens": 350},
-        }),
-        json.dumps({"type": "tool_use", "name": "Write", "input": {"path": "/tmp/retry.py"}}),
-        json.dumps({"type": "tool_result", "content": "File written"}),
+        json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": "How do I implement a retry pattern in Python?",
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "model": "claude-opus-4-6",
+                    "content": [
+                        {"type": "text", "text": "Here is a retry pattern..."},
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_r1",
+                            "name": "Read",
+                            "input": {"path": "/tmp/foo.py"},
+                        },
+                    ],
+                    "usage": {"input_tokens": 500, "output_tokens": 200},
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": "Can you also add exponential backoff?",
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "model": "claude-opus-4-6",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Sure, here is the updated version...",
+                        },
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_w1",
+                            "name": "Write",
+                            "input": {"path": "/tmp/retry.py"},
+                        },
+                    ],
+                    "usage": {"input_tokens": 800, "output_tokens": 350},
+                },
+            }
+        ),
     ]
     transcript.write_text("\n".join(lines) + "\n")
     return transcript
@@ -117,7 +172,7 @@ class TestHappyPath:
 
         # Extract metadata
         meta = conversation_archiver._extract_metadata(sample_transcript, hook_input)
-        assert meta["message_count"] == 8
+        assert meta["message_count"] == 4
         assert meta["user_messages"] == 2
         assert meta["assistant_messages"] == 2
         assert meta["tool_calls"] == 2
@@ -145,7 +200,7 @@ class TestHappyPath:
         entries = [json.loads(line) for line in index_path.read_text().strip().split("\n")]
         assert len(entries) == 1
         assert entries[0]["session_id"] == "abc123"
-        assert entries[0]["message_count"] == 8
+        assert entries[0]["message_count"] == 4
 
 
 # ---------------------------------------------------------------------------
@@ -327,73 +382,8 @@ class TestAtomicIndexUpdate:
             assert "session_id" in entry
 
 
-# ---------------------------------------------------------------------------
-# Test: Metadata extraction
-# ---------------------------------------------------------------------------
-
-class TestMetadataExtraction:
-    """Test _extract_metadata with various transcript formats."""
-
-    def test_message_counts(self, sample_transcript, hook_input_factory):
-        """Verify correct counting of message types."""
-        hook_input = hook_input_factory(transcript_path=sample_transcript)
-        meta = conversation_archiver._extract_metadata(sample_transcript, hook_input)
-
-        assert meta["user_messages"] == 2
-        assert meta["assistant_messages"] == 2
-        assert meta["tool_calls"] == 2
-        assert meta["message_count"] == 8  # 2 user + 2 assistant + 2 tool_use + 2 tool_result
-
-    def test_token_accumulation(self, sample_transcript, hook_input_factory):
-        """Verify token counts are accumulated across messages."""
-        hook_input = hook_input_factory(transcript_path=sample_transcript)
-        meta = conversation_archiver._extract_metadata(sample_transcript, hook_input)
-
-        assert meta["total_input_tokens"] == 1300  # 500 + 800
-        assert meta["total_output_tokens"] == 550  # 200 + 350
-
-    def test_first_user_prompt_extraction(self, sample_transcript, hook_input_factory):
-        """First user prompt should be captured and truncated."""
-        hook_input = hook_input_factory(transcript_path=sample_transcript)
-        meta = conversation_archiver._extract_metadata(sample_transcript, hook_input)
-
-        assert meta["first_user_prompt"] == "How do I implement a retry pattern in Python?"
-
-    def test_first_user_prompt_truncated(self, tmp_path):
-        """Long first user prompts should be truncated to MAX_PROMPT_LENGTH."""
-        transcript = tmp_path / "long_prompt.jsonl"
-        long_prompt = "x" * 500
-        transcript.write_text(
-            json.dumps({"type": "user", "content": long_prompt}) + "\n"
-        )
-
-        meta = conversation_archiver._extract_metadata(transcript, {})
-        assert len(meta["first_user_prompt"]) == conversation_archiver.MAX_PROMPT_LENGTH
-
-    def test_content_blocks_format(self, tmp_path):
-        """User content in content-blocks format should be extracted."""
-        transcript = tmp_path / "blocks.jsonl"
-        transcript.write_text(
-            json.dumps({
-                "type": "user",
-                "content": [
-                    {"type": "text", "text": "Hello from content blocks"}
-                ],
-            }) + "\n"
-        )
-
-        meta = conversation_archiver._extract_metadata(transcript, {})
-        assert meta["first_user_prompt"] == "Hello from content blocks"
-
-    def test_empty_transcript_metadata(self, tmp_path):
-        """Empty transcript should return zero counts."""
-        transcript = tmp_path / "empty.jsonl"
-        transcript.write_text("")
-
-        meta = conversation_archiver._extract_metadata(transcript, {})
-        assert meta["message_count"] == 0
-        assert meta["user_messages"] == 0
-        assert meta["first_user_prompt"] is None
+# Metadata extraction tests moved to test_conversation_archiver_extraction.py
+# (real-format fixtures with comprehensive coverage).
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +487,13 @@ class TestModelDetection:
         """If transcript has no model, fall back to hook input."""
         transcript = tmp_path / "no_model.jsonl"
         transcript.write_text(
-            json.dumps({"type": "assistant", "content": "hello"}) + "\n"
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"role": "assistant", "content": "hello"},
+                }
+            )
+            + "\n"
         )
 
         hook_input = {"model": "claude-sonnet-4-20250514"}
@@ -508,7 +504,13 @@ class TestModelDetection:
         """If no model info anywhere, model should be None."""
         transcript = tmp_path / "no_model.jsonl"
         transcript.write_text(
-            json.dumps({"type": "user", "content": "hello"}) + "\n"
+            json.dumps(
+                {
+                    "type": "user",
+                    "message": {"role": "user", "content": "hello"},
+                }
+            )
+            + "\n"
         )
 
         meta = conversation_archiver._extract_metadata(transcript, {})
@@ -760,6 +762,8 @@ def _make_index_entry(
     tool_calls: int = 2,
     total_input_tokens: int = 1300,
     total_output_tokens: int = 550,
+    total_cache_read_tokens: int = 0,
+    total_cache_creation_tokens: int = 0,
     transcript_bytes: int = 1024,
     model: str = "claude-opus-4-6",
     first_user_prompt: str = "How do I implement a retry pattern in Python?",
@@ -778,6 +782,8 @@ def _make_index_entry(
         "tool_calls": tool_calls,
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
+        "total_cache_read_tokens": total_cache_read_tokens,
+        "total_cache_creation_tokens": total_cache_creation_tokens,
         "transcript_bytes": transcript_bytes,
         "model": model,
         "first_user_prompt": first_user_prompt,
@@ -807,6 +813,7 @@ class TestSqliteIndex:
             "first_seen", "last_updated",
             "message_count", "user_messages", "assistant_messages", "tool_calls",
             "total_input_tokens", "total_output_tokens",
+            "total_cache_read_tokens", "total_cache_creation_tokens",
             "transcript_bytes", "model", "first_user_prompt",
         ]
         row_dict = dict(zip(col_names, row))
