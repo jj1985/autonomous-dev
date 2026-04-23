@@ -431,6 +431,10 @@ Otherwise: proceed to STEP 4.
 - ❌ The change touches security-sensitive files or topics (authentication, encryption, tokens, secrets, sso, oauth, rbac, permission, session, jwt)
 - ❌ More than 3 files are referenced in the description
 
+**Coordinator Context7 Pre-fetch (advisory)**
+
+When the feature description names a specific library, framework, SDK, API, or CLI tool (e.g., React, Next.js, Prisma, AWS SDK, Stripe API, bun, deno), the coordinator SHOULD call `mcp__claude_ai_Context7__resolve-library-id` and `mcp__claude_ai_Context7__query-docs` ONCE before dispatching researcher, then pass the retrieved documentation as input context in the researcher prompt. This primes the researcher with authoritative docs and avoids duplicate Context7 calls. If Context7 is unavailable at coordinator level, skip the pre-fetch and let the researcher handle it per its own HARD GATE. This is ADVISORY (not a HARD GATE) to keep cost proportional to need — generic research tasks without a specific library target should skip pre-fetch.
+
 ### STEP 4: Parallel Research (2 agents)
 
 **Progress**: Output step banner (STEP 4/15 — Research, Agents: researcher-local (Haiku), researcher (Sonnet)). Output agent completions after each returns.
