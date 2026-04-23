@@ -12,6 +12,12 @@ Development harness for Claude Code. Deterministic enforcement, specialist agent
 - **Deploy with `bash scripts/deploy-all.sh`** — never manual `cp -rf`. Script handles local, remote (Mac Studio), validation, and integrity checks.
 - **Don't simplify, redesign, or consolidate agents.** The pipeline, hooks, and enforcement are validated over months of real use. The cost is tokens, not complexity. Complexity is the mechanism.
 
+## Tool Selection Preference
+
+For documentation lookups involving a specific library, framework, SDK, API, or CLI tool, the **main assistant / coordinator** MUST prefer **Context7 MCP** (`mcp__claude_ai_Context7__resolve-library-id` + `mcp__claude_ai_Context7__query-docs`) as the first-line source — it returns current, authoritative docs. Fall back to WebSearch for concept/pattern research not tied to a specific library, or when Context7 is unavailable. When dispatching the `researcher` agent for a library-specific feature, the coordinator SHOULD pre-fetch Context7 once and pass the retrieved docs in the researcher prompt as input context (see `commands/implement.md` STEP 4 advisory). **Subagents (including `researcher`) cannot currently call Context7 directly** — only the main assistant / coordinator has Context7 access via the claude.ai connector. Subagents receive Context7 content only via coordinator pre-fetch text injection.
+
+**Skip Context7 for**: refactoring existing code, debugging business logic, general programming concepts, code review, writing scripts from scratch, non-library framework decisions.
+
 ## Build & Test
 
 Testing uses the **Diamond Model** (not traditional TDD pyramid). Acceptance criteria drive testing; unit tests are regression locks, not specifications. See [docs/TESTING-STRATEGY.md](docs/TESTING-STRATEGY.md).
