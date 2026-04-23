@@ -5,7 +5,7 @@ covers:
 
 # Skills Reference
 
-19 active skill packages at `plugins/autonomous-dev/skills/`. Skills are progressively injected into agent context — loaded only when the task matches the skill's `TRIGGER when:` conditions, so they don't bloat every prompt.
+20 active skill packages at `plugins/autonomous-dev/skills/`. Skills are progressively injected into agent context — loaded only when the task matches the skill's `TRIGGER when:` conditions, so they don't bloat every prompt.
 
 **Design principle**: One domain per skill. Each `SKILL.md` declares when it loads (TRIGGER) and when it doesn't (DO NOT TRIGGER) so the model gets the right knowledge at the right time without over-inclusion.
 
@@ -57,6 +57,12 @@ covers:
 | [api-integration-patterns](../plugins/autonomous-dev/skills/api-integration-patterns/SKILL.md) | Subprocess safety, gh CLI, retry logic, rate limiting | External API, subprocess, authentication |
 | [prompt-engineering](../plugins/autonomous-dev/skills/prompt-engineering/SKILL.md) | Constraint budgets, register shifting, HARD GATE patterns | Writing agents/*.md or skills/*/SKILL.md |
 
+### Domain-Specific
+
+| Skill | Purpose | Trigger When |
+|-------|---------|--------------|
+| [chrome-extensions](../plugins/autonomous-dev/skills/chrome-extensions/SKILL.md) | MV3 manifest, chrome.* APIs, extension architecture, CSP, publishing | Chrome extension, manifest.json, content script, service worker, MV3 |
+
 ---
 
 ## How Skills Load
@@ -78,7 +84,7 @@ The implementer agent's prompt references those four skills when tasks involve P
 Each skill is measurable via `/skill-eval`:
 
 ```bash
-/skill-eval                       # Full eval — all 19 skills
+/skill-eval                       # Full eval — all 20 skills
 /skill-eval --quick               # Fast mode (fewer prompts per skill)
 /skill-eval --skill python-standards   # One skill only
 /skill-eval --update              # Update baseline after confirmed improvement

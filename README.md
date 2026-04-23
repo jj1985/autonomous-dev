@@ -415,7 +415,7 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 |-----------|-------|---------|
 | Commands | 23 | Slash commands for workflows |
 | Agents | 16 | Specialized AI for each SDLC stage (added: plan-critic) |
-| Skills | 19 | Domain knowledge (added: planning-workflow, prompt-engineering) |
+| Skills | 20 | Domain knowledge (added: planning-workflow, prompt-engineering) |
 | Hooks | 30 | Automatic validation and enforcement (added: plan_gate, conversation_archiver, prompt quality gate) |
 | Libraries | 181 | Python utilities |
 
@@ -443,7 +443,7 @@ pipeline runs → session logs → /improve detects drift → files GitHub issue
 ### Prompt & Agent Design
 - [Prompt Engineering](docs/PROMPT-ENGINEERING.md) - Constraint budgets (MOSAIC), register shifting, HARD GATE patterns
 - [Agents Reference](docs/AGENTS.md) - All 16 specialist agents with model tiers
-- [Skills Reference](docs/SKILLS.md) - All 19 progressive skill packages with trigger conditions
+- [Skills Reference](docs/SKILLS.md) - All 20 progressive skill packages with trigger conditions
 
 ### Testing
 - [Testing Strategy](docs/TESTING-STRATEGY.md) - Diamond testing model (acceptance-first, 6 layers)

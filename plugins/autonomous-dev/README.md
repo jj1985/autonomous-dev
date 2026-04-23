@@ -178,14 +178,14 @@ autonomous-dev enforces process through three layers, each addressing a differen
 
 - **Agents** (adversarial evaluation) — 16 specialist agents, each spawned with fresh context and constrained tools. The implementer never reviews its own work. A separate reviewer and security-auditor evaluate it. A spec-validator writes behavioral tests from acceptance criteria without seeing the implementation. A plan-critic adversarially reviews plans before implementation begins.
 
-- **Skills** (progressive context injection) — 19 domain knowledge packages injected only when relevant. Testing standards load during test writing. Security patterns load during security review. Prompt engineering patterns load when editing agent files. Prevents context bloat and drift.
+- **Skills** (progressive context injection) — 20 domain knowledge packages injected only when relevant. Testing standards load during test writing. Security patterns load during security review. Prompt engineering patterns load when editing agent files. Prevents context bloat and drift.
 
 ### Component Overview
 
 | Component | Count | Purpose |
 |-----------|-------|---------|
 | **Agents** | 16 | Specialist AI for each SDLC stage |
-| **Skills** | 19 | Domain expertise (progressive disclosure) |
+| **Skills** | 20 | Domain expertise (progressive disclosure) |
 | **Hooks** | 27 | Deterministic enforcement and validation |
 | **Libraries** | 180 | Python utilities (security, validation, automation) |
 | **Commands** | 23 | Slash commands for workflows |
