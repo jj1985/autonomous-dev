@@ -127,7 +127,7 @@ tools: [Task, Read, Bash]
 # Lines 1-150: Core coordination logic
 
 ## Skills Available (lines 74-109)
-- List all 19 skills with descriptions
+- List all 20 skills with descriptions
 - Tell orchestrator HOW to reference skills
 - Define WHEN to invoke specialist agents
 ```

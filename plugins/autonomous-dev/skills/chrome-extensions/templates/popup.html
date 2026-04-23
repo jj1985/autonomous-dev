@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>__EXTENSION_NAME__</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <img src="../icons/icon48.png" alt="logo" class="logo" />
+      <h1 class="title">__EXTENSION_NAME__</h1>
+    </header>
+
+    <main class="main">
+      <div id="status" class="status">Ready</div>
+
+      <button id="actionBtn" class="btn btn-primary">
+        Do Something
+      </button>
+
+      <div id="output" class="output hidden"></div>
+    </main>
+
+    <footer class="footer">
+      <a href="#" id="optionsLink">Settings</a>
+    </footer>
+  </div>
+
+  <!--
+    NOTE: MV3 default CSP (script-src 'self') FORBIDS inline <script>…</script> content.
+    The code below is shown inline here ONLY as a copy-paste reference. In a real
+    extension you MUST save this as `popup.js` and reference it via:
+        <script src="popup.js"></script>
+    Leaving executable code in this tag will trigger:
+        "Refused to execute inline script because it violates the Content Security Policy"
+    See knowledge/security-csp.md and knowledge/debugging.md error #6.
+  -->
+  <script type="text/plain" id="popup-js-reference">
+// popup.js — Runs in the popup context (created when icon clicked, destroyed when closed)
+// Do NOT store state in variables — use chrome.storage for persistence
+
+"use strict";
+
+// ─── DOM References ────────────────────────────────────────────────────────
+const actionBtn  = document.getElementById("actionBtn");
+const statusEl   = document.getElementById("status");
+const outputEl   = document.getElementById("output");
+const optionsLink = document.getElementById("optionsLink");
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", async () => {
+  // Load saved state from storage
+  const { enabled = false } = await chrome.storage.local.get("enabled");
+  updateUI(enabled);
+});
+
+// ─── Event Listeners ──────────────────────────────────────────────────────
+actionBtn.addEventListener("click", async () => {
+  setStatus("Working...");
+  actionBtn.disabled = true;
+
+  try {
+    // Get the current active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // Option A: Send message to content script
+    const response = await sendMessageToTab(tab.id, { action: "doSomething" });
+
+    if (response?.success) {
+      setStatus("Done!");
+      showOutput(response.data);
+    } else {
+      setStatus("No response from page.");
+    }
+
+    // Option B: Send message to service worker
+    // const response = await chrome.runtime.sendMessage({ action: "fetchData" });
+
+  } catch (err) {
+    setStatus(`Error: ${err.message}`);
+    console.error(err);
+  } finally {
+    actionBtn.disabled = false;
+  }
+});
+
+optionsLink.addEventListener("click", (e) => {
+  e.preventDefault();
+  chrome.runtime.openOptionsPage();
+});
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+function setStatus(text) {
+  statusEl.textContent = text;
+}
+
+function showOutput(data) {
+  outputEl.textContent = typeof data === "object" ? JSON.stringify(data, null, 2) : data;
+  outputEl.classList.remove("hidden");
+}
+
+function updateUI(enabled) {
+  actionBtn.textContent = enabled ? "Disable" : "Enable";
+  statusEl.textContent = enabled ? "Active" : "Inactive";
+}
+
+/**
+ * Send a message to a tab's content script, with error handling.
+ * Returns null if no content script is listening on that tab.
+ */
+function sendMessageToTab(tabId, message) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn("Tab message error:", chrome.runtime.lastError.message);
+        resolve(null);
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+  </script>
+
+  <!-- Correct production pattern: uncomment the line below and delete the
+       <script type="text/plain"> block above. -->
+  <!-- <script src="popup.js"></script> -->
+</body>
+</html>
