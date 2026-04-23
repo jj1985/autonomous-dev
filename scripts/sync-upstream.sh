@@ -135,8 +135,38 @@ git push origin master
 if $NO_DEPLOY; then
     log_warn "Skipped deploy step (--no-deploy). Run 'bash scripts/deploy-all.sh --local' when ready."
 else
-    log_info "Redeploying plugin into ~/.claude/ and .claude/..."
+    log_info "Redeploying plugin globally (~/.claude/)..."
     bash "$REPO_ROOT/scripts/deploy-all.sh" --local --skip-validate
+
+    # deploy-all.sh only syncs per-repo .claude/ for repos at $HOME/Dev/<name>.
+    # If this repo is elsewhere (e.g. $HOME/autonomous-dev), sync inline —
+    # same logic as deploy_repo() in deploy-all.sh but pointed at REPO_ROOT.
+    DEPLOY_LOCAL_REPO=false
+    case "$REPO_ROOT" in
+        "$HOME/Dev/"*) ;;  # deploy-all.sh already handled it
+        *) DEPLOY_LOCAL_REPO=true ;;
+    esac
+
+    if $DEPLOY_LOCAL_REPO && [ -d "$REPO_ROOT/.claude" ]; then
+        log_info "Syncing this repo's .claude/ ($REPO_ROOT is off the standard path)..."
+        for subdir in hooks commands agents lib templates config skills scripts; do
+            if [ -d "$REPO_ROOT/plugins/autonomous-dev/$subdir" ]; then
+                mkdir -p "$REPO_ROOT/.claude/$subdir"
+                rsync -a --delete --exclude=extensions/ \
+                    "$REPO_ROOT/plugins/autonomous-dev/$subdir/" \
+                    "$REPO_ROOT/.claude/$subdir/"
+            fi
+        done
+        find "$REPO_ROOT/.claude/hooks"   -name "*.py" -exec chmod 755 {} \; 2>/dev/null || true
+        find "$REPO_ROOT/.claude/hooks"   -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+        find "$REPO_ROOT/.claude/scripts" -name "*.py" -exec chmod 755 {} \; 2>/dev/null || true
+        find "$REPO_ROOT/.claude/scripts" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+        find "$REPO_ROOT/.claude/lib"     -name "*.py" -exec chmod 644 {} \; 2>/dev/null || true
+        python3 "$REPO_ROOT/plugins/autonomous-dev/scripts/sync_settings_hooks.py" \
+            --repo "$REPO_ROOT" >/dev/null 2>&1 \
+            && log_info "Synced repo settings.json hooks" \
+            || log_warn "repo settings hook sync failed (non-fatal)"
+    fi
 fi
 
 log_info "Sync complete."
